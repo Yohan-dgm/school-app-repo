@@ -23,7 +23,6 @@ import IntelligenceGridView from "../../../../components/student-growth/Intellig
 import IntelligenceDetailModal from "../../../../components/student-growth/IntelligenceDetailModal";
 import TermBasedRatingChart from "../../../../components/student-growth/TermBasedRatingChart";
 import EducatorFeedbackDrawer from "../../../../components/student-growth/EducatorFeedbackDrawer";
-import StudentAttendanceDrawer from "../../../../components/student-growth/StudentAttendanceDrawer";
 
 const StudentGrowthMain = () => {
   const dispatch = useDispatch();
@@ -33,7 +32,6 @@ const StudentGrowthMain = () => {
   const [selectedIntelligenceForModal, setSelectedIntelligenceForModal] =
     useState(null);
   const [feedbackDrawerVisible, setFeedbackDrawerVisible] = useState(false);
-  const [attendanceDrawerVisible, setAttendanceDrawerVisible] = useState(false);
 
   // Get global state
   const { sessionData, selectedStudent } = useSelector((state) => state.app);
@@ -100,22 +98,6 @@ const StudentGrowthMain = () => {
     setFeedbackDrawerVisible(false);
   };
 
-  const handleAttendancePress = () => {
-    console.log("🎯 Opening Student Attendance drawer");
-    console.log("🎯 Selected student:", selectedStudent);
-    console.log("🎯 Student ID being passed:", selectedStudent?.id || 0);
-    console.log(
-      "🎯 Student name being passed:",
-      selectedStudent?.student_calling_name,
-    );
-    setAttendanceDrawerVisible(true);
-  };
-
-  const closeAttendanceDrawer = () => {
-    console.log("🎯 Closing Student Attendance drawer");
-    setAttendanceDrawerVisible(false);
-  };
-
   // Debug logging
   console.log(
     "📈 StudentGrowthMain - User category:",
@@ -165,33 +147,7 @@ const StudentGrowthMain = () => {
             <View style={styles.actionIconContainer}>
               <MaterialIcons name="feedback" size={20} color="#FFFFFF" />
             </View>
-            <Text style={styles.modernActionText}>Educator Feedbacks</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.modernActionButton, styles.secondaryModernAction]}
-            onPress={handleAttendancePress}
-          >
-            <View
-              style={[
-                styles.actionIconContainer,
-                styles.secondaryIconContainer,
-              ]}
-            >
-              <MaterialIcons
-                name="event-available"
-                size={20}
-                color={"maroon"}
-              />
-            </View>
-            <Text
-              style={[
-                styles.modernActionText,
-                styles.secondaryModernActionText,
-              ]}
-            >
-              View Attendance
-            </Text>
+            <Text style={styles.modernActionText}>All Educator Feedbacks</Text>
           </TouchableOpacity>
         </View>
 
@@ -256,14 +212,6 @@ const StudentGrowthMain = () => {
         studentId={selectedStudent?.id || 0}
         studentName={selectedStudent?.student_calling_name}
       />
-
-      {/* Student Attendance Drawer */}
-      <StudentAttendanceDrawer
-        visible={attendanceDrawerVisible}
-        onClose={closeAttendanceDrawer}
-        studentId={selectedStudent?.id || 0}
-        studentName={selectedStudent?.student_calling_name}
-      />
     </View>
   );
 };
@@ -278,14 +226,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   modernActionContainer: {
-    flexDirection: "row",
     paddingHorizontal: 16,
     paddingVertical: 8,
     paddingBottom: 70,
-    gap: 12,
   },
   modernActionButton: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

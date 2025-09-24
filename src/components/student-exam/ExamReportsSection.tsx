@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { StudentExamData } from "../../types/student-exam";
 
@@ -42,14 +37,18 @@ const ExamReportsSection: React.FC<ExamReportsSectionProps> = ({ data }) => {
           <View style={styles.overallStats}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Overall Grade</Text>
-              <Text style={styles.statValue}>{report.overall_grade || "N/A"}</Text>
+              <Text style={styles.statValue}>
+                {report.overall_grade || "N/A"}
+              </Text>
             </View>
-            
+
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Percentage</Text>
-              <Text style={styles.statValue}>{report.overall_percentage || 0}%</Text>
+              <Text style={styles.statValue}>
+                {report.overall_percentage || 0}%
+              </Text>
             </View>
-            
+
             {report.overall_rank > 0 && (
               <View style={styles.statItem}>
                 <Text style={styles.statLabel}>Rank</Text>
@@ -84,7 +83,9 @@ const ExamReportsSection: React.FC<ExamReportsSectionProps> = ({ data }) => {
           {report.principal_comments && (
             <View style={styles.commentsSection}>
               <Text style={styles.commentsTitle}>Principal Comments:</Text>
-              <Text style={styles.commentsText}>{report.principal_comments}</Text>
+              <Text style={styles.commentsText}>
+                {report.principal_comments}
+              </Text>
             </View>
           )}
 
@@ -104,7 +105,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  
+
   emptyContainer: {
     flex: 1,
     alignItems: "center",

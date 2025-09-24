@@ -122,7 +122,10 @@ const StudentExamDrawer: React.FC<ExamDrawerProps> = ({
         <View style={styles.centerContainer}>
           <MaterialIcons name="error-outline" size={48} color="#FF3B30" />
           <Text style={styles.errorText}>Failed to load exam data</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => refetch()}
+          >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -149,10 +152,12 @@ const StudentExamDrawer: React.FC<ExamDrawerProps> = ({
               Total Exams: {examData.data.student_exam_marks?.length || 0}
             </Text>
             <Text style={styles.overviewText}>
-              Total Subjects: {examData.data.student_exam_subject_marks?.length || 0}
+              Total Subjects:{" "}
+              {examData.data.student_exam_subject_marks?.length || 0}
             </Text>
             <Text style={styles.overviewText}>
-              Reports Available: {examData.data.student_exam_reports?.length || 0}
+              Reports Available:{" "}
+              {examData.data.student_exam_reports?.length || 0}
             </Text>
           </View>
         );

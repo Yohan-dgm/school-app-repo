@@ -5,6 +5,7 @@ import {
   Dimensions,
   Text,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import IntelligenceCard from "./IntelligenceCard";
 import IntelligenceGridFilter from "./IntelligenceGridFilter";
@@ -33,7 +34,7 @@ const IntelligenceGridView: React.FC<IntelligenceGridViewProps> = ({
   onCardSelect,
   studentId,
 }) => {
-  const [selectedFilter, setSelectedFilter] = useState("current-year");
+  const [selectedFilter, setSelectedFilter] = useState("all");
   const [chartDrawerVisible, setChartDrawerVisible] = useState(false);
 
   // Transform filter to API parameters
@@ -137,10 +138,18 @@ const IntelligenceGridView: React.FC<IntelligenceGridViewProps> = ({
     setChartDrawerVisible(false);
   }, []);
 
-  const handleFilterChange = useCallback((filterId: string) => {
-    setSelectedFilter(filterId);
-    console.log("📊 Intelligence Grid Filter changed to:", filterId);
-  }, []);
+  const handleFilterChange = useCallback(
+    (filterId: string, actualValue?: string) => {
+      setSelectedFilter(filterId);
+      console.log(
+        "📊 Intelligence Grid Filter changed to:",
+        filterId,
+        "| Backend value:",
+        actualValue,
+      );
+    },
+    [],
+  );
 
   // Split cards into rows of 3 with center alignment for last row
   const getCardRows = () => {
@@ -306,11 +315,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 10,
     alignItems: "center",
-    shadowColor: maroonTheme.primary,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: maroonTheme.primary,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.15,
+        shadowRadius: 24,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
   gridContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.02)",
@@ -318,13 +333,19 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
     position: "relative",
     overflow: "hidden",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
   cardRow: {
     flexDirection: "row",

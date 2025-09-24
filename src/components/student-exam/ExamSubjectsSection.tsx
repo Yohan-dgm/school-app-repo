@@ -55,10 +55,13 @@ const ExamSubjectsSection: React.FC<ExamSubjectsSectionProps> = ({ data }) => {
                 {subjectMark.subject?.subject_code || "N/A"}
               </Text>
             </View>
-            <View style={[styles.gradeContainer, { backgroundColor: getGradeColor(subjectMark.grade) }]}>
-              <Text style={styles.gradeText}>
-                {subjectMark.grade || "N/A"}
-              </Text>
+            <View
+              style={[
+                styles.gradeContainer,
+                { backgroundColor: getGradeColor(subjectMark.grade) },
+              ]}
+            >
+              <Text style={styles.gradeText}>{subjectMark.grade || "N/A"}</Text>
             </View>
           </View>
 
@@ -66,32 +69,34 @@ const ExamSubjectsSection: React.FC<ExamSubjectsSectionProps> = ({ data }) => {
             <View style={styles.markItem}>
               <Text style={styles.markLabel}>Marks Obtained</Text>
               <Text style={styles.markValue}>
-                {subjectMark.marks_obtained || 0} / {subjectMark.total_marks || 0}
+                {subjectMark.marks_obtained || 0} /{" "}
+                {subjectMark.total_marks || 0}
               </Text>
             </View>
-            
+
             <View style={styles.markItem}>
               <Text style={styles.markLabel}>Percentage</Text>
               <Text style={styles.markValue}>
                 {subjectMark.percentage || 0}%
               </Text>
             </View>
-            
+
             {subjectMark.rank > 0 && (
               <View style={styles.markItem}>
                 <Text style={styles.markLabel}>Rank</Text>
-                <Text style={styles.markValue}>
-                  #{subjectMark.rank}
-                </Text>
+                <Text style={styles.markValue}>#{subjectMark.rank}</Text>
               </View>
             )}
           </View>
 
           {subjectMark.exam && (
             <View style={styles.examInfo}>
-              <Text style={styles.examLabel}>Exam: {subjectMark.exam.exam_name}</Text>
+              <Text style={styles.examLabel}>
+                Exam: {subjectMark.exam.exam_name}
+              </Text>
               <Text style={styles.examDate}>
-                Date: {new Date(subjectMark.exam.exam_date).toLocaleDateString()}
+                Date:{" "}
+                {new Date(subjectMark.exam.exam_date).toLocaleDateString()}
               </Text>
             </View>
           )}
@@ -105,7 +110,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  
+
   emptyContainer: {
     flex: 1,
     alignItems: "center",

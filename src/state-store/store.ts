@@ -1,6 +1,7 @@
 import { apiServer1 } from "../api/api-server-1";
 import { apiService } from "../services/api/ApiService";
 import { studentExamApi } from "../api/student-exam-api";
+import { studentExamReportApi } from "../api/student-exam-report-api";
 import appSlice from "./slices/app-slice";
 import schoolPostsSlice from "./slices/school-life/school-posts-slice";
 import classPostsSlice from "./slices/school-life/class-posts-slice";
@@ -13,6 +14,7 @@ import studentAnalysisSlice from "./slices/educator/studentAnalysisSlice";
 import paymentSlice from "./slices/payment/paymentSlice";
 import { userPostsMiddleware } from "./middleware/user-posts-middleware";
 import { studentSelectionMiddleware } from "./middleware/student-selection-middleware";
+import { authResponseLogger } from "./middleware/auth-response-logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Middleware, MiddlewareAPI } from "@reduxjs/toolkit";
 import {
@@ -26,6 +28,7 @@ import {
   PAUSE,
   PERSIST,
   persistReducer,
+  persistStore,
   PURGE,
   REGISTER,
   REHYDRATE,
@@ -33,13 +36,21 @@ import {
 
 const persistConfig = {
   key: "root",
-  version: 1,
+  version: 2, // Increment version to trigger migration
   storage: AsyncStorage,
   blacklist: [
     apiServer1.reducerPath,
     apiService.reducerPath,
     studentExamApi.reducerPath,
+    studentExamReportApi.reducerPath,
   ], // these reduce will not persist data (NOTE: blacklist rtk api slices so that to use tags)
+  migrate: (state: any) => {
+    // Handle calendar slice migration
+    if (state && state.calendar && !state.calendar.lastFetched) {
+      state.calendar.lastFetched = null;
+    }
+    return Promise.resolve(state);
+  },
   // whitelist: ['users'], //these reduce will persist data
 };
 
@@ -60,12 +71,12 @@ export const rtkQueryErrorLogger: Middleware =
     if (isRejectedWithValue(action)) {
       // Check if this is an authentication error
       const isAuthError =
-        action.meta?.arg?.endpointName === "loginUser" ||
-        action.meta?.baseQueryMeta?.request?.url?.includes("sign-in");
+        (action.meta as any)?.arg?.endpointName === "loginUser" ||
+        (action.meta as any)?.baseQueryMeta?.request?.url?.includes("sign-in");
 
       if (!isAuthError) {
         console.log("isRejectedWithValue", action.error, action.payload);
-        alert(JSON.stringify(action)); // This is just an example. You can replace it with your preferred method for displaying notifications.
+        // alert(JSON.stringify(action)); // This is just an example. You can replace it with your preferred method for displaying notifications.
       }
     }
     return next(action);
@@ -78,6 +89,7 @@ const rootReducer = combineReducers({
   apiServer1: apiServer1.reducer,
   [apiService.reducerPath]: apiService.reducer,
   [studentExamApi.reducerPath]: studentExamApi.reducer,
+  [studentExamReportApi.reducerPath]: studentExamReportApi.reducer,
   schoolPosts: schoolPostsSlice,
   classPosts: classPostsSlice,
   studentPosts: studentPostsSlice,
@@ -100,24 +112,44 @@ const store = configureStore({
   // and other useful features of `rtk-query`.
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
+      // Configure serializable check for redux-persist
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
+        warnAfter: 128, // Increase from default 32ms to 128ms
+      },
+      // Configure immutable state check for performance
+      immutableCheck: {
+        warnAfter: 128, // Increase threshold from 32ms to 128ms
+        // Ignore specific state paths that are known to be large
+        ignoredPaths: [
+          "apiServer1",
+          "apiService",
+          "studentExamApi",
+          "studentExamReportApi",
+          "calendar.allEvents", // Ignore calendar events array for performance
+        ],
       },
     }).concat(
       apiServer1.middleware,
       apiService.middleware,
       studentExamApi.middleware,
+      studentExamReportApi.middleware,
       rtkQueryErrorLogger,
       userPostsMiddleware,
       studentSelectionMiddleware,
+      authResponseLogger,
     ),
   enhancers: getEnhancers,
 });
 
 setupListeners(store.dispatch);
 
+// Create persistor for external use in middleware
+const persistor = persistStore(store);
+
 // Export types
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
 export default store;
+export { persistor };

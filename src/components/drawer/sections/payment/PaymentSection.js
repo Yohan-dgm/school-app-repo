@@ -134,11 +134,11 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Overall Total Summary */}
-        <OverallTotalSummary
+        {/* Overall Total Summary - Hidden as per requirements */}
+        {/* <OverallTotalSummary
           summary={overallTotalSummary}
           studentCount={sessionStudents.length}
-        />
+        /> */}
 
         {/* Students List */}
         <View style={styles.studentsSection}>

@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { modernTheme } from '../../styles/modernTheme';
+import React, { useEffect, useRef } from "react";
+import { View, Text, StyleSheet, Animated } from "react-native";
+import Svg, { Circle, Defs, LinearGradient, Stop } from "react-native-svg";
+import { modernTheme } from "../../styles/modernTheme";
 
 interface PerformanceRingProps {
   percentage: number;
@@ -19,7 +19,7 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
   size = 80,
   strokeWidth = 8,
   showLabel = true,
-  label = 'Performance',
+  label = "Performance",
   color,
   delay = 0,
   animated = true,
@@ -30,7 +30,7 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
 
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  
+
   // Determine color based on performance
   const getPerformanceColor = () => {
     if (color) return color;
@@ -66,7 +66,7 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
           }),
         ]).start();
       }, delay);
-      
+
       return () => clearTimeout(timer);
     } else {
       scale.setValue(1);
@@ -90,10 +90,14 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
           <Defs>
             <LinearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
               <Stop offset="0%" stopColor={performanceColor} stopOpacity="1" />
-              <Stop offset="100%" stopColor={performanceColor} stopOpacity="0.6" />
+              <Stop
+                offset="100%"
+                stopColor={performanceColor}
+                stopOpacity="0.6"
+              />
             </LinearGradient>
           </Defs>
-          
+
           {/* Background circle */}
           <Circle
             cx={size / 2}
@@ -103,7 +107,7 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
             strokeWidth={strokeWidth}
             fill="transparent"
           />
-          
+
           {/* Progress circle */}
           <Circle
             cx={size / 2}
@@ -119,7 +123,7 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
             origin={`${size / 2}, ${size / 2}`}
           />
         </Svg>
-        
+
         {/* Center content */}
         <View style={styles.centerContent}>
           <Animated.Text style={[styles.percentage, { opacity }]}>
@@ -138,32 +142,32 @@ export const PerformanceRing: React.FC<PerformanceRingProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   ring: {
-    position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
   },
   svg: {
-    position: 'absolute',
+    position: "absolute",
   },
   centerContent: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
   },
   percentage: {
     fontSize: modernTheme.fontSizes.title,
     fontFamily: modernTheme.fonts.heading,
     color: modernTheme.colors.text,
-    textAlign: 'center',
+    textAlign: "center",
   },
   label: {
     fontSize: modernTheme.fontSizes.small,
     fontFamily: modernTheme.fonts.caption,
     color: modernTheme.colors.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 2,
     maxWidth: 60,
   },

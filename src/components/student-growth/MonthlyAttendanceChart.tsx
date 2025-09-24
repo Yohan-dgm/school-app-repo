@@ -10,8 +10,8 @@ interface AttendanceRecord {
   id: number;
   date: string;
   attendance_type_id: number;
-  in_time: string | null;
-  out_time: string | null;
+  in_time?: string | null;
+  out_time?: string | null;
   notes: string | null;
 }
 
@@ -32,8 +32,19 @@ const MonthlyAttendanceChart: React.FC<MonthlyAttendanceChartProps> = ({
   attendanceRecords,
 }) => {
   const scrollViewRef = useRef<ScrollView>(null);
-  // Process data to get monthly statistics for chart-kit format
+  // Process data to get monthly statistics for chart-kit format - only real database records
   const getChartData = () => {
+    // Return empty data if no attendance records exist
+    if (!attendanceRecords || attendanceRecords.length === 0) {
+      return {
+        chartData: {
+          labels: [],
+          datasets: [{ data: [], strokeWidth: 3 }],
+        },
+        monthlyStats: [],
+      };
+    }
+
     const months = [
       { month: 1, shortName: "Jan" },
       { month: 2, shortName: "Feb" },
@@ -55,7 +66,7 @@ const MonthlyAttendanceChart: React.FC<MonthlyAttendanceChartProps> = ({
     const monthlyStats: MonthlyStats[] = [];
 
     months.forEach(({ month, shortName }) => {
-      // Filter records for this month and year
+      // Filter records for this month and year - only real database records
       const monthRecords = attendanceRecords.filter((record) => {
         // Parse date string directly to avoid timezone issues
         const [year, monthStr] = record.date.split("-").map(Number);
@@ -65,11 +76,14 @@ const MonthlyAttendanceChart: React.FC<MonthlyAttendanceChartProps> = ({
       const presentCount = monthRecords.filter(
         (r) => r.attendance_type_id === 1,
       ).length;
-      const totalCount = monthRecords.length;
+      const absentCount = monthRecords.filter(
+        (r) => r.attendance_type_id === 4, // Updated: 4 means absent, not 3
+      ).length;
+      const totalCount = presentCount + absentCount; // Only count present and absent (exclude type 2)
       const attendanceRate =
         totalCount > 0 ? (presentCount / totalCount) * 100 : 0;
 
-      // Only include months that have attendance data
+      // Only include months that have actual attendance data from database
       if (totalCount > 0) {
         labels.push(shortName);
         data.push(presentCount);
@@ -241,7 +255,12 @@ const MonthlyAttendanceChart: React.FC<MonthlyAttendanceChartProps> = ({
     }
   }, [chartData.labels.length]);
 
-  if (attendanceRecords.length === 0) {
+  // Show empty state if no attendance records or no chart data
+  if (
+    !attendanceRecords ||
+    attendanceRecords.length === 0 ||
+    chartData.labels.length === 0
+  ) {
     return (
       <View style={styles.emptyContainer}>
         <MaterialIcons
@@ -251,6 +270,9 @@ const MonthlyAttendanceChart: React.FC<MonthlyAttendanceChartProps> = ({
         />
         <Text style={styles.emptyText}>
           No attendance data available for chart
+        </Text>
+        <Text style={styles.emptySubtext}>
+          Chart will appear when attendance records are added to the system
         </Text>
       </View>
     );
@@ -485,6 +507,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: feedbackCardTheme.grayMedium,
     textAlign: "center",
+    fontWeight: "500",
+  },
+  emptySubtext: {
+    marginTop: 4,
+    fontSize: 11,
+    color: feedbackCardTheme.grayMedium,
+    textAlign: "center",
+    fontStyle: "italic",
   },
 });
 

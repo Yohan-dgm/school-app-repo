@@ -15,7 +15,6 @@ import { Picker } from "@react-native-picker/picker";
 import FullScreenModal from "../components/FullScreenModal";
 import {
   useGetStudentAttendanceAggregatedQuery,
-  useGetAttendanceAggregatedQuery,
   createAttendanceQueryParams,
   getTotalStudentsCount,
   getAttendancePercentage,
@@ -52,6 +51,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState("");
   const [selectedGradeLevelClassName, setSelectedGradeLevelClassName] =
     useState("");
+  const [selectedGradeLevelClassId, setSelectedGradeLevelClassId] = useState(0);
 
   // Add attendance modal state
   const [addAttendanceModalVisible, setAddAttendanceModalVisible] =
@@ -76,6 +76,13 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       searchPhrase,
       selectedGradeFilter,
       queryParams,
+    });
+    console.log("📋 IMPORTANT - API Request Parameters:", {
+      page: queryParams.page,
+      page_size: queryParams.page_size,
+      group_filter: queryParams.group_filter,
+      search_phrase: queryParams.search_phrase,
+      search_filter_list: queryParams.search_filter_list,
     });
     console.log("=".repeat(70) + "\n");
   }, [currentPage, pageSize, searchPhrase, selectedGradeFilter, queryParams]);
@@ -113,11 +120,33 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         totalRecords: attendanceData.data?.total || 0,
         totalPages: Math.ceil((attendanceData.data?.total || 0) / pageSize),
         currentPage,
+        requestedPageSize: pageSize,
+        actualRecordsReceived: attendanceData.data?.data?.length || 0,
         studentAttendanceCount:
           attendanceData.data?.student_attendance_count || 0,
         gradeClassesAvailable:
           attendanceData.data?.grade_level_class_list?.length || 0,
       });
+
+      console.log("🚨 PAGINATION CHECK:");
+      console.log({
+        "Requested page_size": pageSize,
+        "Actual records returned": attendanceData.data?.data?.length || 0,
+        "Records we'll display": Math.min(
+          attendanceData.data?.data?.length || 0,
+          pageSize,
+        ),
+        "Are they equal?":
+          (attendanceData.data?.data?.length || 0) === pageSize,
+        "Backend might be ignoring page_size":
+          (attendanceData.data?.data?.length || 0) > pageSize,
+      });
+
+      if ((attendanceData.data?.data?.length || 0) > pageSize) {
+        console.warn(
+          `🚨 WARNING: Backend returned ${attendanceData.data?.data?.length} records but we requested ${pageSize}. Using client-side slice to show only ${pageSize} records.`,
+        );
+      }
 
       if (attendanceData.data?.data && attendanceData.data.data.length > 0) {
         console.log("\n📋 Attendance Records in Modal:");
@@ -196,7 +225,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     error,
     isLoading,
     isFetching,
-  } = useGetAttendanceAggregatedQuery(queryParams);
+  } = useGetStudentAttendanceAggregatedQuery(queryParams);
 
   // API query for chart data (all records)
   const chartQueryParams = createAttendanceQueryParams(
@@ -207,7 +236,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   );
 
   const { data: chartData, isLoading: chartLoading } =
-    useGetAttendanceAggregatedQuery(chartQueryParams);
+    useGetStudentAttendanceAggregatedQuery(chartQueryParams);
 
   // Reset page when filters change
   useEffect(() => {
@@ -238,23 +267,22 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     setSearchPhrase(text);
   };
 
-  // Handle pagination (jumps by 2 pages = 20 records at a time)
+  // Handle pagination (jumps by 1 page = 10 records at a time)
   const handlePageChange = (direction: "next" | "previous") => {
-    const jump = 2; // 2 pages = 20 records
     let newPage: number;
 
     if (direction === "next") {
-      newPage = Math.min(currentPage + jump, totalPages);
+      newPage = Math.min(currentPage + 1, totalPages);
     } else {
-      newPage = Math.max(currentPage - jump, 1);
+      newPage = Math.max(currentPage - 1, 1);
     }
 
-    console.log("\n📄 PAGE CHANGED (20 records jump):");
+    console.log("\n📄 PAGE CHANGED (10 records jump):");
     console.log({
       previousPage: currentPage,
       newPage: newPage,
       direction: direction,
-      recordsJump: jump * pageSize,
+      recordsJump: pageSize,
       totalPages: totalPages,
       totalRecords: attendanceData?.data.total || 0,
       pageSize: pageSize,
@@ -271,6 +299,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       date: record.date,
       formattedDate: formatAttendanceDate(record.date),
       gradeClass: record.grade_level_class.name,
+      gradeLevelClassId: record.grade_level_class.id,
       presentCount: record.present_student_count,
       absentCount: record.absent_student_count,
       totalStudents: getTotalStudentsCount(record),
@@ -280,6 +309,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     });
     setSelectedAttendanceDate(record.date);
     setSelectedGradeLevelClassName(record.grade_level_class.name);
+    setSelectedGradeLevelClassId(record.grade_level_class.id || 0);
     setDetailsModalVisible(true);
   };
 
@@ -318,7 +348,9 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
   // Calculate pagination info
   const totalRecords = attendanceData?.data.total || 0;
-  const currentRecords = attendanceData?.data.data?.length || 0;
+  const rawCurrentRecords = attendanceData?.data.data?.length || 0;
+  // Ensure we don't show more records than requested page size
+  const currentRecords = Math.min(rawCurrentRecords, pageSize);
   const totalPages = Math.ceil(totalRecords / pageSize);
   const startRecord = totalRecords > 0 ? (currentPage - 1) * pageSize + 1 : 0;
   const endRecord =
@@ -356,16 +388,18 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   ]);
 
   // Render attendance record item
-  const renderAttendanceRecord = (record: AttendanceRecord) => {
+  const renderAttendanceRecord = (record: AttendanceRecord, index: number) => {
     const totalStudents = getTotalStudentsCount(record);
     const attendancePercentage = getAttendancePercentage(record);
 
+    // Create a unique key using multiple fields to ensure uniqueness
+    const uniqueKey = `${record.id}-${record.date}-${record.grade_level_class.id || record.grade_level_class.name}-${index}`;
+
     return (
       <TouchableOpacity
-        key={record.id}
+        key={uniqueKey}
         style={styles.recordCard}
-        // onPress={() => handleAttendanceRecordClick(record)}
-        // onPress={""}
+        onPress={() => handleAttendanceRecordClick(record)}
         activeOpacity={0.7}
       >
         <View style={styles.recordHeader}>
@@ -595,7 +629,10 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
           <View style={styles.recordsList}>
             {attendanceData?.data?.data &&
             attendanceData.data.data.length > 0 ? (
-              attendanceData.data.data.map(renderAttendanceRecord)
+              // Ensure we only show the requested page size (10 records max)
+              attendanceData.data.data
+                .slice(0, pageSize)
+                .map((record, index) => renderAttendanceRecord(record, index))
             ) : (
               <View style={styles.noDataContainer}>
                 <MaterialIcons name="event-busy" size={64} color="#999" />
@@ -613,52 +650,55 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.paginationButton,
-                  currentPage <= 2 && styles.disabledButton,
+                  currentPage <= 1 && styles.disabledButton,
                 ]}
                 onPress={() => handlePageChange("previous")}
-                disabled={currentPage <= 2}
+                disabled={currentPage <= 1}
               >
                 <MaterialIcons
                   name="chevron-left"
                   size={20}
-                  color={currentPage <= 2 ? "#999" : "#920734"}
+                  color={currentPage <= 1 ? "#999" : "#920734"}
                 />
                 <Text
                   style={[
                     styles.paginationText,
-                    currentPage <= 2 && styles.disabledText,
+                    currentPage <= 1 && styles.disabledText,
                   ]}
                 >
-                  Previous 20
+                  Previous
                 </Text>
               </TouchableOpacity>
 
               <View style={styles.pageInfo}>
                 <Text style={styles.pageText}>
-                  Records {startRecord}-{endRecord} of {totalRecords}
+                  Page {currentPage} of {totalPages}
+                </Text>
+                <Text style={styles.recordsText}>
+                  {startRecord}-{endRecord} of {totalRecords} records
                 </Text>
               </View>
 
               <TouchableOpacity
                 style={[
                   styles.paginationButton,
-                  currentPage >= totalPages - 1 && styles.disabledButton,
+                  currentPage >= totalPages && styles.disabledButton,
                 ]}
                 onPress={() => handlePageChange("next")}
-                disabled={currentPage >= totalPages - 1}
+                disabled={currentPage >= totalPages}
               >
                 <Text
                   style={[
                     styles.paginationText,
-                    currentPage >= totalPages - 1 && styles.disabledText,
+                    currentPage >= totalPages && styles.disabledText,
                   ]}
                 >
-                  Next 20
+                  Next
                 </Text>
                 <MaterialIcons
                   name="chevron-right"
                   size={20}
-                  color={currentPage >= totalPages - 1 ? "#999" : "#920734"}
+                  color={currentPage >= totalPages ? "#999" : "#920734"}
                 />
               </TouchableOpacity>
             </View>
@@ -671,6 +711,7 @@ const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         visible={detailsModalVisible}
         onClose={handleDetailsModalClose}
         attendanceDate={selectedAttendanceDate}
+        gradeLevelClassId={selectedGradeLevelClassId}
         gradeLevelClassName={selectedGradeLevelClassName}
       />
 
@@ -953,6 +994,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#333",
   },
+  recordsText: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
+  },
   addButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -968,37 +1014,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     marginLeft: 4,
-  },
-
-  // New styles for grade level display and record header
-  recordHeaderLeft: {
-    flex: 1,
-    gap: 8,
-  },
-  dateContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  dateText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  gradeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(146, 7, 52, 0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    alignSelf: "flex-start",
-  },
-  gradeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#920734",
   },
 });
 

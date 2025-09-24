@@ -29,6 +29,7 @@ import {
 
 import {
   getUserCategoryDisplayName,
+  getUserCategoryId,
   USER_CATEGORIES,
 } from "../../constants/userCategories";
 import NotificationDetailsModal from "./NotificationDetailsModal";
@@ -103,6 +104,9 @@ export default function UniversalNotificationSystem({
       );
     },
   };
+
+  // Convert string userCategory to number for permission checks
+  const userCategoryNumber = getUserCategoryId(userCategory);
 
   // Permission check for announcement creation
   const canCreateAnnouncements = (userCategoryNum: number): boolean => {
@@ -770,15 +774,15 @@ export default function UniversalNotificationSystem({
 
           <View style={styles.headerRight}>
             {/* Announcement Create Button - for authorized users only */}
-            {/* {canCreateAnnouncements(parseInt(userCategory)) && ( */}
-            <TouchableOpacity
-              style={styles.createAnnouncementButton}
-              onPress={() => setShowAnnouncementModal(true)}
-            >
-              <MaterialIcons name="campaign" size={18} color="#ffffff" />
-              <Text style={styles.createButtonText}>Announcement</Text>
-            </TouchableOpacity>
-            {/* )} */}
+            {canCreateAnnouncements(userCategoryNumber) && (
+              <TouchableOpacity
+                style={styles.createAnnouncementButton}
+                onPress={() => setShowAnnouncementModal(true)}
+              >
+                <MaterialIcons name="campaign" size={18} color="#ffffff" />
+                <Text style={styles.createButtonText}>Announcement</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Developer tools button hidden per user request */}
             {/* <TouchableOpacity 

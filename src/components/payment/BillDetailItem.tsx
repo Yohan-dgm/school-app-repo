@@ -213,10 +213,10 @@ const BillDetailItem: React.FC<BillDetailItemProps> = ({ bill, billType }) => {
           <MaterialIcons name="receipt" size={16} color="#666666" />
           <Text style={styles.billTitle}>{getBillTitle()}</Text>
         </View>
-        <View style={styles.statusBadge}>
+        {/* <View style={styles.statusBadge}>
           <MaterialIcons name="check-circle" size={12} color="#4CAF50" />
           <Text style={styles.statusText}>PAID</Text>
-        </View>
+        </View> */}
       </View>
 
       {/* Serial Number Display */}
@@ -283,18 +283,18 @@ const BillDetailItem: React.FC<BillDetailItemProps> = ({ bill, billType }) => {
 
       <View style={styles.amountSection}>
         <View style={styles.netAmountRow}>
-          <Text style={styles.netAmountLabel}>Amount Paid</Text>
+          <Text style={styles.netAmountLabel}>Invoice Total</Text>
           <Text style={styles.netAmount}>{formatAmount(netAmount)}</Text>
         </View>
 
         {parseFloat(grossAmount || "0") !== parseFloat(netAmount || "0") && (
           <View style={styles.breakdownSection}>
-            <View style={styles.breakdownRow}>
+            {/* <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Gross Amount</Text>
               <Text style={styles.breakdownValue}>
                 {formatAmount(grossAmount)}
               </Text>
-            </View>
+            </View> */}
             {parseFloat(discount || "0") > 0 && (
               <View style={styles.breakdownRow}>
                 <Text style={styles.breakdownLabel}>Discount</Text>

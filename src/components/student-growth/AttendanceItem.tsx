@@ -46,38 +46,83 @@ const AttendanceItem: React.FC<AttendanceItemProps> = ({
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
-  // Helper functions
-  const getAttendanceStatus = (typeId: number) => {
-    switch (typeId) {
-      case 1:
-        return "Present";
-      case 3:
-        return "Absent";
-      default:
-        return "Unknown";
+  // Helper functions - API now provides status directly
+  const getAttendanceStatus = (record: any) => {
+    // Use the status field from API directly
+    if (record.status === "absent") {
+      return "Absent";
     }
+    if (record.status === "late") {
+      return "Late";
+    }
+    if (record.status === "present") {
+      return "Present";
+    }
+
+    // Fallback to old logic if status field is not available
+    if (record.attendance_type_id === 4) {
+      return "Absent";
+    }
+    if (record.attendance_type_id === 3) {
+      return "Late";
+    }
+    if (record.attendance_type_id === 1) {
+      return "Present";
+    }
+
+    return "Unknown";
   };
 
-  const getStatusColor = (typeId: number) => {
-    switch (typeId) {
-      case 1:
-        return feedbackCardTheme.success; // Green for Present
-      case 3:
-        return feedbackCardTheme.error; // Red for Absent
-      default:
-        return feedbackCardTheme.grayMedium;
+  const getStatusColor = (record: any) => {
+    // Use the status field from API directly
+    if (record.status === "absent") {
+      return feedbackCardTheme.error; // Red for Absent
     }
+    if (record.status === "late") {
+      return "#FF9800"; // Orange for Late
+    }
+    if (record.status === "present") {
+      return feedbackCardTheme.success; // Green for Present
+    }
+
+    // Fallback to old logic if status field is not available
+    if (record.attendance_type_id === 4) {
+      return feedbackCardTheme.error; // Red for Absent
+    }
+    if (record.attendance_type_id === 3) {
+      return "#FF9800"; // Orange for Late
+    }
+    if (record.attendance_type_id === 1) {
+      return feedbackCardTheme.success; // Green for Present
+    }
+
+    return feedbackCardTheme.grayMedium;
   };
 
-  const getStatusIcon = (typeId: number) => {
-    switch (typeId) {
-      case 1:
-        return "check-circle";
-      case 3:
-        return "cancel";
-      default:
-        return "help-outline";
+  const getStatusIcon = (record: any) => {
+    // Use the status field from API directly
+    if (record.status === "absent") {
+      return "cancel"; // Absent
     }
+    if (record.status === "late") {
+      return "schedule"; // Late
+    }
+    if (record.status === "present") {
+      return "check-circle"; // Present
+    }
+
+    // Fallback to old logic if status field is not available
+    if (record.attendance_type_id === 4) {
+      return "cancel"; // Absent
+    }
+    if (record.attendance_type_id === 3) {
+      return "schedule"; // Late
+    }
+    if (record.attendance_type_id === 1) {
+      return "check-circle"; // Present
+    }
+
+    return "help-outline";
   };
 
   const formatDate = (dateString: string) => {
@@ -109,9 +154,17 @@ const AttendanceItem: React.FC<AttendanceItemProps> = ({
     }
   };
 
-  // Simplified attendance logic
-  const isPresent = attendance.attendance_type_id === 1;
-  const isAbsent = attendance.attendance_type_id === 3;
+  // Attendance logic based on API status field
+  const isAbsent =
+    attendance.status === "absent" || attendance.attendance_type_id === 4;
+  const isLate =
+    attendance.status === "late" || attendance.attendance_type_id === 3;
+  const isPresent =
+    attendance.status === "present" || attendance.attendance_type_id === 1;
+
+  // Check what time data we have
+  const hasInTime = !!attendance.in_time;
+  const hasOutTime = !!attendance.out_time;
 
   // Animation effects
   useEffect(() => {
@@ -160,9 +213,9 @@ const AttendanceItem: React.FC<AttendanceItemProps> = ({
     if (onPress) onPress();
   };
 
-  const statusColor = getStatusColor(attendance.attendance_type_id);
-  const statusIcon = getStatusIcon(attendance.attendance_type_id);
-  const statusText = getAttendanceStatus(attendance.attendance_type_id);
+  const statusColor = getStatusColor(attendance);
+  const statusIcon = getStatusIcon(attendance);
+  const statusText = getAttendanceStatus(attendance);
 
   return (
     <Animated.View
@@ -197,31 +250,38 @@ const AttendanceItem: React.FC<AttendanceItemProps> = ({
               </View>
             </View>
 
-            {/* Times (only for present) */}
+            {/* Times - display for present students */}
             {isPresent && (
               <View style={styles.timesContainer}>
-                <View style={styles.timeRow}>
-                  <MaterialIcons
-                    name="login"
-                    size={14}
-                    color={feedbackCardTheme.success}
-                  />
-                  <Text style={styles.timeText}>
-                    {formatTime(attendance.in_time)}
-                  </Text>
-                </View>
-                <View style={styles.timeRow}>
-                  <MaterialIcons name="logout" size={14} color="#2196F3" />
-                  <Text style={styles.timeText}>
-                    {formatTime(attendance.out_time)}
-                  </Text>
-                </View>
+                {/* Show in_time if available */}
+                {hasInTime && (
+                  <View style={styles.timeRow}>
+                    <MaterialIcons
+                      name="login"
+                      size={14}
+                      color={feedbackCardTheme.success}
+                    />
+                    <Text style={styles.timeText}>
+                      {formatTime(attendance.in_time)}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Show out_time if available */}
+                {hasOutTime && (
+                  <View style={styles.timeRow}>
+                    <MaterialIcons name="logout" size={14} color="#2196F3" />
+                    <Text style={styles.timeText}>
+                      {formatTime(attendance.out_time)}
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
 
-          {/* Notes for absent days */}
-          {isAbsent && attendance.notes && (
+          {/* Notes for absent days or late attendance */}
+          {(isAbsent || isLate) && attendance.notes && (
             <View style={styles.notesContainer}>
               <Text style={styles.notesText}>{attendance.notes}</Text>
             </View>

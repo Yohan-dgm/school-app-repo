@@ -1,23 +1,23 @@
-import React, { useEffect } from 'react';
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
-} from 'react-native';
+} from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
   interpolate,
-} from 'react-native-reanimated';
-import { MaterialIcons } from '@expo/vector-icons';
-import LinearGradient from 'react-native-linear-gradient';
-import { modernTheme } from '../../styles/modernTheme';
+} from "react-native-reanimated";
+import { MaterialIcons } from "@expo/vector-icons";
+import LinearGradient from "react-native-linear-gradient";
+import { modernTheme } from "../../styles/modernTheme";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 interface Tab {
   id: string;
@@ -42,7 +42,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   const tabWidth = (width - 48) / tabs.length; // 48 for padding
 
   useEffect(() => {
-    const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
+    const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
     indicatorPosition.value = withSpring(activeIndex * tabWidth, {
       damping: 15,
       stiffness: 100,
@@ -94,15 +94,23 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             <MaterialIcons
               name={tab.icon}
               size={20}
-              color={isActive ? modernTheme.colors.primary : modernTheme.colors.textSecondary}
+              color={
+                isActive
+                  ? modernTheme.colors.primary
+                  : modernTheme.colors.textSecondary
+              }
             />
           </Animated.View>
           <Text
             style={[
               styles.tabLabel,
               {
-                color: isActive ? modernTheme.colors.primary : modernTheme.colors.textSecondary,
-                fontFamily: isActive ? modernTheme.fonts.title : modernTheme.fonts.body,
+                color: isActive
+                  ? modernTheme.colors.primary
+                  : modernTheme.colors.textSecondary,
+                fontFamily: isActive
+                  ? modernTheme.fonts.title
+                  : modernTheme.fonts.body,
               },
             ]}
           >
@@ -117,9 +125,14 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
     <View style={[styles.container, style]}>
       <View style={styles.tabBar}>
         {/* Animated indicator */}
-        <Animated.View style={[styles.indicator, indicatorStyle, { width: tabWidth }]}>
+        <Animated.View
+          style={[styles.indicator, indicatorStyle, { width: tabWidth }]}
+        >
           <LinearGradient
-            colors={[modernTheme.colors.primary, modernTheme.colors.primaryLight]}
+            colors={[
+              modernTheme.colors.primary,
+              modernTheme.colors.primaryLight,
+            ]}
             style={styles.indicatorGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
@@ -144,15 +157,15 @@ const styles = StyleSheet.create({
     borderBottomColor: modernTheme.colors.border,
   },
   tabBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: modernTheme.colors.surface,
     borderRadius: modernTheme.borderRadius.xl,
     padding: 4,
-    position: 'relative',
+    position: "relative",
     ...modernTheme.shadows.md,
   },
   indicator: {
-    position: 'absolute',
+    position: "absolute",
     top: 4,
     height: 40,
     borderRadius: modernTheme.borderRadius.lg,
@@ -167,9 +180,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   tabTouchable: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: modernTheme.spacing.sm,
     paddingHorizontal: modernTheme.spacing.md,
     height: 40,
@@ -179,6 +192,6 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: modernTheme.fontSizes.caption,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });

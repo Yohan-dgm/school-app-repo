@@ -1,4 +1,3 @@
-import store from "@/state-store/store";
 import { apiServer1 } from "./api-server-1";
 export const userManagementApi = apiServer1
   .enhanceEndpoints({})
@@ -20,7 +19,39 @@ export const userManagementApi = apiServer1
           },
         }),
       }),
+      changePassword: build.mutation({
+        query: (payload: {
+          id: number;
+          current_password: string;
+          new_password: string;
+          confirm_password: string;
+        }) => ({
+          url: "api/user-management/user-profile/change-password",
+          method: "POST",
+          body: payload,
+        }),
+      }),
+      uploadProfilePhoto: build.mutation({
+        query: (formData: FormData) => ({
+          url: "api/user-management/user-profile/upload-profile-photo",
+          method: "POST",
+          body: formData,
+          // Global prepareHeaders in api-server-1.ts will handle FormData detection
+        }),
+      }),
+      getAppUpdateStatus: build.query({
+        query: () => ({
+          url: "api/user-management/user/get-app-update-status",
+          method: "POST",
+          body: {},
+        }),
+        providesTags: ["UserManagement"],
+      }),
     }),
   });
 
-export const {} = userManagementApi;
+export const {
+  useChangePasswordMutation,
+  useUploadProfilePhotoMutation,
+  useGetAppUpdateStatusQuery,
+} = userManagementApi;

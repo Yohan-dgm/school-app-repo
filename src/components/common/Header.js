@@ -20,33 +20,65 @@ import { useSelector, useDispatch } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
 import DrawerMenu from "./DrawerMenu";
-import StudentProfileModal from "../../screens/authenticated/parent/parent-student-profile/StudentProfileModal";
+import { StudentProfileModal } from "../../screens/authenticated/parent/parent-student-profile";
+import PaymentStatusOverlay from "./PaymentStatusOverlay";
+import AppVersionUpdateOverlay from "./AppVersionUpdateOverlay";
+import Constants from "expo-constants";
 import {
   USER_CATEGORIES,
   getUserCategoryDisplayName,
 } from "../../constants/userCategories";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { transformStudentWithProfilePicture } from "../../utils/studentProfileUtils";
+import {
+  transformStudentWithProfilePicture,
+  getLocalFallbackProfileImage,
+} from "../../utils/studentProfileUtils";
+import { buildUserProfileImageUrl } from "../../utils/mediaUtils";
 import {
   logout,
   setSessionData,
   setSelectedStudent,
+  setShowPaymentOverlay,
+  setAppVersionStatus,
+  setShowVersionUpdateOverlay,
 } from "../../state-store/slices/app-slice";
 import { useLoginUserMutation } from "../../api/auth-api";
 import { useGetNotificationsQuery } from "../../api/notifications";
+import { useGetAppUpdateStatusQuery } from "../../api/user-management-api";
 import { BaseNotification } from "../../types/notifications";
 import { useRouter, usePathname } from "expo-router";
+import { useSessionRefresh } from "../../hooks/useSessionRefresh";
 
 const { width } = Dimensions.get("window");
 
 const Header = () => {
   const { user } = useAuth();
   const { isDrawerOpen, openDrawer, closeDrawer } = useDrawer();
-  const { sessionData, selectedStudent } = useSelector((state) => state.app);
+  const {
+    sessionData,
+    selectedStudent,
+    user: reduxUser,
+    token,
+    showPaymentOverlay,
+    paymentStatus,
+    appVersionStatus,
+    showVersionUpdateOverlay,
+  } = useSelector((state) => state.app);
   const dispatch = useDispatch();
+
+  // Track notification error count to prevent excessive retries
+  const [notificationErrorCount, setNotificationErrorCount] = React.useState(0);
   const [loginUserTrigger] = useLoginUserMutation();
   const router = useRouter();
   const pathname = usePathname();
+
+  // Session refresh hook for automatic data updates
+  const { refreshSession, isLoading: sessionRefreshLoading } =
+    useSessionRefresh();
+
+  // App version checking
+  const currentAppVersion = Constants.expoConfig?.version || "1.0.0";
+  const currentPlatform = Platform.OS;
 
   // Get user category from session data
   const userCategory =
@@ -58,7 +90,7 @@ const Header = () => {
   const userToken = sessionData?.token || sessionData?.data?.token;
   const userId = sessionData?.data?.id || sessionData?.id;
 
-  // Notification API Integration
+  // Notification API Integration with improved error handling
   const {
     data: notificationsData,
     isLoading: notificationsLoading,
@@ -78,28 +110,187 @@ const Header = () => {
     },
     {
       skip: !userId || !userToken,
+      // Add retry configuration to handle server errors
+      refetchOnMountOrArgChange: 30, // Refetch if older than 30 seconds
+      refetchOnFocus: false, // Don't refetch on window focus to reduce API calls
+      refetchOnReconnect: true, // Refetch when network reconnects
     },
   );
 
+  // App version checking API call
+  const {
+    data: versionCheckData,
+    isLoading: versionCheckLoading,
+    error: versionCheckError,
+    refetch: refetchVersionCheck,
+  } = useGetAppUpdateStatusQuery(undefined, {
+    skip: !userId || !userToken,
+    refetchOnMountOrArgChange: 30,
+    refetchOnFocus: false,
+    refetchOnReconnect: true,
+  });
+
+  // Version checking logic with detailed testing logs
+  React.useEffect(() => {
+    console.log("📱 TESTING - Current app info:", {
+      currentAppVersion: currentAppVersion,
+      platform: currentPlatform,
+      expoConfig: Constants.expoConfig,
+      versionFromExpo: Constants.expoConfig?.version,
+      versionFromManifest: Constants.manifest?.version,
+      versionFromManifest2: Constants.manifest2?.extra?.expoClient?.version,
+    });
+
+    console.log("📱 TESTING - Version check data state:", {
+      hasVersionCheckData: !!versionCheckData,
+      versionCheckDataStatus: versionCheckData?.status,
+      hasApiData: !!versionCheckData?.data,
+      versionCheckLoading: versionCheckLoading,
+      versionCheckError: versionCheckError,
+      currentShowOverlay: showVersionUpdateOverlay,
+    });
+
+    if (versionCheckData?.status === "success" && versionCheckData?.data) {
+      const versionData = versionCheckData.data;
+      dispatch(setAppVersionStatus(versionData));
+
+      console.log("📱 TESTING - API Response Full Data:", {
+        fullApiResponse: versionCheckData,
+        versionData: versionData,
+        iso_app_version: versionData.iso_app_version,
+        android_app_version: versionData.android_app_version,
+        user_id: versionData.user_id,
+        username: versionData.username,
+        email: versionData.email,
+        is_active: versionData.is_active,
+        user_category: versionData.user_category,
+      });
+
+      const requiredVersion =
+        currentPlatform === "ios"
+          ? versionData.iso_app_version
+          : versionData.android_app_version;
+
+      const isVersionMismatch = currentAppVersion !== requiredVersion;
+
+      console.log("📱 TESTING - Version Comparison:", {
+        currentVersion: currentAppVersion,
+        requiredVersion: requiredVersion,
+        platform: currentPlatform,
+        isVersionMismatch: isVersionMismatch,
+        comparisonDetails: {
+          currentVersionType: typeof currentAppVersion,
+          requiredVersionType: typeof requiredVersion,
+          strictEqual: currentAppVersion === requiredVersion,
+          looseEqual: currentAppVersion == requiredVersion,
+          lengthComparison: `current: ${currentAppVersion?.length}, required: ${requiredVersion?.length}`,
+        },
+      });
+
+      if (isVersionMismatch) {
+        console.log(
+          "⚠️ TESTING - Version mismatch detected, showing update overlay",
+        );
+        console.log("⚠️ TESTING - Overlay should be visible with:", {
+          currentVersion: currentAppVersion,
+          requiredVersion: requiredVersion,
+          platform: currentPlatform,
+        });
+        dispatch(setShowVersionUpdateOverlay(true));
+      } else {
+        console.log("✅ TESTING - Versions match, hiding overlay");
+        console.log("✅ TESTING - Same versions confirmed:", {
+          currentVersion: currentAppVersion,
+          requiredVersion: requiredVersion,
+          platform: currentPlatform,
+        });
+        dispatch(setShowVersionUpdateOverlay(false));
+      }
+    } else if (versionCheckData) {
+      console.log("📱 TESTING - API Response not successful:", {
+        fullResponse: versionCheckData,
+        status: versionCheckData?.status,
+        hasData: !!versionCheckData?.data,
+      });
+    } else {
+      console.log(
+        "📱 TESTING - No version check data yet, ensuring overlay is hidden",
+      );
+      dispatch(setShowVersionUpdateOverlay(false));
+    }
+  }, [
+    versionCheckData,
+    currentAppVersion,
+    currentPlatform,
+    dispatch,
+    showVersionUpdateOverlay,
+  ]);
+
+  // Auto-refresh version check when user data is fetched
+  React.useEffect(() => {
+    if (userId && userToken) {
+      console.log("📱 TESTING - User logged in, triggering version check...");
+      console.log("📱 TESTING - API Call Details:", {
+        userId: userId,
+        hasToken: !!userToken,
+        tokenLength: userToken?.length,
+        apiEndpoint: "api/user-management/user/get-app-update-status",
+      });
+      refetchVersionCheck();
+    }
+  }, [userId, userToken, refetchVersionCheck]);
+
+  // Debug overlay visibility changes
+  React.useEffect(() => {
+    console.log("📱 TESTING - Overlay visibility changed:", {
+      showVersionUpdateOverlay: showVersionUpdateOverlay,
+      appVersionStatus: appVersionStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }, [showVersionUpdateOverlay, appVersionStatus]);
+
+  // Debug version check API errors
+  React.useEffect(() => {
+    if (versionCheckError) {
+      console.error("📱 TESTING - Version check API error:", {
+        error: versionCheckError,
+        status: versionCheckError?.status,
+        data: versionCheckError?.data,
+        message: versionCheckError?.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }, [versionCheckError]);
+
+  // Debug version check loading state
+  React.useEffect(() => {
+    console.log("📱 TESTING - Version check loading state:", {
+      isLoading: versionCheckLoading,
+      hasData: !!versionCheckData,
+      hasError: !!versionCheckError,
+      timestamp: new Date().toISOString(),
+    });
+  }, [versionCheckLoading, versionCheckData, versionCheckError]);
+
   // Debug logging - Focus on sessionData which contains real backend data
-  console.log(
-    "🏠 Header - Session data:",
-    JSON.stringify(sessionData, null, 2),
-  );
-  console.log(
-    "🏠 Header - Backend user data:",
-    JSON.stringify(sessionData?.data, null, 2),
-  );
-  console.log(
-    "🏠 Header - User category:",
-    userCategory,
-    "Is parent:",
-    isParent,
-  );
-  console.log(
-    "🏠 Header - Student list:",
-    JSON.stringify(sessionData?.data?.student_list, null, 2),
-  );
+  // console.log(
+  //   "🏠 Header - Session data:",
+  //   JSON.stringify(sessionData, null, 2)
+  // );
+  // console.log(
+  //   "🏠 Header - Backend user data:",
+  //   JSON.stringify(sessionData?.data, null, 2)
+  // );
+  // console.log(
+  //   "🏠 Header - User category:",
+  //   userCategory,
+  //   "Is parent:",
+  //   isParent
+  // );
+  // console.log(
+  //   "🏠 Header - Student list:",
+  //   JSON.stringify(sessionData?.data?.student_list, null, 2)
+  // );
 
   // Debug user name resolution
   const userName =
@@ -111,15 +302,61 @@ const Header = () => {
     sessionData?.data?.user?.username ||
     "Loading...";
 
-  console.log("🏠 Header - Resolved user name:", userName);
-  console.log("🏠 Header - Available name fields:", {
-    "sessionData?.data?.full_name": sessionData?.data?.full_name,
-    "sessionData?.data?.username": sessionData?.data?.username,
-    "sessionData?.full_name": sessionData?.full_name,
-    "sessionData?.username": sessionData?.username,
-    "sessionData?.data?.user?.full_name": sessionData?.data?.user?.full_name,
-    "sessionData?.data?.user?.username": sessionData?.data?.user?.username,
-  });
+  // console.log("🏠 Header - Resolved user name:", userName);
+  // console.log("🏠 Header - Available name fields:", {
+  //   "sessionData?.data?.full_name": sessionData?.data?.full_name,
+  //   "sessionData?.data?.username": sessionData?.data?.username,
+  //   "sessionData?.full_name": sessionData?.full_name,
+  //   "sessionData?.username": sessionData?.username,
+  //   "sessionData?.data?.user?.full_name": sessionData?.data?.user?.full_name,
+  //   "sessionData?.data?.user?.username": sessionData?.data?.user?.username,
+  // });
+
+  // Get user profile image using the same pattern as activity feed media
+  const userProfileImage =
+    reduxUser?.profile_image || sessionData?.data?.profile_image || null;
+
+  // Use the buildUserProfileImageUrl function (same pattern as activity feed media)
+  const userProfileImageSource = React.useMemo(() => {
+    if (userProfileImage && userProfileImage.id) {
+      // Build URL using the same proven pattern as activity feed media
+      const profileImageUrl = buildUserProfileImageUrl(userProfileImage);
+      if (profileImageUrl) {
+        // CRITICAL FIX: Add authentication headers (same as MediaViewer)
+        return {
+          uri: profileImageUrl,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        };
+      }
+    }
+    // Fallback to local image (same as activity feed when media fails)
+    return getLocalFallbackProfileImage();
+  }, [userProfileImage, token]);
+
+  // console.log("🖼️ Header - User profile image (ENHANCED DEBUG):", {
+  //   // Auth token availability
+  //   hasToken: !!token,
+  //   tokenLength: token?.length || 0,
+
+  //   // Profile image data sources
+  //   reduxProfileImage: reduxUser?.profile_image,
+  //   sessionProfileImage: sessionData?.data?.profile_image,
+  //   resolvedProfileImage: userProfileImage,
+
+  //   // Profile image details
+  //   profileImageId: userProfileImage?.id,
+  //   profileImageFilename: userProfileImage?.filename,
+  //   profileImagePublicPath: userProfileImage?.public_path,
+  //   profileImageFullUrl: userProfileImage?.full_url,
+
+  //   // Final image source (same format as MediaViewer)
+  //   profileImageSource: userProfileImageSource,
+  //   hasProfileImage: !!userProfileImage,
+  //   sourceHasHeaders: !!userProfileImageSource?.headers,
+  //   sourceType: userProfileImageSource?.uri ? "remote" : "local",
+  //   finalUrl: userProfileImageSource?.uri,
+  //   authHeaders: userProfileImageSource?.headers,
+  // });
   const [showStudentSelector, setShowStudentSelector] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showStudentProfile, setShowStudentProfile] = useState(false);
@@ -399,25 +636,63 @@ const Header = () => {
         data: notificationsError?.data,
         timestamp: new Date().toISOString(),
       });
+
+      // Track error count and adjust behavior accordingly
+      setNotificationErrorCount((prev) => prev + 1);
+
+      // If it's a 500 error, it's likely a server issue - don't retry too aggressively
+      if (notificationsError?.status === 500) {
+        console.warn(
+          "🔔 Header - Server error (500) detected, reducing retry frequency",
+        );
+
+        // If we've had multiple 500 errors, log a more specific message
+        if (notificationErrorCount >= 3) {
+          console.error(
+            "🔔 Header - Multiple notification API failures detected, may need server-side investigation",
+          );
+        }
+      }
     }
   }, [notificationsError]);
 
-  // Auto-reload notifications on login and component mount
+  // Auto-reload notifications on login and component mount (with error handling)
   React.useEffect(() => {
     if (userId && userToken) {
       console.log("🔔 Header - User logged in, refreshing notifications...");
-      refetchNotifications();
+      try {
+        refetchNotifications();
+      } catch (error) {
+        console.error(
+          "🔔 Header - Error refreshing notifications on login:",
+          error,
+        );
+      }
     }
   }, [userId, userToken, refetchNotifications]);
 
-  // Auto-reload notifications when app comes to foreground
+  // Auto-refresh session data and notifications when app comes to foreground
   React.useEffect(() => {
-    const handleAppStateChange = (nextAppState) => {
+    const handleAppStateChange = async (nextAppState) => {
       if (nextAppState === "active" && userId && userToken) {
         console.log(
-          "🔔 Header - App came to foreground, refreshing notifications...",
+          "🔄 Header - App came to foreground, refreshing session data and notifications...",
         );
-        refetchNotifications();
+
+        try {
+          // Refresh session data first (this will trigger payment validation via middleware)
+          await refreshSession();
+          console.log("✅ Header - Session data refreshed on foreground");
+
+          // Then refresh notifications
+          refetchNotifications();
+          console.log("✅ Header - Notifications refreshed on foreground");
+        } catch (error) {
+          console.error(
+            "❌ Header - Error refreshing data on foreground:",
+            error,
+          );
+        }
       }
     };
 
@@ -426,7 +701,78 @@ const Header = () => {
       handleAppStateChange,
     );
     return () => subscription?.remove();
-  }, [userId, userToken, refetchNotifications]);
+  }, [userId, userToken, refreshSession, refetchNotifications]);
+
+  // Auto-refresh session data on component mount (app startup) - with data freshness check
+  React.useEffect(() => {
+    if (userId && userToken && sessionData) {
+      // Check if data is fresh (less than 5 minutes old)
+      const now = Date.now();
+      const lastUpdate = sessionData.lastUpdated || 0;
+      const dataAge = now - lastUpdate;
+      const fiveMinutes = 5 * 60 * 1000;
+
+      // Check if data has critical fields (avoid overwriting complete data with incomplete)
+      const hasCompleteData =
+        sessionData?.data &&
+        sessionData.data.id &&
+        sessionData.data.full_name &&
+        sessionData.data.user_category;
+
+      console.log("🔄 Header - Mount session refresh check:", {
+        hasCompleteData: hasCompleteData,
+        dataAge: dataAge,
+        dataAgeMinutes: Math.round(dataAge / 60000),
+        shouldRefresh: !hasCompleteData || dataAge > fiveMinutes,
+        lastUpdated: new Date(lastUpdate).toISOString(),
+      });
+
+      // Only refresh if data is incomplete or older than 5 minutes
+      if (!hasCompleteData || dataAge > fiveMinutes) {
+        console.log("🔄 Header - Data is stale or incomplete, refreshing...");
+
+        // Add delay to prevent race condition with login
+        setTimeout(() => {
+          refreshSession()
+            .then(() => {
+              console.log(
+                "✅ Header - Session data refreshed on mount (delayed)",
+              );
+            })
+            .catch((error) => {
+              console.error(
+                "❌ Header - Error refreshing session data on mount:",
+                error,
+              );
+            });
+        }, 2000); // 2 second delay
+      } else {
+        console.log(
+          "✅ Header - Session data is fresh, skipping refresh on mount",
+        );
+      }
+    }
+  }, []); // Run only once on mount
+
+  // Periodic session refresh (every 10 minutes)
+  React.useEffect(() => {
+    if (!userId || !userToken) return;
+
+    const interval = setInterval(
+      async () => {
+        console.log("🔄 Header - Periodic session refresh...");
+        try {
+          await refreshSession();
+          console.log("✅ Header - Periodic session refresh completed");
+        } catch (error) {
+          console.error("❌ Header - Periodic session refresh failed:", error);
+        }
+      },
+      10 * 60 * 1000,
+    ); // 10 minutes
+
+    return () => clearInterval(interval);
+  }, [userId, userToken, refreshSession]);
 
   // Get student data from backend API response
   const backendStudentList = sessionData?.data?.student_list || [];
@@ -646,6 +992,11 @@ const Header = () => {
     // TODO: Implement mark all as read API call when available
   };
 
+  const handleClosePaymentOverlay = () => {
+    console.log("💰 Header - Payment overlay closed by user");
+    dispatch(setShowPaymentOverlay(false));
+  };
+
   const handleStudentSelect = (student) => {
     // console.log(
     //   `🎓 Header - Student selected: ${student.student_calling_name} (ID: ${student.id})`
@@ -779,8 +1130,26 @@ const Header = () => {
         {/* Left Side - User Profile */}
         <View style={styles.userSection}>
           <Image
-            source={require("../../assets/images/sample-profile.png")}
+            source={userProfileImageSource}
             style={styles.userProfileImage}
+            onError={(e) => {
+              // console.log("🖼️ Header - Error loading user profile image:", {
+              //   error: e.nativeEvent.error,
+              //   source: userProfileImageSource,
+              //   profileImage: userProfileImage,
+              //   url: userProfileImageSource?.uri,
+              // });
+            }}
+            onLoad={() => {
+              // console.log(
+              //   "🖼️ Header - User profile image loaded successfully:",
+              //   {
+              //     source: userProfileImageSource,
+              //     profileImage: userProfileImage,
+              //     url: userProfileImageSource?.uri,
+              //   }
+              // );
+            }}
           />
           <View style={styles.userInfoContainer}>
             <Text style={styles.userName}>{userName}</Text>
@@ -1010,13 +1379,31 @@ const Header = () => {
             ) : (
               <View style={styles.noNotificationsContainer}>
                 <MaterialIcons
-                  name="notifications-none"
+                  name={
+                    notificationsError ? "error-outline" : "notifications-none"
+                  }
                   size={32}
-                  color="#ccc"
+                  color={notificationsError ? "#f44336" : "#ccc"}
                 />
                 <Text style={styles.noNotificationsText}>
-                  {notificationsLoading ? "Loading..." : "No notifications"}
+                  {notificationsLoading
+                    ? "Loading..."
+                    : notificationsError
+                      ? "Unable to load notifications"
+                      : "No notifications"}
                 </Text>
+                {notificationsError && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      console.log("🔔 Header - Manual retry requested by user");
+                      setNotificationErrorCount(0); // Reset error count on manual retry
+                      refetchNotifications();
+                    }}
+                    style={styles.retryButton}
+                  >
+                    <Text style={styles.retryButtonText}>Try Again</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -1034,6 +1421,28 @@ const Header = () => {
 
       {/* Drawer Menu */}
       <DrawerMenu isVisible={isDrawerOpen} onClose={closeDrawer} />
+
+      {/* Payment Status Overlay */}
+      <PaymentStatusOverlay
+        visible={showPaymentOverlay}
+        schoolContactInfo={paymentStatus?.schoolContact}
+        onClose={handleClosePaymentOverlay}
+        userId={userId}
+      />
+
+      {/* App Version Update Overlay */}
+      <AppVersionUpdateOverlay
+        visible={showVersionUpdateOverlay}
+        currentVersion={currentAppVersion}
+        requiredVersion={
+          appVersionStatus
+            ? currentPlatform === "ios"
+              ? appVersionStatus.iso_app_version
+              : appVersionStatus.android_app_version
+            : "Unknown"
+        }
+        platform={currentPlatform}
+      />
     </View>
   );
 };
@@ -1124,8 +1533,22 @@ const styles = StyleSheet.create({
   userProfileImage: {
     width: 45,
     height: 45,
-    borderRadius: 20,
+    borderRadius: 22.5, // Perfect circle
     marginRight: theme.spacing.sm,
+    // Attractive border styling
+    borderWidth: 2,
+    borderColor: "#E0E0E0",
+    // Shadow for depth
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3, // Android shadow
+    // Background in case image fails to load
+    backgroundColor: "#F5F5F5",
   },
   userInfoContainer: {
     flex: 1,
@@ -1434,6 +1857,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999",
     marginTop: 8,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: "#7c2d3e",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  retryButtonText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 12,
+    color: "#fff",
     textAlign: "center",
   },
 });

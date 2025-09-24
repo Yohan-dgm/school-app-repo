@@ -1,20 +1,20 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from "react";
 import {
   View,
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
   Animated,
-} from 'react-native';
+} from "react-native";
 // import { BlurView } from '@react-native-community/blur';
-import LinearGradient from 'react-native-linear-gradient';
-import { modernTheme } from '../../styles/modernTheme';
+import LinearGradient from "react-native-linear-gradient";
+import { modernTheme } from "../../styles/modernTheme";
 
 interface AnimatedCardProps {
   children: React.ReactNode;
   onPress?: () => void;
-  variant?: 'glass' | 'solid' | 'gradient';
-  elevation?: 'sm' | 'md' | 'lg' | 'xl';
+  variant?: "glass" | "solid" | "gradient";
+  elevation?: "sm" | "md" | "lg" | "xl";
   delay?: number;
   style?: ViewStyle;
   disabled?: boolean;
@@ -24,8 +24,8 @@ interface AnimatedCardProps {
 export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   children,
   onPress,
-  variant = 'solid',
-  elevation = 'md',
+  variant = "solid",
+  elevation = "md",
   delay = 0,
   style,
   disabled = false,
@@ -63,10 +63,7 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   }, [delay]);
 
   const animatedStyle = {
-    transform: [
-      { scale },
-      { translateY },
-    ],
+    transform: [{ scale }, { translateY }],
     opacity,
   };
 
@@ -91,23 +88,25 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   };
 
   const CardContent = () => (
-    <View style={[styles.cardContent, style]}>
-      {children}
-    </View>
+    <View style={[styles.cardContent, style]}>{children}</View>
   );
 
   const renderCard = () => {
     switch (variant) {
-      case 'glass':
+      case "glass":
         return (
           <View
-            style={[styles.card, styles.glassCard, modernTheme.shadows[elevation]]}
+            style={[
+              styles.card,
+              styles.glassCard,
+              modernTheme.shadows[elevation],
+            ]}
           >
             <CardContent />
           </View>
         );
-      
-      case 'gradient':
+
+      case "gradient":
         return (
           <LinearGradient
             colors={modernTheme.gradients.card}
@@ -118,14 +117,16 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
             <CardContent />
           </LinearGradient>
         );
-      
+
       default:
         return (
-          <View style={[
-            styles.card,
-            styles.solidCard,
-            modernTheme.shadows[elevation],
-          ]}>
+          <View
+            style={[
+              styles.card,
+              styles.solidCard,
+              modernTheme.shadows[elevation],
+            ]}
+          >
             <CardContent />
           </View>
         );
@@ -148,11 +149,7 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
     );
   }
 
-  return (
-    <Animated.View style={animatedStyle}>
-      {renderCard()}
-    </Animated.View>
-  );
+  return <Animated.View style={animatedStyle}>{renderCard()}</Animated.View>;
 };
 
 const styles = StyleSheet.create({
@@ -161,7 +158,7 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: modernTheme.borderRadius.xl,
-    overflow: 'hidden',
+    overflow: "hidden",
     minHeight: modernTheme.layout.cardMinHeight,
   },
   solidCard: {

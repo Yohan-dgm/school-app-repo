@@ -120,6 +120,8 @@ export default function LoginScreen() {
           username: response.data.username,
           email: response.data.email,
           user_type_list: response.data.user_type_list,
+          user_category: response.data.user_category,
+          profile_image: response.data.profile_image,
         };
         dispatch(setUser(userData));
         console.log(
@@ -156,6 +158,7 @@ export default function LoginScreen() {
         // Flatten user_category and user_role to root level for easy access
         user_category: userCategory, // Use the cleaned userCategory value
         user_role: response?.data?.user_role,
+        lastUpdated: Date.now(), // Add timestamp to track data freshness
       };
 
       // Dispatch authentication state

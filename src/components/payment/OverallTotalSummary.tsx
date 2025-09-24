@@ -29,25 +29,6 @@ const OverallTotalSummary: React.FC<OverallTotalSummaryProps> = ({
           </Text>
         </View>
       </View>
-
-      <View style={styles.statsRow}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {formatAmount(summary.totalAmount)}
-          </Text>
-          <Text style={styles.statLabel}>Total Paid</Text>
-        </View>
-        <View style={styles.separator} />
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{summary.billsCount}</Text>
-          <Text style={styles.statLabel}>Bills Paid</Text>
-        </View>
-        {/* <View style={styles.separator} /> */}
-        {/* <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: "#2E7D32" }]}>100%</Text>
-          <Text style={styles.statLabel}>Complete</Text>
-        </View> */}
-      </View>
     </View>
   );
 };

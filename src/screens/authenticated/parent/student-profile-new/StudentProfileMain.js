@@ -9,13 +9,31 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Animated,
+  Easing,
+  Modal,
 } from "react-native";
+import ExamsDrawer from "../../../../components/common/drawer/ExamsDrawer";
+import ReportCardsDrawer from "../../../../components/common/drawer/ReportCardsDrawer";
+import AllBadgesDrawer from "../../../../components/common/drawer/AllBadgesDrawer";
+import StudentAttendanceDrawer from "../../../../components/student-growth/StudentAttendanceDrawer";
 import { useSelector, useDispatch } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../../../styles/theme";
 import { USER_CATEGORIES } from "../../../../constants/userCategories";
 import { setSelectedStudent } from "../../../../state-store/slices/app-slice";
 import { transformStudentWithProfilePicture } from "../../../../utils/studentProfileUtils";
+import TodayAttendanceIndicator from "../../../../components/common/TodayAttendanceIndicator";
+import { useGetTodayStudentAttendanceByIdQuery } from "../../../../api/attendance-api";
+import {
+  useLazyGetStudentByIdQuery,
+  formatDetailedStudentData,
+  useGetStudentAchievementByIdQuery,
+} from "../../../../api/student-management-api";
+import {
+  transformAchievementsToBadges,
+  getBadgeStatistics,
+} from "../../../../utils/badgeUtils";
 
 // House logo and color mapping
 const getHouseInfo = (houseName) => {
@@ -28,25 +46,25 @@ const getHouseInfo = (houseName) => {
   if (lowerHouseName.includes("vulcan")) {
     return {
       isValid: true,
-      color: "#FF8C00",
+      color: "#DC2626", // Red
       logo: require("../../../../assets/nexis-college/Houses/Vulcan.png"),
     };
   } else if (lowerHouseName.includes("tellus")) {
     return {
       isValid: true,
-      color: "#FFD700",
+      color: "#16A34A", // Green
       logo: require("../../../../assets/nexis-college/Houses/Tellus.png"),
     };
   } else if (lowerHouseName.includes("eurus")) {
     return {
       isValid: true,
-      color: "#87CEEB",
+      color: "#EAB308", // Yellow
       logo: require("../../../../assets/nexis-college/Houses/Eurus.png"),
     };
   } else if (lowerHouseName.includes("calypso")) {
     return {
       isValid: true,
-      color: "#32CD32",
+      color: "#2563EB", // Blue
       logo: require("../../../../assets/nexis-college/Houses/Calypso.png"),
     };
   }
@@ -54,18 +72,47 @@ const getHouseInfo = (houseName) => {
   return { isValid: false, color: "#999999", logo: null };
 };
 
-// Sample badges data
-const sampleBadges = [
-  { id: 1, name: "Honor Roll", icon: "🏆", color: "#FFD700" },
-  { id: 2, name: "Perfect Attendance", icon: "📅", color: "#4CAF50" },
-  { id: 3, name: "Sports Excellence", icon: "⚽", color: "#FF5722" },
-  { id: 4, name: "Leadership", icon: "👑", color: "#9C27B0" },
-  { id: 5, name: "Academic Star", icon: "⭐", color: "#2196F3" },
-];
-
 const StudentProfileMain = () => {
   const dispatch = useDispatch();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showExamsDrawer, setShowExamsDrawer] = useState(false);
+  const [showReportCardsDrawer, setShowReportCardsDrawer] = useState(false);
+  const [showBadgeModal, setShowBadgeModal] = useState(false);
+  const [selectedBadge, setSelectedBadge] = useState(null);
+  const [showAllBadgesDrawer, setShowAllBadgesDrawer] = useState(false);
+  const [attendanceDrawerVisible, setAttendanceDrawerVisible] = useState(false);
+  const [detailedStudentData, setDetailedStudentData] = useState(null);
+  const [isLoadingDetailedData, setIsLoadingDetailedData] = useState(false);
+  const rotationValue = new Animated.Value(0);
+
+  const handleBadgePress = (badge) => {
+    setSelectedBadge(badge);
+    setShowBadgeModal(true);
+  };
+
+  const handleAllBadgesDrawerPress = () => {
+    setShowAllBadgesDrawer(true);
+  };
+
+  const closeAllBadgesDrawer = () => {
+    setShowAllBadgesDrawer(false);
+  };
+
+  const handleAttendancePress = () => {
+    console.log("🎯 Opening Student Attendance drawer");
+    console.log("🎯 Selected student:", selectedStudent);
+    console.log("🎯 Student ID being passed:", selectedStudent?.id || 0);
+    console.log(
+      "🎯 Student name being passed:",
+      selectedStudent?.student_calling_name,
+    );
+    setAttendanceDrawerVisible(true);
+  };
+
+  const closeAttendanceDrawer = () => {
+    console.log("🎯 Closing Student Attendance drawer");
+    setAttendanceDrawerVisible(false);
+  };
 
   // Enable LayoutAnimation on Android
   if (
@@ -75,6 +122,66 @@ const StudentProfileMain = () => {
     UIManager.setLayoutAnimationEnabledExperimental(true);
   }
 
+  // Custom smooth animation configuration
+  const customLayoutAnimation = {
+    duration: 400,
+    create: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+    update: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      springDamping: 0.8,
+    },
+  };
+
+  // Handle expand/collapse with smooth animation
+  const handleToggleExpand = async () => {
+    // If expanding and we don't have detailed data yet, fetch it
+    if (!isExpanded && selectedStudent?.id && !detailedStudentData) {
+      console.log(
+        "🔍 Fetching detailed student data for ID:",
+        selectedStudent.id,
+      );
+      setIsLoadingDetailedData(true);
+
+      try {
+        const result = await getStudentById({ student_id: selectedStudent.id });
+        if (result.data?.status === "success") {
+          const formattedData = formatDetailedStudentData(result.data.data);
+          setDetailedStudentData(formattedData);
+          console.log("✅ Detailed student data loaded:", formattedData);
+        } else {
+          console.error("❌ Failed to fetch student data:", result.error);
+        }
+      } catch (error) {
+        console.error("❌ Error fetching detailed student data:", error);
+      } finally {
+        setIsLoadingDetailedData(false);
+      }
+    }
+
+    // Configure layout animation
+    LayoutAnimation.configureNext(customLayoutAnimation);
+
+    // Animate rotation for the icon
+    Animated.timing(rotationValue, {
+      toValue: isExpanded ? 0 : 1,
+      duration: 400,
+      easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+      useNativeDriver: true,
+    }).start();
+
+    // Toggle state
+    setIsExpanded(!isExpanded);
+  };
+
+  // Calculate rotation interpolation
+  const rotation = rotationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"],
+  });
+
   // Get global state
   const { sessionData, selectedStudent } = useSelector((state) => state.app);
 
@@ -82,6 +189,29 @@ const StudentProfileMain = () => {
   const userCategory =
     sessionData?.user_category || sessionData?.data?.user_category;
   const isParent = userCategory === USER_CATEGORIES.PARENT;
+
+  // Get today's attendance for the selected student
+  const {
+    data: todayAttendanceData,
+    isLoading: isLoadingTodayAttendance,
+    error: todayAttendanceError,
+  } = useGetTodayStudentAttendanceByIdQuery(
+    { student_id: selectedStudent?.id || 0 },
+    { skip: !selectedStudent?.id },
+  );
+
+  // Lazy query for detailed student data (only called when expanding)
+  const [getStudentById] = useLazyGetStudentByIdQuery();
+
+  // Get student achievements for the selected student
+  const {
+    data: achievementData,
+    isLoading: isLoadingAchievements,
+    error: achievementError,
+  } = useGetStudentAchievementByIdQuery(
+    { student_id: selectedStudent?.id || 0 },
+    { skip: !selectedStudent?.id },
+  );
 
   // Get student data from backend API response
   const backendStudentList = sessionData?.data?.student_list || [];
@@ -91,28 +221,62 @@ const StudentProfileMain = () => {
     return transformStudentWithProfilePicture(student, sessionData);
   });
 
+  // Transform achievements to badges for UI display
+  const studentBadges =
+    achievementData?.status === "success"
+      ? transformAchievementsToBadges(achievementData.data.current_achievements)
+      : [];
+
+  // Get badge statistics for debugging
+  const badgeStats =
+    achievementData?.status === "success"
+      ? getBadgeStatistics(achievementData.data.current_achievements)
+      : null;
+
   // Auto-select first student if none selected and students are available
   useEffect(() => {
     if (students.length > 0 && !selectedStudent) {
       console.log(
-        `👤 StudentProfileMain - Auto-selecting first student: ${students[0]?.student_calling_name}`
+        `👤 StudentProfileMain - Auto-selecting first student: ${students[0]?.student_calling_name}`,
       );
       dispatch(setSelectedStudent(students[0]));
     }
   }, [students.length, selectedStudent, dispatch]);
+
+  // Reset detailed data when student changes
+  useEffect(() => {
+    setDetailedStudentData(null);
+    setIsExpanded(false); // Also collapse the section
+  }, [selectedStudent?.id]);
 
   // Debug logging
   console.log(
     "👤 StudentProfileMain - User category:",
     userCategory,
     "Is parent:",
-    isParent
+    isParent,
   );
   console.log("👤 StudentProfileMain - Students count:", students.length);
   console.log(
     "👤 StudentProfileMain - Selected student:",
-    selectedStudent?.student_calling_name
+    selectedStudent?.student_calling_name,
   );
+  console.log("📅 StudentProfileMain - Today's attendance:", {
+    studentId: selectedStudent?.id,
+    isLoading: isLoadingTodayAttendance,
+    data: todayAttendanceData,
+    error: todayAttendanceError,
+  });
+  console.log("🏆 StudentProfileMain - Achievements:", {
+    studentId: selectedStudent?.id,
+    isLoading: isLoadingAchievements,
+    error: achievementError,
+    totalAchievements: achievementData?.data?.total_achievements || 0,
+    currentAchievements:
+      achievementData?.data?.current_achievements?.length || 0,
+    badgesCount: studentBadges.length,
+    badgeStats: badgeStats,
+  });
 
   if (!selectedStudent) {
     return (
@@ -138,13 +302,8 @@ const StudentProfileMain = () => {
         {/* Expandable Academic Information Header */}
         <TouchableOpacity
           style={styles.academicHeader}
-          onPress={() => {
-            LayoutAnimation.configureNext(
-              LayoutAnimation.Presets.easeInEaseOut
-            );
-            setIsExpanded(!isExpanded);
-          }}
-          activeOpacity={0.9}
+          onPress={handleToggleExpand}
+          activeOpacity={0.95}
         >
           <View style={styles.headerMainContent}>
             <View style={styles.studentPhotoSection}>
@@ -177,94 +336,406 @@ const StudentProfileMain = () => {
               <Text style={styles.academicStudentId}>
                 ID: {selectedStudent.studentId}
               </Text>
-              <Text style={styles.academicClass}>
-                Class {selectedStudent.grade}
-              </Text>
-              <Text style={styles.academicHouse}>
-                {selectedStudent.schoolHouse}
-              </Text>
+
+              {/* Today's Attendance Status */}
+              <TodayAttendanceIndicator
+                attendanceStatus={
+                  todayAttendanceError
+                    ? null
+                    : todayAttendanceData?.data?.attendance_status
+                }
+                time={todayAttendanceData?.data?.time}
+                isLoading={isLoadingTodayAttendance}
+              />
+
+              <View style={styles.gradeHouseRow}>
+                <Text style={styles.academicClass}>
+                  {selectedStudent.grade}
+                </Text>
+                {(() => {
+                  const houseInfo = getHouseInfo(selectedStudent.schoolHouse);
+                  if (houseInfo.isValid) {
+                    return (
+                      <View
+                        style={[
+                          styles.houseTablet,
+                          { backgroundColor: houseInfo.color },
+                        ]}
+                      >
+                        <Text style={styles.houseTabletText}>
+                          {selectedStudent.schoolHouse}
+                        </Text>
+                      </View>
+                    );
+                  }
+                  return (
+                    <View
+                      style={[
+                        styles.houseTablet,
+                        { backgroundColor: "#999999" },
+                      ]}
+                    >
+                      <Text style={styles.houseTabletText}>
+                        {selectedStudent.schoolHouse || "No House"}
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
             </View>
 
             <View style={styles.expandIcon}>
-              <MaterialIcons
-                name={isExpanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
-                size={24}
-                color="#920734"
-              />
+              <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+                <MaterialIcons
+                  name="keyboard-arrow-down"
+                  size={20}
+                  color="maroon"
+                />
+              </Animated.View>
             </View>
           </View>
 
-          {/* Expanded Student Details */}
+          {/* Expanded Student Details with Smooth Animation */}
           {isExpanded && (
             <View style={styles.expandedContent}>
               <View style={styles.divider} />
-              <View style={styles.detailsGrid}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Admission Number</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedStudent.admissionNumber || "ADM/2024/001"}
+
+              {/* Loading State */}
+              {isLoadingDetailedData && (
+                <View style={styles.loadingContainer}>
+                  <MaterialIcons name="sync" size={20} color="#920734" />
+                  <Text style={styles.loadingText}>
+                    Loading detailed information...
                   </Text>
                 </View>
+              )}
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Full Name</Text>
-                  <Text style={styles.detailValue}>{selectedStudent.name}</Text>
-                </View>
+              {/* Show content only when we have detailed data */}
+              {detailedStudentData && !isLoadingDetailedData && (
+                <>
+                  {/* Personal Information Section */}
+                  <View style={styles.categorySection}>
+                    <View style={styles.categoryHeader}>
+                      <MaterialIcons name="person" size={16} color="#920734" />
+                      <Text style={styles.categoryTitle}>
+                        Personal Information
+                      </Text>
+                    </View>
+                    <View style={styles.detailsGrid}>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>
+                          Full Name with Title
+                        </Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.fullNameWithTitle}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Date of Birth</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.formattedDateOfBirth}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Gender</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.gender}
+                        </Text>
+                      </View>
+                      {detailedStudentData.bloodGroup !== "Not provided" && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Blood Group</Text>
+                          <Text style={styles.detailValue}>
+                            {detailedStudentData.bloodGroup}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Date of Birth</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedStudent.dateOfBirth || "12 Mar 2010"}
-                  </Text>
-                </View>
+                  {/* Academic Information Section */}
+                  <View style={styles.categorySection}>
+                    <View style={styles.categoryHeader}>
+                      <MaterialIcons name="school" size={16} color="#920734" />
+                      <Text style={styles.categoryTitle}>
+                        Academic Information
+                      </Text>
+                    </View>
+                    <View style={styles.detailsGrid}>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Admission Number</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.admissionNumber}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Joined Date</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.formattedJoinedDate}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Current Grade</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.gradeLevel}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>School House</Text>
+                        <Text style={styles.detailValue}>
+                          {detailedStudentData.schoolHouse}
+                        </Text>
+                      </View>
+                      {detailedStudentData.schoolStudiedBefore !==
+                        "Not provided" && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>
+                            Previous School
+                          </Text>
+                          <Text
+                            style={[styles.detailValue, styles.multilineValue]}
+                          >
+                            {detailedStudentData.schoolStudiedBefore}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Gender</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedStudent.gender || "Male"}
-                  </Text>
-                </View>
+                  {/* Contact Information Section */}
+                  <View style={styles.categorySection}>
+                    <View style={styles.categoryHeader}>
+                      <MaterialIcons
+                        name="contact-phone"
+                        size={16}
+                        color="#920734"
+                      />
+                      <Text style={styles.categoryTitle}>
+                        Contact Information
+                      </Text>
+                    </View>
+                    <View style={styles.detailsGrid}>
+                      {detailedStudentData.studentPhone !== "Not provided" && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Phone Number</Text>
+                          <Text style={styles.detailValue}>
+                            {detailedStudentData.studentPhone}
+                          </Text>
+                        </View>
+                      )}
+                      {detailedStudentData.studentEmail !== "Not provided" && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Email Address</Text>
+                          <Text style={styles.detailValue}>
+                            {detailedStudentData.studentEmail}
+                          </Text>
+                        </View>
+                      )}
+                      {detailedStudentData.studentAddress !==
+                        "Not provided" && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Home Address</Text>
+                          <Text
+                            style={[styles.detailValue, styles.multilineValue]}
+                          >
+                            {detailedStudentData.studentAddress}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>School House</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedStudent.schoolHouse}
-                  </Text>
-                </View>
-              </View>
+                  {/* Family Information Section - Only show if there's data */}
+                  {(detailedStudentData.fatherFullName !== "Not provided" ||
+                    detailedStudentData.motherFullName !== "Not provided" ||
+                    detailedStudentData.guardianFullName !==
+                      "Not provided") && (
+                    <View style={styles.categorySection}>
+                      <View style={styles.categoryHeader}>
+                        <MaterialIcons
+                          name="family-restroom"
+                          size={16}
+                          color="#920734"
+                        />
+                        <Text style={styles.categoryTitle}>
+                          Family Information
+                        </Text>
+                      </View>
+                      <View style={styles.detailsGrid}>
+                        {detailedStudentData.fatherFullName !==
+                          "Not provided" && (
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>
+                              Father&apos;s Name
+                            </Text>
+                            <Text style={styles.detailValue}>
+                              {detailedStudentData.fatherFullName}
+                            </Text>
+                          </View>
+                        )}
+                        {detailedStudentData.motherFullName !==
+                          "Not provided" && (
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>
+                              Mother&apos;s Name
+                            </Text>
+                            <Text style={styles.detailValue}>
+                              {detailedStudentData.motherFullName}
+                            </Text>
+                          </View>
+                        )}
+                        {detailedStudentData.guardianFullName !==
+                          "Not provided" && (
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>
+                              Guardian&apos;s Name
+                            </Text>
+                            <Text style={styles.detailValue}>
+                              {detailedStudentData.guardianFullName}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Special Information Section */}
+                  {(detailedStudentData.specialHealthConditions !==
+                    "Not provided" ||
+                    detailedStudentData.specialConditions !==
+                      "Not provided") && (
+                    <View style={styles.categorySection}>
+                      <View style={styles.categoryHeader}>
+                        <MaterialIcons
+                          name="health-and-safety"
+                          size={16}
+                          color="#920734"
+                        />
+                        <Text style={styles.categoryTitle}>
+                          Special Information
+                        </Text>
+                      </View>
+                      <View style={styles.detailsGrid}>
+                        {detailedStudentData.specialHealthConditions !==
+                          "Not provided" && (
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>
+                              Health Conditions
+                            </Text>
+                            <Text
+                              style={[
+                                styles.detailValue,
+                                styles.multilineValue,
+                              ]}
+                            >
+                              {detailedStudentData.specialHealthConditions}
+                            </Text>
+                          </View>
+                        )}
+                        {detailedStudentData.specialConditions !==
+                          "Not provided" && (
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>
+                              Special Conditions
+                            </Text>
+                            <Text
+                              style={[
+                                styles.detailValue,
+                                styles.multilineValue,
+                              ]}
+                            >
+                              {detailedStudentData.specialConditions}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
           )}
         </TouchableOpacity>
 
-        {/* Premium Badges Section */}
+        {/* Achievement Badges Section */}
         <View style={styles.badgesSection}>
-          <Text style={styles.badgesSectionTitle}>Achievements & Badges</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.badgesScrollContainer}
-          >
-            {sampleBadges.map((badge) => (
-              <View
-                key={badge.id}
-                style={[styles.premiumBadge, { borderColor: badge.color }]}
-              >
-                <Text style={styles.badgeIcon}>{badge.icon}</Text>
-                <Text style={styles.badgeName}>{badge.name}</Text>
-                <View
-                  style={[
-                    styles.badgeColorBar,
-                    { backgroundColor: badge.color },
-                  ]}
-                />
-              </View>
-            ))}
-          </ScrollView>
+          <View style={styles.badgesTitleContainer}>
+            <Text style={styles.badgesSectionTitle}>Achievements & Badges</Text>
+            <TouchableOpacity
+              style={styles.infoIconContainer}
+              onPress={handleAllBadgesDrawerPress}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="info-outline" size={20} color="#8B0000" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Loading State */}
+          {isLoadingAchievements && (
+            <View style={styles.badgeLoadingContainer}>
+              <MaterialIcons name="sync" size={20} color="#8B0000" />
+              <Text style={styles.badgeLoadingText}>
+                Loading achievements...
+              </Text>
+            </View>
+          )}
+
+          {/* Error State */}
+          {achievementError && (
+            <View style={styles.badgeErrorContainer}>
+              <MaterialIcons name="error-outline" size={20} color="#DC2626" />
+              <Text style={styles.badgeErrorText}>
+                Failed to load achievements
+              </Text>
+            </View>
+          )}
+
+          {/* Badges Display */}
+          {!isLoadingAchievements && !achievementError && (
+            <>
+              {studentBadges.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.badgesScrollContainer}
+                >
+                  {studentBadges.map((badge) => (
+                    <TouchableOpacity
+                      key={badge.id}
+                      style={styles.badgeLogoOnly}
+                      onPress={() => handleBadgePress(badge)}
+                      activeOpacity={0.7}
+                    >
+                      <Image
+                        source={badge.image}
+                        style={styles.badgeLogoImage}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.noBadgesContainer}>
+                  <MaterialIcons
+                    name="emoji-events"
+                    size={32}
+                    color="#CCCCCC"
+                  />
+                  <Text style={styles.noBadgesText}>No achievements yet</Text>
+                  <Text style={styles.noBadgesSubtext}>
+                    Keep up the great work!
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* Academic Cards */}
         <View style={styles.academicCardsSection}>
-          <TouchableOpacity style={styles.academicCard}>
+          {/* <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowExamsDrawer(true)}
+          >
             <View style={styles.cardIcon}>
               <MaterialIcons name="quiz" size={32} color="#6366F1" />
             </View>
@@ -275,16 +746,35 @@ const StudentProfileMain = () => {
               </Text>
             </View>
             <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
-          <TouchableOpacity style={styles.academicCard}>
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowReportCardsDrawer(true)}
+          >
             <View style={styles.cardIcon}>
-              <MaterialIcons name="assignment" size={32} color="#10B981" />
+              <MaterialIcons name="assignment" size={32} color="maroon" />
             </View>
             <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Report Cards</Text>
+              <Text style={styles.cardTitle}>Exams</Text>
               <Text style={styles.cardSubtitle}>
                 Academic performance reports
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={handleAttendancePress}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="event-available" size={32} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Student Attendance</Text>
+              <Text style={styles.cardSubtitle}>
+                View attendance records and reports
               </Text>
             </View>
             <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
@@ -346,6 +836,75 @@ const StudentProfileMain = () => {
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      {/* Badge Details Modal */}
+      <Modal
+        visible={showBadgeModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowBadgeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {selectedBadge && (
+              <>
+                <Image
+                  source={selectedBadge.image}
+                  style={styles.modalBadgeImage}
+                />
+                <Text style={styles.modalBadgeTitle}>{selectedBadge.name}</Text>
+                <Text style={styles.modalBadgeDescription}>
+                  {selectedBadge.title}
+                </Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowBadgeModal(false)}
+                >
+                  <Text style={styles.modalCloseText}>OK</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Exams Drawer Modal */}
+      <Modal
+        visible={showExamsDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowExamsDrawer(false)}
+      >
+        <ExamsDrawer onClose={() => setShowExamsDrawer(false)} />
+      </Modal>
+
+      {/* Report Cards Drawer Modal */}
+      <Modal
+        visible={showReportCardsDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowReportCardsDrawer(false)}
+      >
+        <ReportCardsDrawer onClose={() => setShowReportCardsDrawer(false)} />
+      </Modal>
+
+      {/* All Badges Drawer */}
+      <Modal
+        visible={showAllBadgesDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={closeAllBadgesDrawer}
+      >
+        <AllBadgesDrawer onClose={closeAllBadgesDrawer} />
+      </Modal>
+
+      {/* Student Attendance Drawer */}
+      <StudentAttendanceDrawer
+        visible={attendanceDrawerVisible}
+        onClose={closeAttendanceDrawer}
+        studentId={selectedStudent?.id || 0}
+        studentName={selectedStudent?.student_calling_name}
+      />
     </View>
   );
 };
@@ -639,19 +1198,19 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-  // New Academic Header Styles
+  // New Academic Header Styles with Maroon Theme
   academicHeader: {
     backgroundColor: "#F4E5E8",
     margin: theme.spacing.md,
     borderRadius: 16,
-    border: 2,
-    borderColor: "red",
+    borderWidth: 1,
+    borderColor: "#920734",
     padding: theme.spacing.md,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowColor: "#920734",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 6,
     overflow: "hidden",
   },
   headerMainContent: {
@@ -661,13 +1220,16 @@ const styles = StyleSheet.create({
   expandIcon: {
     marginLeft: "auto",
     paddingLeft: theme.spacing.sm,
+    borderRadius: 12,
+    padding: 4,
   },
   expandedContent: {
     marginTop: theme.spacing.sm,
   },
   divider: {
-    height: 1,
-    backgroundColor: "#E5E7EB",
+    height: 2,
+    backgroundColor: "#920734",
+    opacity: 0.2,
     marginBottom: theme.spacing.sm,
   },
   detailsGrid: {
@@ -728,63 +1290,93 @@ const styles = StyleSheet.create({
   },
   academicStudentName: {
     fontFamily: theme.fonts.bold,
-    fontSize: 15,
-    color: "#000000",
+    fontSize: 16,
+    color: "#920734",
     marginBottom: 3,
   },
   academicStudentId: {
     fontFamily: theme.fonts.regular,
     fontSize: 13,
     color: "#666666",
-    marginBottom: 2,
+    marginBottom: 4,
+  },
+  gradeHouseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   academicClass: {
     fontFamily: theme.fonts.medium,
     fontSize: 14,
     color: "#920734",
-    marginBottom: 2,
   },
-  academicHouse: {
-    fontFamily: theme.fonts.regular,
-    fontSize: 13,
-    color: "#888888",
+  houseTablet: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  houseTabletText: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 11,
+    color: "#FFFFFF",
+    textTransform: "uppercase",
   },
   // Premium Badges Styles
   badgesSection: {
     marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
   },
   badgesSectionTitle: {
     fontFamily: theme.fonts.bold,
     fontSize: 18,
     color: "#000000",
-    marginBottom: theme.spacing.md,
+    marginBottom: 1,
   },
   badgesScrollContainer: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 1,
+    backgroundColor: "white",
+    borderRadius: 20,
   },
   premiumBadge: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 16,
+    padding: 10,
     marginRight: 12,
     alignItems: "center",
     minWidth: 100,
     borderWidth: 2,
-    shadowColor: "#000",
+    shadowColor: "#920734",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 6,
   },
-  badgeIcon: {
-    fontSize: 24,
-    marginBottom: 8,
+  badgeImage: {
+    width: 32,
+    height: 32,
+    marginBottom: 1,
+    resizeMode: "contain",
+  },
+  badgeLogoOnly: {
+    // backgroundColor: "red",
+    marginRight: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 1,
+    marginTop: -10,
+  },
+  badgeLogoImage: {
+    width: 88,
+    height: 88,
+    resizeMode: "contain",
   },
   badgeName: {
     fontFamily: theme.fonts.bold,
     fontSize: 12,
-    color: "#000000",
     textAlign: "center",
     marginBottom: 8,
   },
@@ -833,6 +1425,151 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.regular,
     fontSize: 14,
     color: "#6B7280",
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    minWidth: 280,
+    maxWidth: 320,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalBadgeImage: {
+    width: 154,
+    height: 154,
+    marginBottom: 16,
+    resizeMode: "contain",
+  },
+  modalBadgeTitle: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 18,
+    color: "#920734",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  modalBadgeDescription: {
+    fontFamily: theme.fonts.regular,
+    fontSize: 14,
+    color: "#666666",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  modalCloseButton: {
+    backgroundColor: "#920734",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  modalCloseText: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 14,
+    color: "#FFFFFF",
+  },
+  // New Category Section Styles
+  categorySection: {
+    marginBottom: theme.spacing.md,
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: theme.spacing.sm,
+    gap: 6,
+  },
+  categoryTitle: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 14,
+    color: "#920734",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  multilineValue: {
+    lineHeight: 18,
+    flexWrap: "wrap",
+    maxWidth: "100%",
+  },
+  // Loading State Styles
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  loadingText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 14,
+    color: "#920734",
+  },
+  // Badge State Styles
+  badgeLoadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.xm,
+    gap: theme.spacing.sm,
+  },
+  badgeLoadingText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 14,
+    color: "#8B0000",
+  },
+  badgeErrorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  badgeErrorText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 14,
+    color: "#DC2626",
+  },
+  noBadgesContainer: {
+    alignItems: "center",
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.sm,
+  },
+  noBadgesText: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 16,
+    color: "#666666",
+  },
+  noBadgesSubtext: {
+    fontFamily: theme.fonts.regular,
+    fontSize: 14,
+    color: "#999999",
+  },
+
+  // Title Container with Info Icon
+  badgesTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: theme.spacing.md,
+  },
+  infoIconContainer: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(139, 0, 0, 0.15)",
+    minWidth: 32,
+    minHeight: 32,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
 

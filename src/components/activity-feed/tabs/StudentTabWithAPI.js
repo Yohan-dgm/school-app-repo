@@ -25,8 +25,9 @@ import {
 
 // Import API hooks and slice actions
 import {
-  useLazyGetSchoolPostsQuery,
-  useLikePostMutation,
+  useLazyGetStudentPostsQuery,
+  useLikeStudentPostMutation,
+  useDeleteStudentPostMutation,
 } from "../../../api/activity-feed-api";
 import {
   setLoading,
@@ -132,175 +133,188 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
   // Get selected student from global state
   const { selectedStudent } = useSelector((state) => state.app);
 
-  // API hooks - using school posts API since we're filtering from all posts
-  const [getSchoolPosts] = useLazyGetSchoolPostsQuery();
-  const [likePost] = useLikePostMutation();
+  // API hooks - using dedicated student posts API
+  const [getStudentPosts] = useLazyGetStudentPostsQuery();
+  const [likeStudentPost] = useLikeStudentPostMutation();
+  const [deleteStudentPost] = useDeleteStudentPostMutation();
 
-  // Local state for frontend filtering
+  // Local state for pagination and data
   const [allPostsLocal, setAllPostsLocal] = useState([]);
-  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(true);
 
-  // Load all posts initially (without filters)
-  const loadAllPosts = useCallback(async () => {
-    try {
-      dispatch(setLoading(true));
-      console.log(
-        "🔄 Loading all posts for student filtering... [STUDENT TAB]",
-      );
+  // Load student posts with pagination
+  const loadPosts = useCallback(
+    async (pageNum = 1, isLoadMore = false) => {
+      try {
+        if (isLoadMore) {
+          setIsLoadingMore(true);
+        } else {
+          dispatch(setLoading(true));
+        }
 
-      // Load all posts without any filters
-      const response = await getSchoolPosts({
-        page: 1,
-        limit: 100, // Load more posts initially
-        filters: {
-          search: "",
-          category: "",
-          date_from: "",
-          date_to: "",
-          hashtags: [],
-        },
-      }).unwrap();
-
-      if (response.status === "successful") {
-        // console.log("👤 All Posts Loaded for Student Tab:", response.data);
-
-        // Fix: response.data is the posts array directly, not response.data.posts
-        const allPostsData = Array.isArray(response.data)
-          ? response.data
-          : response.data.posts || [];
         console.log(
-          "✅ Successfully extracted",
-          allPostsData.length,
-          "posts for student filtering",
+          `🔄 Loading student posts - page ${pageNum}${isLoadMore ? " (load more)" : ""}...`,
         );
 
-        // Store all posts in local state for frontend filtering
-        setAllPostsLocal(allPostsData);
-        setHasLoadedInitialData(true);
-
-        // Store all posts in Redux for filter options (unfiltered)
-        dispatch(setAllPostsAction(allPostsData));
-
-        dispatch(setError(null));
-      } else {
-        dispatch(setError(response.message || "Failed to load posts"));
-      }
-    } catch (error) {
-      console.error("Error in loadAllPosts (Student Tab):", error);
-      dispatch(setError(error.message || "An unexpected error occurred"));
-    } finally {
-      dispatch(setLoading(false));
-    }
-  }, [dispatch, getSchoolPosts, setAllPostsLocal, setHasLoadedInitialData]);
-
-  // Frontend filtering function for STUDENT TAB
-  const filterPostsLocally = useCallback(
-    (postsToFilter, currentFilters) => {
-      if (!postsToFilter || postsToFilter.length === 0) return [];
-
-      console.log("🔍 Student Tab - Frontend filtering with:", currentFilters);
-      console.log("👤 Selected student:", selectedStudent);
-      console.log("👤 Selected student grade level class info:", {
-        student_calling_name: selectedStudent?.student_calling_name,
-        student_id: selectedStudent?.student_id,
-        grade: selectedStudent?.grade,
-        class_id: selectedStudent?.class_id,
-        campus: selectedStudent?.campus,
-      });
-
-      return postsToFilter.filter((post) => {
-        // STUDENT TAB SPECIFIC FILTERING:
-        // Only show posts where student_id is not null
-        // AND the post's student_id matches the selected student's ID
-        if (!post.student_id || post.student_id === null) {
-          console.log(`👤 Filtering out post ${post.id}: no student_id`);
-          return false;
+        // Check if we have selected student with student_id
+        if (!selectedStudent?.student_id) {
+          console.log("❌ No selected student available");
+          dispatch(setError("No student selected"));
+          dispatch(setLoading(false));
+          setIsLoadingMore(false);
+          return;
         }
 
-        // Check if we have a selected student
-        if (!selectedStudent || !selectedStudent.student_id) {
-          console.log(`👤 Filtering out post ${post.id}: no selected student`);
-          return false;
+        // Load student posts using dedicated API with pagination
+        const response = await getStudentPosts({
+          student_id: selectedStudent.student_id,
+          page: pageNum,
+          limit: 10, // Load 10 posts per page for optimization
+          filters: {
+            search: "",
+            category: "",
+            date_from: "",
+            date_to: "",
+            hashtags: [],
+          },
+        }).unwrap();
+
+        if (response.status === "successful") {
+          const newPostsData = Array.isArray(response.data)
+            ? response.data
+            : response.data.posts || [];
+
+          console.log(
+            `✅ Successfully loaded ${newPostsData.length} student posts for page ${pageNum}`,
+          );
+
+          // Handle pagination info
+          const paginationInfo = response.pagination || {};
+          const hasMore = paginationInfo.has_more || false;
+
+          if (isLoadMore) {
+            // Append new posts to existing posts with deduplication
+            setAllPostsLocal((prevPosts) => {
+              // Create a Set of existing post IDs for fast lookup
+              const existingIds = new Set(prevPosts.map((post) => post.id));
+              // Filter out posts that already exist
+              const uniqueNewPosts = newPostsData.filter(
+                (post) => !existingIds.has(post.id),
+              );
+              console.log(
+                `🔍 Student Deduplication: ${newPostsData.length} new posts, ${uniqueNewPosts.length} unique posts added`,
+              );
+              return [...prevPosts, ...uniqueNewPosts];
+            });
+          } else {
+            // Replace posts (initial load or refresh)
+            setAllPostsLocal(newPostsData);
+          }
+
+          setHasMoreData(hasMore);
+          setCurrentPage(pageNum);
+          dispatch(setError(null));
+        } else {
+          dispatch(setError(response.message || "Failed to load posts"));
         }
-
-        // Check if post's student_id matches selected student's ID
-        const postStudentId = post.student_id.toString();
-        const selectedStudentId = selectedStudent.student_id.toString();
-
-        console.log(`👤 Post ${post.id} student_id comparison:`, {
-          post_student_id: postStudentId,
-          selected_student_id: selectedStudentId,
-          student_name: selectedStudent?.student_calling_name,
-          student_grade: selectedStudent?.grade,
-          student_class_id: selectedStudent?.class_id,
-          match: postStudentId === selectedStudentId,
+      } catch (error) {
+        console.error("Error in loadPosts (Student Tab):", {
+          error: error,
+          status: error?.status,
+          data: error?.data,
+          message: error?.message,
+          page: pageNum,
+          isLoadMore,
+          timestamp: new Date().toISOString(),
         });
 
-        if (postStudentId !== selectedStudentId) {
-          console.log(
-            `👤 Filtering out post ${post.id}: student ID mismatch. Post student_id=${postStudentId}, Selected student_id=${selectedStudentId}`,
-          );
+        // Handle different error types gracefully
+        let errorMessage = "An unexpected error occurred";
+        if (error?.status === 500) {
+          errorMessage = "Server error - please try again later";
+        } else if (error?.status === 401) {
+          errorMessage = "Authentication required - please log in again";
+        } else if (error?.status === 403) {
+          errorMessage = "Access denied - insufficient permissions";
+        } else if (error?.message) {
+          errorMessage = error.message;
+        }
+
+        dispatch(setError(errorMessage));
+      } finally {
+        dispatch(setLoading(false));
+        setIsLoadingMore(false);
+      }
+    },
+    [dispatch, getStudentPosts, selectedStudent?.student_id],
+  );
+
+  // Simple filtering function for additional filters (search, category, etc.)
+  const filterPostsLocally = useCallback((postsToFilter, currentFilters) => {
+    if (!postsToFilter || postsToFilter.length === 0) return [];
+
+    console.log(
+      "🔍 Student Tab - Applying additional filters:",
+      currentFilters,
+    );
+
+    return postsToFilter.filter((post) => {
+      // Search term filter
+      if (
+        currentFilters.searchTerm &&
+        currentFilters.searchTerm.trim() &&
+        currentFilters.searchTerm !== ""
+      ) {
+        const searchTerm = currentFilters.searchTerm.toLowerCase();
+        const titleMatch = post.title?.toLowerCase().includes(searchTerm);
+        const contentMatch = post.content?.toLowerCase().includes(searchTerm);
+        if (!titleMatch && !contentMatch) return false;
+      }
+
+      // Category filter
+      if (
+        currentFilters.category &&
+        currentFilters.category !== "all" &&
+        currentFilters.category !== ""
+      ) {
+        if (
+          post.category?.toLowerCase() !== currentFilters.category.toLowerCase()
+        ) {
           return false;
         }
+      }
 
-        console.log(
-          `👤 Including student post ${post.id}: matches selected student`,
+      // Hashtags filter
+      if (currentFilters.hashtags && currentFilters.hashtags.length > 0) {
+        const postHashtags = post.hashtags || [];
+        const hasMatchingHashtag = currentFilters.hashtags.some((filterTag) =>
+          postHashtags.some((postTag) =>
+            postTag.toLowerCase().includes(filterTag.toLowerCase()),
+          ),
         );
+        if (!hasMatchingHashtag) return false;
+      }
 
-        // Apply other filters (search, category, hashtags, date range)
-        if (
-          currentFilters.searchTerm &&
-          currentFilters.searchTerm.trim() &&
-          currentFilters.searchTerm !== ""
-        ) {
-          const searchTerm = currentFilters.searchTerm.toLowerCase();
-          const titleMatch = post.title?.toLowerCase().includes(searchTerm);
-          const contentMatch = post.content?.toLowerCase().includes(searchTerm);
-          if (!titleMatch && !contentMatch) return false;
+      // Date range filter
+      if (currentFilters.dateRange?.start || currentFilters.dateRange?.end) {
+        const postDate = new Date(post.created_at);
+
+        if (currentFilters.dateRange.start) {
+          const startDate = new Date(currentFilters.dateRange.start);
+          if (postDate < startDate) return false;
         }
 
-        if (
-          currentFilters.category &&
-          currentFilters.category !== "all" &&
-          currentFilters.category !== ""
-        ) {
-          if (
-            post.category?.toLowerCase() !==
-            currentFilters.category.toLowerCase()
-          ) {
-            return false;
-          }
+        if (currentFilters.dateRange.end) {
+          const endDate = new Date(currentFilters.dateRange.end);
+          if (postDate > endDate) return false;
         }
+      }
 
-        if (currentFilters.hashtags && currentFilters.hashtags.length > 0) {
-          const postHashtags = post.hashtags || [];
-          const hasMatchingHashtag = currentFilters.hashtags.some((filterTag) =>
-            postHashtags.some((postTag) =>
-              postTag.toLowerCase().includes(filterTag.toLowerCase()),
-            ),
-          );
-          if (!hasMatchingHashtag) return false;
-        }
-
-        if (currentFilters.dateRange?.start || currentFilters.dateRange?.end) {
-          const postDate = new Date(post.created_at);
-
-          if (currentFilters.dateRange.start) {
-            const startDate = new Date(currentFilters.dateRange.start);
-            if (postDate < startDate) return false;
-          }
-
-          if (currentFilters.dateRange.end) {
-            const endDate = new Date(currentFilters.dateRange.end);
-            if (postDate > endDate) return false;
-          }
-        }
-
-        return true;
-      });
-    },
-    [selectedStudent],
-  );
+      return true;
+    });
+  }, []);
 
   // Clear any existing filters when component mounts
   useEffect(() => {
@@ -310,12 +324,20 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     dispatch(clearFilters());
   }, [dispatch]);
 
-  // Load all posts initially (only once)
+  // Load student posts when selectedStudent.student_id changes
   useEffect(() => {
-    if (!hasLoadedInitialData) {
-      loadAllPosts();
+    if (selectedStudent?.student_id) {
+      console.log(
+        "🔄 Student Tab - Loading posts for student_id:",
+        selectedStudent.student_id,
+      );
+      // Reset pagination when student changes
+      setCurrentPage(1);
+      setHasMoreData(true);
+      setAllPostsLocal([]);
+      loadPosts(1, false);
     }
-  }, [hasLoadedInitialData, loadAllPosts]);
+  }, [selectedStudent?.student_id, loadPosts]);
 
   // Debug allPostsLocal changes
   useEffect(() => {
@@ -325,56 +347,28 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     );
   }, [allPostsLocal]);
 
-  // Refresh data when selected student changes
-  useEffect(() => {
-    if (selectedStudent) {
-      console.log(
-        `👤 Student Tab - Selected student changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`,
-      );
-
-      // Reload posts to ensure we have fresh data for the new student
-      if (hasLoadedInitialData) {
-        console.log(
-          "🔄 Student Tab - Reloading posts for new student selection",
-        );
-        loadAllPosts();
-      }
-    }
-  }, [selectedStudent?.student_id, hasLoadedInitialData, loadAllPosts]);
-
-  // Frontend filtering - filter allPostsLocal based on current filters
+  // Frontend filtering for additional filters (search, category, etc.)
   const filteredPosts = useMemo(() => {
     console.log("🚀 useMemo filteredPosts is executing! (Student Tab)");
     if (!allPostsLocal || allPostsLocal.length === 0) {
       console.log(
-        "❌ No allPostsLocal available (Student Tab):",
+        "❌ No student posts available (Student Tab):",
         allPostsLocal?.length || 0,
       );
       return [];
     }
 
-    // Check if filters are effectively empty (no real filtering needed)
-    const hasActiveFilters =
-      filters &&
-      ((filters.searchTerm && filters.searchTerm.trim() !== "") ||
-        (filters.category &&
-          filters.category !== "all" &&
-          filters.category !== "") ||
-        (filters.hashtags && filters.hashtags.length > 0) ||
-        (filters.dateRange &&
-          (filters.dateRange.start || filters.dateRange.end)));
-
     console.log("🔍 Filtering Debug (Student Tab):", {
-      allPostsCount: allPostsLocal.length,
+      studentPostsCount: allPostsLocal.length,
       filters,
-      hasActiveFilters,
       selectedStudent: selectedStudent?.student_calling_name,
+      student_id: selectedStudent?.student_id,
     });
 
-    // Always apply student-specific filtering (even without user filters)
+    // Apply additional filtering (search, category, hashtags, date)
     const filtered = filterPostsLocally(allPostsLocal, filters || {});
     console.log(
-      "🔍 Student filtering applied - filtered posts:",
+      "🔍 Additional filtering applied - filtered posts:",
       filtered.length,
     );
     return filtered;
@@ -382,7 +376,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
 
   // Update Redux state when filtered posts change
   useEffect(() => {
-    if (hasLoadedInitialData && filteredPosts) {
+    if (filteredPosts) {
       console.log(
         `🔍 Student filtering complete: ${filteredPosts.length} posts match criteria`,
       );
@@ -397,21 +391,91 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
         }),
       );
     }
-  }, [filteredPosts, hasLoadedInitialData, dispatch]);
+  }, [filteredPosts, dispatch]);
 
-  // Handle refresh - reload all posts
+  // Handle refresh - reload first page
   const handleRefresh = useCallback(() => {
-    setHasLoadedInitialData(false); // This will trigger loadAllPosts again
-    setAllPostsLocal([]); // Clear current posts
-  }, []);
+    if (selectedStudent?.student_id) {
+      setCurrentPage(1);
+      setHasMoreData(true);
+      setAllPostsLocal([]); // Clear current posts
+      loadPosts(1, false); // Reload first page
+    }
+  }, [selectedStudent?.student_id, loadPosts]);
 
-  // Handle load more - not needed since we load all posts initially
+  // Handle load more - fetch next page
   const handleLoadMore = useCallback(() => {
-    // No pagination needed since we load all posts initially
-    console.log(
-      "📄 Load more not needed - all posts loaded initially (Student Tab)",
-    );
-  }, []);
+    if (
+      hasMoreData &&
+      !isLoadingMore &&
+      !loading &&
+      selectedStudent?.student_id
+    ) {
+      const nextPage = currentPage + 1;
+      console.log(`📄 Student Tab - Loading more posts - page ${nextPage}`);
+      loadPosts(nextPage, true);
+    }
+  }, [
+    hasMoreData,
+    isLoadingMore,
+    loading,
+    currentPage,
+    selectedStudent?.student_id,
+    loadPosts,
+  ]);
+
+  // Handle delete post
+  const handleDeletePost = useCallback(
+    async (postId) => {
+      Alert.alert(
+        "Delete Post",
+        "Are you sure you want to delete this post? This action cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                // Optimistic update - remove post from local state immediately
+                setAllPostsLocal((prevPosts) =>
+                  prevPosts.filter((post) => post.id !== postId),
+                );
+
+                const response = await deleteStudentPost({
+                  post_id: postId,
+                }).unwrap();
+
+                if (response.success) {
+                  console.log("✅ Student post deleted successfully");
+                } else {
+                  // Revert optimistic update on failure
+                  loadPosts(1, false); // Reload posts to restore state
+                  Alert.alert(
+                    "Error",
+                    response.message || "Failed to delete post",
+                  );
+                }
+              } catch (error) {
+                console.error("❌ Error deleting student post:", error);
+                // Revert optimistic update on error
+                loadPosts(1, false); // Reload posts to restore state
+                Alert.alert(
+                  "Error",
+                  error?.data?.message ||
+                    "Failed to delete post. Please try again.",
+                );
+              }
+            },
+          },
+        ],
+      );
+    },
+    [deleteStudentPost, loadPosts],
+  );
 
   // Handle like/unlike
   const handleLike = useCallback(
@@ -433,7 +497,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
       );
 
       try {
-        const response = await likePost({
+        const response = await likeStudentPost({
           post_id: post.id,
           action,
         }).unwrap();
@@ -467,7 +531,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
         }
       }
     },
-    [likedPosts, dispatch, likePost],
+    [likedPosts, dispatch, likeStudentPost],
   );
 
   // Render post item (same as others but with student-specific styling)
@@ -502,6 +566,17 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
               {new Date(post.created_at).toLocaleDateString()} • {post.category}
             </Text>
           </View>
+
+          {/* Delete Button - Hidden per user request */}
+          {false && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDeletePost(post.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Icon name="delete" size={20} color="#FF6B6B" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Post Content */}
@@ -519,7 +594,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
         {post.hashtags && post.hashtags.length > 0 && (
           <View style={styles.hashtagContainer}>
             {post.hashtags.map((hashtag, index) => (
-              <Text key={index} style={styles.hashtag}>
+              <Text key={`${post.id}-hashtag-${index}`} style={styles.hashtag}>
                 #{hashtag}
               </Text>
             ))}
@@ -546,9 +621,31 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     );
   };
 
-  // Render loading footer - not needed for student tab since we load all posts initially
+  // Render footer with load more button or loading indicator
   const renderFooter = () => {
-    return null; // No pagination needed for student filtering
+    if (isLoadingMore) {
+      return (
+        <View style={styles.loadingFooter}>
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading more posts...</Text>
+        </View>
+      );
+    }
+
+    if (hasMoreData && allPostsLocal.length > 0) {
+      return (
+        <View style={styles.loadMoreContainer}>
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={handleLoadMore}
+          >
+            <Text style={styles.loadMoreText}>Load More</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   // Show loading skeleton on initial load
@@ -567,7 +664,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={() => loadAllPosts()}
+          onPress={() => loadPosts(1, false)}
         >
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
@@ -598,7 +695,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
             <Text style={styles.emptyText}>
               {selectedStudent
                 ? `No posts found for ${selectedStudent.student_calling_name}`
-                : "No student posts available"}
+                : "No student selected or no student posts available"}
             </Text>
           </View>
         )}
@@ -644,6 +741,7 @@ const styles = StyleSheet.create({
   postHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 10,
   },
   authorImage: {
@@ -654,6 +752,11 @@ const styles = StyleSheet.create({
   },
   authorInfo: {
     flex: 1,
+  },
+  deleteButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 107, 107, 0.1)",
   },
   authorName: {
     fontSize: 16,
@@ -713,6 +816,26 @@ const styles = StyleSheet.create({
   loadingFooter: {
     paddingVertical: 20,
     alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#666",
+  },
+  loadMoreContainer: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
+  loadMoreButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  loadMoreText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
   },
   errorContainer: {
     flex: 1,

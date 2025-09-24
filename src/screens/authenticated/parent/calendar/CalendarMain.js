@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -11,66 +11,150 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
 import { useSelector, useDispatch } from "react-redux";
 import { theme } from "../../../../styles/theme";
-// Import calendar Redux actions and selectors
+// Import calendar API hooks and selectors
 import {
-  fetchAllCalendarData,
+  useGetCalendarEventsQuery,
+  useGetHolidaysQuery,
+  useGetSpecialClassesQuery,
+  useGetExamsQuery,
+} from "../../../../api/calendar-api";
+import {
+  selectSelectedDate,
+  selectCalendarViewMode,
+  selectIsCalendarExpanded,
   selectAllEvents,
-  selectCalendarLoading,
-  selectCalendarError,
-  selectCalendarErrors,
-  selectLastFetched,
-  clearErrors,
+  setSelectedDate,
+  setCalendarViewMode,
+  setCalendarExpanded,
+  updateAllEvents,
+  mergeCalendarData,
+  selectEventsByDateMemoized,
+  selectCalendarMarkingsMemoized,
 } from "../../../../state-store/slices/calendar/calendarSlice";
 // Header and BottomNavigation now handled by parent layout
 
 const CalendarMain = () => {
   // Redux hooks
   const dispatch = useDispatch();
+
+  // Check if calendar state exists before using selectors
+  const hasCalendarState = useSelector((state) => !!state.calendar);
+
+  // Use safe selectors with fallbacks
+  const selectedDate = useSelector(selectSelectedDate);
+  const calendarViewMode = useSelector(selectCalendarViewMode);
+  const isCalendarExpanded = useSelector(selectIsCalendarExpanded);
   const schoolEvents = useSelector(selectAllEvents);
-  const loading = useSelector(selectCalendarLoading);
-  const error = useSelector(selectCalendarError);
-  const errors = useSelector(selectCalendarErrors);
-  const lastFetched = useSelector(selectLastFetched);
+
+  // Use memoized selector for selected date events
+  const selectedDateEvents = useSelector((state) =>
+    selectEventsByDateMemoized(state, selectedDate),
+  );
+
+  // Use memoized selector for calendar markings
+  const calendarMarkings = useSelector(selectCalendarMarkingsMemoized);
+
+  // API Queries
+  const {
+    data: eventsData,
+    isLoading: eventsLoading,
+    error: eventsError,
+    refetch: refetchEvents,
+  } = useGetCalendarEventsQuery({});
+
+  const {
+    data: holidaysData,
+    isLoading: holidaysLoading,
+    error: holidaysError,
+    refetch: refetchHolidays,
+  } = useGetHolidaysQuery({});
+
+  const {
+    data: specialClassesData,
+    isLoading: specialClassesLoading,
+    error: specialClassesError,
+    refetch: refetchSpecialClasses,
+  } = useGetSpecialClassesQuery({});
+
+  const {
+    data: examsData,
+    isLoading: examsLoading,
+    error: examsError,
+    refetch: refetchExams,
+  } = useGetExamsQuery({});
+
+  const loading =
+    eventsLoading || holidaysLoading || specialClassesLoading || examsLoading;
 
   // Local state
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
-  const [calendarViewMode, setCalendarViewMode] = useState("day"); // "day" or "month"
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [activeAttendanceTab, setActiveAttendanceTab] = useState("academic"); // "academic", "sport", "event"
   const [compactMode, setCompactMode] = useState(true); // New compact mode state
-  const [isCalendarExpanded, setIsCalendarExpanded] = useState(true); // Toggle between horizontal and grid calendar
 
-  // Fetch calendar data on component mount
+  // Update all events when API data changes
   useEffect(() => {
-    console.log(
-      "📅 CalendarMain - Component mounted, fetching calendar data...",
-    );
-    dispatch(fetchAllCalendarData());
+    const events = eventsData?.data?.data || [];
+    const holidays = holidaysData?.data?.data || [];
+    const specialClasses = specialClassesData?.data?.data || [];
+    const exams = examsData?.data?.data || [];
 
-    // Clear any previous errors
-    dispatch(clearErrors());
-  }, [dispatch]);
+    const mergedEvents = mergeCalendarData(
+      events,
+      holidays,
+      specialClasses,
+      exams,
+    );
+    dispatch(updateAllEvents(mergedEvents));
+
+    console.log("📅 CalendarMain - Data merged:", {
+      events: events.length,
+      holidays: holidays.length,
+      specialClasses: specialClasses.length,
+      exams: exams.length,
+      total: mergedEvents.length,
+    });
+  }, [eventsData, holidaysData, specialClassesData, examsData, dispatch]);
 
   // Handle errors silently - just log them
   useEffect(() => {
-    if (error) {
-      console.log("📅 Calendar Error (handled silently):", error);
+    if (eventsError || holidaysError || specialClassesError || examsError) {
+      console.log("📅 Calendar API Errors:", {
+        events: eventsError,
+        holidays: holidaysError,
+        specialClasses: specialClassesError,
+        exams: examsError,
+      });
       // No alert shown - errors are handled gracefully
     }
-  }, [error]);
+  }, [eventsError, holidaysError, specialClassesError, examsError]);
 
   // Log calendar data updates
   useEffect(() => {
     console.log(
       `📅 Calendar data updated: ${schoolEvents.length} events loaded`,
     );
-    if (errors && errors.length > 0) {
-      console.warn("📅 Some calendar endpoints failed:", errors);
-    }
-  }, [schoolEvents, errors]);
+    console.log("📅 Has calendar state:", hasCalendarState);
+  }, [schoolEvents, hasCalendarState]);
+
+  // Early return if calendar state is not available
+  if (!hasCalendarState) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#F8F9FA",
+        }}
+      >
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ marginTop: 16, fontSize: 16, color: "#666666" }}>
+          Initializing calendar...
+        </Text>
+      </View>
+    );
+  }
 
   // Tab press handling now done by layout
 
@@ -79,9 +163,18 @@ const CalendarMain = () => {
   };
 
   // Refresh calendar data
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     console.log("📅 Refreshing calendar data...");
-    dispatch(fetchAllCalendarData());
+    try {
+      await Promise.all([
+        refetchEvents(),
+        refetchHolidays(),
+        refetchSpecialClasses(),
+        refetchExams(),
+      ]);
+    } catch (error) {
+      console.log("📅 Refresh error:", error);
+    }
   };
 
   const handleAttendancePress = () => {
@@ -93,9 +186,9 @@ const CalendarMain = () => {
   };
 
   const handleDayPress = (day) => {
-    setSelectedDate(day.dateString);
+    dispatch(setSelectedDate(day.dateString));
     // Switch to horizontal calendar view when a date is selected
-    setIsCalendarExpanded(false);
+    dispatch(setCalendarExpanded(false));
   };
 
   const handleMonthPress = (monthIndex) => {
@@ -136,9 +229,13 @@ const CalendarMain = () => {
   };
 
   const getEventsForMonth = (monthIndex, year) => {
+    if (!schoolEvents || !Array.isArray(schoolEvents)) {
+      return [];
+    }
     return schoolEvents.filter((event) => {
-      // Use start_date from API response instead of date
-      const eventDate = new Date(event.start_date || event.date);
+      if (!event || !event.date) return false;
+      // Use date field from unified calendar item
+      const eventDate = new Date(event.date);
       return (
         eventDate.getMonth() === monthIndex && eventDate.getFullYear() === year
       );
@@ -540,8 +637,13 @@ const CalendarMain = () => {
   const getSchoolEventsMarkedDates = () => {
     const marked = {};
 
+    if (!schoolEvents || !Array.isArray(schoolEvents)) {
+      return marked;
+    }
+
     // Mark school event dates with enhanced styling
     schoolEvents.forEach((event) => {
+      if (!event || !event.date) return;
       const eventDate = event.date;
       if (!marked[eventDate]) {
         marked[eventDate] = {
@@ -699,11 +801,16 @@ const CalendarMain = () => {
 
   // Get school events for selected date
   const getSchoolEventsForDate = (date) => {
+    if (!schoolEvents || !Array.isArray(schoolEvents)) {
+      return [];
+    }
     return schoolEvents.filter((event) => {
-      // Check both start_date and end_date for multi-day events
-      const startDate = event.start_date || event.date;
-      const endDate = event.end_date || event.date;
+      if (!event) return false;
+      // Check both startDate and endDate for multi-day events
+      const startDate = event.startDate || event.date;
+      const endDate = event.endDate || event.date;
 
+      if (!startDate) return false;
       // Event is on selected date if date falls between start and end dates
       return date >= startDate && date <= endDate;
     });
@@ -743,7 +850,10 @@ const CalendarMain = () => {
         monthName: date.toLocaleDateString("en-US", { month: "short" }),
         isToday: dateString === todayString,
         isSelected: dateString === selectedDate,
-        events: getSchoolEventsForDate(dateString),
+        events:
+          selectedDateEvents.length > 0 && dateString === selectedDate
+            ? selectedDateEvents
+            : getSchoolEventsForDate(dateString),
       });
     }
 
@@ -1083,8 +1193,15 @@ const CalendarMain = () => {
                 <Calendar
                   current={selectedDate}
                   onDayPress={handleDayPress}
-                  markedDates={getSchoolEventsMarkedDates()}
-                  markingType={"custom"}
+                  markedDates={{
+                    ...calendarMarkings,
+                    [selectedDate]: {
+                      ...calendarMarkings[selectedDate],
+                      selected: true,
+                      selectedColor: theme.colors.primary,
+                    },
+                  }}
+                  markingType="multi-dot"
                   theme={{
                     backgroundColor: "#ffffff",
                     calendarBackground: "#ffffff",
@@ -1190,13 +1307,13 @@ const CalendarMain = () => {
             </Text>
 
             {/* School Events for selected date - Compact Display */}
-            {getSchoolEventsForDate(selectedDate).length > 0 ? (
+            {selectedDateEvents.length > 0 ? (
               <View style={styles.selectedDateEvents}>
                 <Text style={styles.selectedDateEventsTitle}>
                   📅 Events Today
                 </Text>
                 <View style={styles.selectedDateAgendaList}>
-                  {getSchoolEventsForDate(selectedDate).map((event) => (
+                  {selectedDateEvents.map((event) => (
                     <TouchableOpacity
                       key={event.id}
                       style={[
@@ -1356,10 +1473,10 @@ const CalendarMain = () => {
           <View style={styles.selectedDayEventsSection}>
             <Text style={styles.sectionTitle}>📅 Today's Schedule</Text>
             <View style={styles.selectedDayEventsList}>
-              {getSchoolEventsForDate(selectedDate).length > 0 ? (
-                getSchoolEventsForDate(selectedDate)
+              {selectedDateEvents.length > 0 ? (
+                selectedDateEvents
                   .sort((a, b) =>
-                    (a.start_time || "").localeCompare(b.start_time || ""),
+                    (a.startTime || "").localeCompare(b.startTime || ""),
                   )
                   .map((event) => (
                     <TouchableOpacity
@@ -1423,9 +1540,9 @@ const CalendarMain = () => {
                             color="#666"
                           />
                           <Text style={styles.selectedDayEventInfoText}>
-                            {event.start_time && event.end_time
-                              ? `${event.start_time} - ${event.end_time}`
-                              : event.start_time || event.time || "All day"}
+                            {event.startTime && event.endTime
+                              ? `${event.startTime} - ${event.endTime}`
+                              : event.startTime || event.time || "All day"}
                           </Text>
                         </View>
 

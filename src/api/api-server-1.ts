@@ -7,12 +7,14 @@ export const apiServer1 = createApi({
     "Posts",
     "ActivityFeed",
     "Calendar",
+    "MonthData",
     "UserManagement",
     "EducatorFeedback",
     "Attendance",
     "StudentAttendance",
     "StudentAttendanceAggregated",
     "StudentAttendanceById",
+    "StudentAttendanceByDateAndClass",
     "Auth",
     "News",
     "NewsCategories",
@@ -25,9 +27,14 @@ export const apiServer1 = createApi({
     "AnnouncementCategories",
     "StudentGrowth",
     "Payment",
+    "StudentDetail",
+    "StudentAchievement",
+    "StudentAttachment",
+    "GradeLevels",
   ],
   baseQuery: fetchBaseQuery({
     baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+    timeout: 60000, // 60 seconds timeout for file uploads
     prepareHeaders: (headers, api: any) => {
       const token = api.getState().app.token;
       const isAuthenticated = api.getState().app.isAuthenticated;
@@ -43,7 +50,13 @@ export const apiServer1 = createApi({
 
       // Set required headers as per API instructions
       headers.set("X-Requested-With", "XMLHttpRequest");
-      headers.set("Content-Type", "application/json");
+
+      // Use simple Content-Type handling like working profile photo upload
+      // Only set Content-Type if not already set by endpoint (FormData endpoints shouldn't set it)
+      if (!headers.get("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+
       headers.set("Accept", "application/json");
 
       if (token) {
@@ -57,12 +70,14 @@ export const apiServer1 = createApi({
 
       headers.set("credentials", "include");
 
-      console.log("📤 API Server 1 - Final headers:", {
+      console.log("📤 API Server 1 - Final headers (simple pattern):", {
         "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/json",
+        "Content-Type": headers.get("Content-Type") || "not set",
         Accept: "application/json",
         Authorization: token ? "Bearer [REDACTED]" : "None",
         credentials: "include",
+        endpoint: api.endpoint,
+        method: api.type,
       });
 
       return headers;

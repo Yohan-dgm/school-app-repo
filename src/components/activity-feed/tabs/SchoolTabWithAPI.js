@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Alert,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialIcons";
@@ -26,6 +27,7 @@ import {
 import {
   useLazyGetSchoolPostsQuery,
   useLikePostMutation,
+  useDeleteSchoolPostMutation,
 } from "../../../api/activity-feed-api";
 import {
   setLoading,
@@ -131,9 +133,13 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
   // API hooks
   const [getSchoolPosts] = useLazyGetSchoolPostsQuery();
   const [likePost] = useLikePostMutation();
+  const [deleteSchoolPost] = useDeleteSchoolPostMutation();
 
-  // Local state for frontend filtering
+  // Local state for pagination and data
   const [allPostsLocal, setAllPostsLocal] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(true);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   // Fetch posts function
@@ -165,6 +171,7 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
             category: apiFilters.category,
             date_from: apiFilters.dateFrom,
             date_to: apiFilters.dateTo,
+            year: apiFilters.year,
             hashtags: apiFilters.hashtags,
           },
         }).unwrap();
@@ -205,64 +212,121 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
     [getSchoolPosts, dispatch],
   );
 
-  // Load all posts initially (without filters)
-  const loadAllPosts = useCallback(async () => {
-    try {
-      dispatch(setLoading(true));
-      console.log("🔄 Loading all posts initially... [VERSION 2.0 WITH DEBUG]");
+  // Load posts with pagination
+  const loadPosts = useCallback(
+    async (pageNum = 1, isLoadMore = false) => {
+      try {
+        if (isLoadMore) {
+          setIsLoadingMore(true);
+        } else {
+          dispatch(setLoading(true));
+        }
 
-      // Load all posts without any filters
-      const response = await getSchoolPosts({
-        page: 1,
-        limit: 100, // Load more posts initially
-        filters: {
-          search: "",
-          category: "",
-          date_from: "",
-          date_to: "",
-          hashtags: [],
-        },
-      }).unwrap();
-
-      if (response.status === "successful") {
-        // console.log("🏫 All Posts Loaded:", response.data);
-
-        // Fix: response.data is the posts array directly, not response.data.posts
-        const allPostsData = Array.isArray(response.data)
-          ? response.data
-          : response.data.posts || [];
         console.log(
-          "✅ Successfully extracted",
-          allPostsData.length,
-          "posts for frontend filtering",
+          `🔄 Loading school posts - page ${pageNum}${isLoadMore ? " (load more)" : ""}...`,
         );
 
-        // Store all posts in local state for frontend filtering
-        setAllPostsLocal(allPostsData);
-        setHasLoadedInitialData(true);
+        const response = await getSchoolPosts({
+          page: pageNum,
+          limit: 10, // Load 10 posts per page for optimization
+          filters: {
+            search: "",
+            category: "",
+            date_from: "",
+            date_to: "",
+            year: "",
+            hashtags: [],
+          },
+        }).unwrap();
 
-        // Store all posts in Redux for filter options (unfiltered)
-        dispatch(setAllPostsAction(allPostsData));
+        if (response.status === "successful") {
+          const newPostsData = Array.isArray(response.data)
+            ? response.data
+            : response.data.posts || [];
 
-        // Also update Redux state with filtered posts
-        dispatch(
-          setPosts({
-            posts: allPostsData,
-            pagination: response.data.pagination || null,
-          }),
-        );
+          console.log(
+            `✅ Successfully loaded ${newPostsData.length} school posts for page ${pageNum}`,
+          );
 
-        dispatch(setError(null));
-      } else {
-        dispatch(setError(response.message || "Failed to load posts"));
+          // Debug: Log post IDs to identify potential duplicates
+          const postIds = newPostsData.map((post) => post.id);
+          const uniquePostIds = [...new Set(postIds)];
+          if (postIds.length !== uniquePostIds.length) {
+            console.warn(`⚠️ Duplicate post IDs detected in API response:`, {
+              totalPosts: postIds.length,
+              uniquePosts: uniquePostIds.length,
+              duplicateIds: postIds.filter(
+                (id, index) => postIds.indexOf(id) !== index,
+              ),
+            });
+          } else {
+            console.log(
+              `🔍 All ${postIds.length} post IDs are unique:`,
+              postIds,
+            );
+          }
+
+          // Handle pagination info
+          const paginationInfo = response.pagination || {};
+          const hasMore = paginationInfo.has_more || false;
+
+          if (isLoadMore) {
+            // Append new posts to existing posts with deduplication
+            setAllPostsLocal((prevPosts) => {
+              // Create a Set of existing post IDs for fast lookup
+              const existingIds = new Set(prevPosts.map((post) => post.id));
+              // Filter out posts that already exist
+              const uniqueNewPosts = newPostsData.filter(
+                (post) => !existingIds.has(post.id),
+              );
+              console.log(
+                `🔍 Deduplication: ${newPostsData.length} new posts, ${uniqueNewPosts.length} unique posts added`,
+              );
+              return [...prevPosts, ...uniqueNewPosts];
+            });
+          } else {
+            // Replace posts (initial load or refresh)
+            setAllPostsLocal(newPostsData);
+            setHasLoadedInitialData(true);
+          }
+
+          setHasMoreData(hasMore);
+          setCurrentPage(pageNum);
+          dispatch(setError(null));
+        } else {
+          dispatch(setError(response.message || "Failed to load posts"));
+        }
+      } catch (error) {
+        console.error("Error in loadPosts:", {
+          error: error,
+          status: error?.status,
+          data: error?.data,
+          message: error?.message,
+          page: pageNum,
+          isLoadMore,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Handle different error types gracefully
+        let errorMessage = "An unexpected error occurred";
+        if (error?.status === 500) {
+          errorMessage = "Server error - please try again later";
+        } else if (error?.status === 401) {
+          errorMessage = "Authentication required - please log in again";
+        } else if (error?.status === 403) {
+          errorMessage = "Access denied - insufficient permissions";
+        } else if (error?.message) {
+          errorMessage = error.message;
+        }
+
+        dispatch(setError(errorMessage));
+      } finally {
+        dispatch(setLoading(false));
+        setIsLoadingMore(false);
       }
-    } catch (error) {
-      console.error("Error in loadAllPosts:", error);
-      dispatch(setError(error.message || "An unexpected error occurred"));
-    } finally {
-      dispatch(setLoading(false));
-    }
-  }, [dispatch, getSchoolPosts, setAllPostsLocal, setHasLoadedInitialData]);
+    },
+    [dispatch, getSchoolPosts],
+  );
 
   // Frontend filtering function
   const filterPostsLocally = useCallback((postsToFilter, currentFilters) => {
@@ -350,6 +414,21 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
         }
       }
 
+      // Year filter - only filter if year is specified and not "all"
+      if (
+        currentFilters.year &&
+        currentFilters.year !== "all" &&
+        currentFilters.year !== ""
+      ) {
+        const postDate = new Date(post.created_at);
+        const postYear = postDate.getFullYear();
+        const filterYear = parseInt(currentFilters.year);
+
+        if (postYear !== filterYear) {
+          return false;
+        }
+      }
+
       return true;
     });
   }, []);
@@ -360,12 +439,12 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
     dispatch(clearFilters());
   }, [dispatch]);
 
-  // Load all posts initially (only once)
+  // Load initial posts (only once)
   useEffect(() => {
     if (!hasLoadedInitialData) {
-      loadAllPosts();
+      loadPosts(1, false);
     }
-  }, [hasLoadedInitialData, loadAllPosts]);
+  }, [hasLoadedInitialData, loadPosts]);
 
   // Debug allPostsLocal changes
   useEffect(() => {
@@ -389,6 +468,7 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
         (filters.category &&
           filters.category !== "all" &&
           filters.category !== "") ||
+        (filters.year && filters.year !== "all" && filters.year !== "") ||
         (filters.hashtags && filters.hashtags.length > 0) ||
         (filters.dateRange &&
           (filters.dateRange.start || filters.dateRange.end)));
@@ -427,17 +507,76 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
     }
   }, [filteredPosts, hasLoadedInitialData, dispatch]);
 
-  // Handle refresh - reload all posts
+  // Handle refresh - reload first page
   const handleRefresh = useCallback(() => {
-    setHasLoadedInitialData(false); // This will trigger loadAllPosts again
+    setCurrentPage(1);
+    setHasMoreData(true);
     setAllPostsLocal([]); // Clear current posts
-  }, []);
+    setHasLoadedInitialData(false);
+    loadPosts(1, false);
+  }, [loadPosts]);
 
-  // Handle load more - not needed since we load all posts initially
+  // Handle load more - fetch next page
   const handleLoadMore = useCallback(() => {
-    // No pagination needed since we load all posts initially
-    console.log("📄 Load more not needed - all posts loaded initially");
-  }, []);
+    if (hasMoreData && !isLoadingMore && !loading) {
+      const nextPage = currentPage + 1;
+      console.log(`📄 Loading more posts - page ${nextPage}`);
+      loadPosts(nextPage, true);
+    }
+  }, [hasMoreData, isLoadingMore, loading, currentPage, loadPosts]);
+
+  // Handle delete post
+  const handleDeletePost = useCallback(
+    async (postId) => {
+      Alert.alert(
+        "Delete Post",
+        "Are you sure you want to delete this post? This action cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                // Optimistic update - remove post from local state immediately
+                setAllPostsLocal((prevPosts) =>
+                  prevPosts.filter((post) => post.id !== postId),
+                );
+
+                const response = await deleteSchoolPost({
+                  post_id: postId,
+                }).unwrap();
+
+                if (response.success) {
+                  console.log("✅ Post deleted successfully");
+                } else {
+                  // Revert optimistic update on failure
+                  loadPosts(1, false); // Reload posts to restore state
+                  Alert.alert(
+                    "Error",
+                    response.message || "Failed to delete post",
+                  );
+                }
+              } catch (error) {
+                console.error("❌ Error deleting post:", error);
+                // Revert optimistic update on error
+                loadPosts(1, false); // Reload posts to restore state
+                Alert.alert(
+                  "Error",
+                  error?.data?.message ||
+                    "Failed to delete post. Please try again.",
+                );
+              }
+            },
+          },
+        ],
+      );
+    },
+    [deleteSchoolPost, loadPosts],
+  );
 
   // Handle like/unlike
   const handleLike = useCallback(
@@ -520,6 +659,17 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
               {new Date(post.created_at).toLocaleDateString()} • {post.category}
             </Text>
           </View>
+
+          {/* Delete Button - Hidden per user request */}
+          {false && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDeletePost(post.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Icon name="delete" size={20} color="#FF6B6B" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Post Content */}
@@ -537,7 +687,7 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
         {post.hashtags && post.hashtags.length > 0 && (
           <View style={styles.hashtagContainer}>
             {post.hashtags.map((hashtag, index) => (
-              <Text key={index} style={styles.hashtag}>
+              <Text key={`${post.id}-hashtag-${index}`} style={styles.hashtag}>
                 #{hashtag}
               </Text>
             ))}
@@ -564,9 +714,30 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
     );
   };
 
-  // Render loading footer - not needed since we load all posts initially
+  // Render footer with load more button or loading indicator
   const renderFooter = () => {
-    // No loading footer needed since we load all posts initially
+    if (isLoadingMore) {
+      return (
+        <View style={styles.loadingFooter}>
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading more posts...</Text>
+        </View>
+      );
+    }
+
+    if (hasMoreData && allPostsLocal.length > 0) {
+      return (
+        <View style={styles.loadMoreContainer}>
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={handleLoadMore}
+          >
+            <Text style={styles.loadMoreText}>Load More</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     return null;
   };
 
@@ -586,7 +757,7 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={() => fetchPosts(1, false)}
+          onPress={() => loadPosts(1, false)}
         >
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
@@ -642,6 +813,7 @@ const styles = StyleSheet.create({
   postHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 10,
   },
   authorImage: {
@@ -652,6 +824,11 @@ const styles = StyleSheet.create({
   },
   authorInfo: {
     flex: 1,
+  },
+  deleteButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 107, 107, 0.1)",
   },
   authorName: {
     fontSize: 16,
@@ -711,6 +888,26 @@ const styles = StyleSheet.create({
   loadingFooter: {
     paddingVertical: 20,
     alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#666",
+  },
+  loadMoreContainer: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
+  loadMoreButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  loadMoreText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
   },
   errorContainer: {
     flex: 1,

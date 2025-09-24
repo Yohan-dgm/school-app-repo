@@ -16,6 +16,7 @@ import { BlurView } from "expo-blur";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { theme } from "../../styles/theme";
+import { USER_CATEGORIES } from "../../constants/userCategories";
 
 // Filter transformation utilities
 const transformFiltersForAPI = (filters) => {
@@ -168,6 +169,8 @@ const FilterBar = ({
   onFilterChange,
   onClearFilters,
   postsData = [],
+  onAddPost,
+  userCategory,
 }) => {
   // Simplified date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -193,11 +196,11 @@ const FilterBar = ({
   const dynamicHashtags = extractHashtagsFromPosts(postsData);
 
   // Debug log for categories
-  console.log(
-    "🏷️ FilterBar - Dynamic categories extracted:",
-    dynamicCategories,
-  );
-  console.log("🏷️ FilterBar - Posts data count:", postsData?.length || 0);
+  // console.log(
+  //   "🏷️ FilterBar - Dynamic categories extracted:",
+  //   dynamicCategories
+  // );
+  // console.log("🏷️ FilterBar - Posts data count:", postsData?.length || 0);
 
   // Combine default "All" category with dynamic categories
   const categories = [
@@ -205,7 +208,7 @@ const FilterBar = ({
     ...dynamicCategories,
   ];
 
-  console.log("🏷️ FilterBar - Final categories for modal:", categories);
+  // console.log("🏷️ FilterBar - Final categories for modal:", categories);
 
   // Use dynamic hashtags, fallback to default if no data
   const availableHashtags =
@@ -609,6 +612,17 @@ const FilterBar = ({
             )}
           </TouchableOpacity>
         </Animated.View>
+
+        {/* Plus Button for Creating Posts - Hidden for Parent users */}
+        {userCategory !== USER_CATEGORIES.PARENT && (
+          <TouchableOpacity
+            style={styles.addPostButton}
+            onPress={onAddPost}
+            activeOpacity={0.8}
+          >
+            <Icon name="add" size={24} color="white" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Expanded Filter Options */}
@@ -1111,7 +1125,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F2F2F7",
     borderRadius: 20,
     paddingHorizontal: 12,
-    marginRight: 12,
+    marginRight: 8,
     height: 36,
   },
   searchInput: {
@@ -1120,6 +1134,29 @@ const styles = StyleSheet.create({
     color: "#000000",
     marginLeft: 8,
     marginRight: 8,
+  },
+  addPostButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   filterToggleContainer: {
     position: "relative",
@@ -1480,7 +1517,7 @@ const styles = StyleSheet.create({
   },
   datePickerButtonActive: {
     borderColor: "#007AFF",
-    backgroundColor: "#F0F8FF",
+    backgroundColor: "maroon",
   },
   datePickerButtonText: {
     fontSize: 13,

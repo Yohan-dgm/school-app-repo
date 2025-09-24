@@ -65,12 +65,17 @@ const DashboardCard: React.FC<{
   }));
 
   const handlePress = () => {
-    // Always trigger full-screen modal if handler is provided
-    if (onFullScreenPress) {
+    console.log(`🎯 Dashboard item "${item.title}" (${item.id}) clicked`);
+    
+    // Use item's custom onPress if it exists, otherwise use onFullScreenPress
+    if (item.onPress) {
+      console.log(`✅ Using custom onPress for "${item.title}"`);
+      item.onPress();
+    } else if (onFullScreenPress) {
+      console.log(`📋 Using onFullScreenPress for "${item.title}"`);
       onFullScreenPress(item.id);
     } else {
-      // Fallback to original behavior
-      item.onPress();
+      console.log(`⚠️ No handler found for "${item.title}"`);
     }
   };
 

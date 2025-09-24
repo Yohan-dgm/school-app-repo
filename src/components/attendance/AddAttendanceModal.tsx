@@ -31,6 +31,7 @@ interface Student {
   id: number;
   name: string;
   full_name: string;
+  student_calling_name?: string;
   admission_number: string;
   profile_image?: string;
   // Attachment data for proper photo handling
@@ -343,7 +344,9 @@ const AddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
   // Filter students based on search query
   const filteredStudents = students.filter(
     (student) =>
-      student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.student_calling_name
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
       student.admission_number
         .toLowerCase()
         .includes(searchQuery.toLowerCase()),
@@ -513,7 +516,7 @@ const AddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
         {/* Student Info Section */}
         <View style={styles.studentInfo}>
           <Text style={styles.studentName} numberOfLines={1}>
-            {student.full_name}
+            {student.student_calling_name || student.full_name}
           </Text>
           <Text style={styles.admissionNumber}>{student.admission_number}</Text>
           <View style={styles.studentDetails}>

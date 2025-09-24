@@ -10,8 +10,8 @@ export default function IndexScreen() {
 
   // If authenticated, redirect to appropriate role-based screen
   if (isAuthenticated && sessionData) {
-    console.log("🏠 IndexScreen - Re-rendering with sessionData:", sessionData);
-    console.log("🏠 IndexScreen - isAuthenticated:", isAuthenticated);
+    // console.log("🏠 IndexScreen - Re-rendering with sessionData:", sessionData);
+    // console.log("🏠 IndexScreen - isAuthenticated:", isAuthenticated);
 
     // Check for user_category first (new system), then fallback to user_role (legacy)
     // Handle both direct and nested data structures
@@ -24,20 +24,20 @@ export default function IndexScreen() {
       (sessionData as any)?.data?.user_role ||
       (sessionData as any)?.data?.role;
 
-    console.log("🏠 IndexScreen - userCategory:", userCategory);
-    console.log("🏠 IndexScreen - userRole:", userRole);
-    console.log(
-      "🏠 IndexScreen - Raw sessionData structure:",
-      JSON.stringify(sessionData, null, 2),
-    );
+    // console.log("🏠 IndexScreen - userCategory:", userCategory);
+    // console.log("🏠 IndexScreen - userRole:", userRole);
+    // console.log(
+    //   "🏠 IndexScreen - Raw sessionData structure:",
+    //   JSON.stringify(sessionData, null, 2)
+    // );
 
     if (userCategory) {
       // New system: use user_category number to determine route
       const categoryName = getUserCategoryName(userCategory);
-      console.log(
-        "IndexScreen - Redirecting to:",
-        `/authenticated/${categoryName}`,
-      );
+      // console.log(
+      //   "IndexScreen - Redirecting to:",
+      //   `/authenticated/${categoryName}`
+      // );
       return <Redirect href={`/authenticated/${categoryName}`} />;
     } else if (userRole) {
       // Legacy system: use user_role string

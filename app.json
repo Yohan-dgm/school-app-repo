@@ -3,8 +3,9 @@
     "name": "School App",
     "slug": "school-app",
     "scheme": "school-app",
-    "version": "1.0.0",
-    "orientation": "portrait",
+    "version": "1.0.1",
+    "orientation": "default",
+    // "orientation": "portrait",
     "icon": "src/assets/SchooSnap_logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -19,8 +20,8 @@
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": false,
         "UIStatusBarStyle": "UIStatusBarStyleDefault",
-        "NSPhotoLibraryUsageDescription": "This app does not access photo library",
-        "NSCameraUsageDescription": "This app does not access camera",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload profile pictures",
+        "NSCameraUsageDescription": "This app needs access to camera to take profile pictures",
         "UIApplicationSupportsIndirectInputEvents": true,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
@@ -43,7 +44,7 @@
         },
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "9",
+      "buildNumber": "16",
       "bundleIdentifier": "lk.toyar.schoolapp"
     },
     "android": {
@@ -52,24 +53,28 @@
         "backgroundColor": "#ffffff"
       },
       "package": "lk.toyar.schoolapp",
-      "versionCode": 1,
-      "compileSdkVersion": 34,
-      "targetSdkVersion": 34,
+      "versionCode": 6,
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 35,
       "minSdkVersion": 21,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "softwareKeyboardLayoutMode": "pan",
       "statusBarStyle": "dark-content",
-      "statusBarTranslucent": false,
+      "statusBarTranslucent": true,
       "navigationBarStyle": "dark-content",
       "navigationBarColor": "#ffffff",
-      "enableEdgeToEdge": false,
+      "navigationBarTranslucent": true,
+      "enableEdgeToEdge": true,
       "allowBackup": false,
       "blocksScreenshots": true,
-      "usesCleartextTraffic": true,
+      "usesCleartextTraffic": false,
       "networkSecurityConfig": "@xml/network_security_config"
     },
     "app_logo": {

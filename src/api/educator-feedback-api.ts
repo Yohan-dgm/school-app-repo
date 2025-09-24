@@ -433,7 +433,9 @@ export const educatorFeedbackApi = apiServer1
                     `Student ${student.id}`,
                   full_name: student.full_name || student.name,
                   student_calling_name:
-                    student.full_name?.split(" ")[0] || `Student ${student.id}`,
+                    student.student_calling_name ||
+                    student.full_name?.split(" ")[0] ||
+                    `Student ${student.id}`,
                   admission_number: student.admission_number,
                   grade_level_id: student.grade_level_id,
                   grade: `Grade ${student.grade_level_id}`,
@@ -812,7 +814,9 @@ export const educatorFeedbackApi = apiServer1
                   student.full_name || student.name || `Student ${student.id}`,
                 full_name: student.full_name || student.name,
                 student_calling_name:
-                  student.full_name?.split(" ")[0] || `Student ${student.id}`,
+                  student.student_calling_name ||
+                  student.full_name?.split(" ")[0] ||
+                  `Student ${student.id}`,
                 admission_number: student.admission_number,
                 grade_level_id: student.grade_level_id,
                 grade: `Grade ${student.grade_level_id}`,
@@ -876,7 +880,9 @@ export const educatorFeedbackApi = apiServer1
                   student.full_name || student.name || `Student ${student.id}`,
                 full_name: student.full_name || student.name,
                 student_calling_name:
-                  student.full_name?.split(" ")[0] || `Student ${student.id}`,
+                  student.student_calling_name ||
+                  student.full_name?.split(" ")[0] ||
+                  `Student ${student.id}`,
                 admission_number: student.admission_number,
                 grade_level_id: student.grade_level_id,
                 grade: `Grade ${student.grade_level_id}`,
@@ -907,7 +913,9 @@ export const educatorFeedbackApi = apiServer1
                   student.full_name || student.name || `Student ${student.id}`,
                 full_name: student.full_name || student.name,
                 student_calling_name:
-                  student.full_name?.split(" ")[0] || `Student ${student.id}`,
+                  student.student_calling_name ||
+                  student.full_name?.split(" ")[0] ||
+                  `Student ${student.id}`,
                 admission_number: student.admission_number,
                 grade_level_id: student.grade_level_id,
                 grade: `Grade ${student.grade_level_id}`,

@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { StudentExamData } from "../../types/student-exam";
 
@@ -41,7 +36,7 @@ const ExamDetailsSection: React.FC<ExamDetailsSectionProps> = ({ data }) => {
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Date:</Text>
               <Text style={styles.detailValue}>
-                {examMark.exam?.exam_date 
+                {examMark.exam?.exam_date
                   ? new Date(examMark.exam.exam_date).toLocaleDateString()
                   : "N/A"}
               </Text>
@@ -70,25 +65,26 @@ const ExamDetailsSection: React.FC<ExamDetailsSectionProps> = ({ data }) => {
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Grade:</Text>
-              <Text style={styles.detailValue}>
-                {examMark.grade || "N/A"}
-              </Text>
+              <Text style={styles.detailValue}>{examMark.grade || "N/A"}</Text>
             </View>
 
             {examMark.rank > 0 && (
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Rank:</Text>
-                <Text style={styles.detailValue}>
-                  #{examMark.rank}
-                </Text>
+                <Text style={styles.detailValue}>#{examMark.rank}</Text>
               </View>
             )}
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Status:</Text>
-              <Text style={[styles.detailValue, {
-                color: examMark.status === 'pass' ? '#10B981' : '#EF4444'
-              }]}>
+              <Text
+                style={[
+                  styles.detailValue,
+                  {
+                    color: examMark.status === "pass" ? "#10B981" : "#EF4444",
+                  },
+                ]}
+              >
                 {examMark.status || "N/A"}
               </Text>
             </View>
@@ -100,12 +96,12 @@ const ExamDetailsSection: React.FC<ExamDetailsSectionProps> = ({ data }) => {
               <Text style={styles.additionalValue}>
                 {examMark.exam.academic_year?.year_name || "N/A"}
               </Text>
-              
+
               <Text style={styles.additionalLabel}>Term:</Text>
               <Text style={styles.additionalValue}>
                 {examMark.exam.term?.term_name || "N/A"}
               </Text>
-              
+
               <Text style={styles.additionalLabel}>Grade Level:</Text>
               <Text style={styles.additionalValue}>
                 {examMark.exam.grade_level?.name || "N/A"}
@@ -122,7 +118,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  
+
   emptyContainer: {
     flex: 1,
     alignItems: "center",

@@ -10,6 +10,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,6 +27,7 @@ interface Student {
   id: number;
   name: string;
   full_name: string;
+  student_calling_name?: string;
   admission_number: string;
   profile_image?: string;
   attachment?: any;
@@ -51,6 +53,7 @@ interface AttendanceEditModalProps {
   ) => void;
   attendanceDate: string;
   preSelectedStatus?: "present" | "absent" | "late";
+  isLoading?: boolean;
 }
 
 const ABSENCE_REASONS = [
@@ -106,6 +109,7 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
   onSave,
   attendanceDate,
   preSelectedStatus,
+  isLoading = false,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<
     "present" | "absent" | "late"
@@ -230,13 +234,24 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
       }
     }
 
-    onSave(student.id, selectedStatus, selectedReason, notes, inTime, outTime);
+    // Clear reason and notes for present status to ensure clean data
+    const finalReason =
+      selectedStatus === "present" ? undefined : selectedReason;
+    const finalNotes = selectedStatus === "present" ? undefined : notes;
+
+    onSave(
+      student.id,
+      selectedStatus,
+      finalReason,
+      finalNotes,
+      inTime,
+      outTime,
+    );
     onClose();
   };
 
   // Handle close - simplified without unsaved changes alert
   const handleClose = () => {
-    console.log("🚪 Closing modal");
     onClose();
   };
 
@@ -269,7 +284,7 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
         >
           {/* Student Profile Header */}
           <View style={styles.profileHeader}>
-            <LinearGradient
+            {/* <LinearGradient
               colors={currentStatusConfig.gradient}
               style={styles.profileGradient}
             >
@@ -278,10 +293,12 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
                 style={styles.profileImage}
                 defaultSource={getLocalFallbackProfileImage()}
               />
-            </LinearGradient>
+            </LinearGradient> */}
 
             <View style={styles.profileInfo}>
-              <Text style={styles.studentName}>{student.full_name}</Text>
+              <Text style={styles.studentName}>
+                {student.student_calling_name || student.full_name}
+              </Text>
               <Text style={styles.admissionNumber}>
                 ID: {student.admission_number}
               </Text>
@@ -350,7 +367,14 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
                         borderColor: config.color,
                       },
                     ]}
-                    onPress={() => setSelectedStatus(status as any)}
+                    onPress={() => {
+                      setSelectedStatus(status as any);
+                      // Clear reason and notes when switching to present status
+                      if (status === "present") {
+                        setSelectedReason("");
+                        setNotes("");
+                      }
+                    }}
                   >
                     <View style={styles.statusOptionHeader}>
                       <MaterialIcons
@@ -491,23 +515,34 @@ const AttendanceEditModal: React.FC<AttendanceEditModalProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.saveButton, !hasChanges && styles.disabledButton]}
+              style={[
+                styles.saveButton,
+                (!hasChanges || isLoading) && styles.disabledButton,
+              ]}
               onPress={handleSave}
-              disabled={!hasChanges}
+              disabled={!hasChanges || isLoading}
             >
-              <MaterialIcons
-                name="save"
-                size={16}
-                color={hasChanges ? "#fff" : "#999"}
-                style={{ marginRight: 8 }}
-              />
+              {isLoading ? (
+                <ActivityIndicator
+                  size={16}
+                  color="#fff"
+                  style={{ marginRight: 8 }}
+                />
+              ) : (
+                <MaterialIcons
+                  name="save"
+                  size={16}
+                  color={hasChanges ? "#fff" : "#999"}
+                  style={{ marginRight: 8 }}
+                />
+              )}
               <Text
                 style={[
                   styles.saveButtonText,
-                  !hasChanges && styles.disabledText,
+                  (!hasChanges || isLoading) && styles.disabledText,
                 ]}
               >
-                Save Changes
+                {isLoading ? "Saving..." : "Save Changes"}
               </Text>
             </TouchableOpacity>
           </View>

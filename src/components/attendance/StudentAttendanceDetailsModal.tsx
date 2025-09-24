@@ -5,101 +5,210 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import FullScreenModal from "../../screens/authenticated/principal/dashboard/components/FullScreenModal";
 import {
-  useGetStudentAttendanceListQuery,
-  createStudentAttendanceQueryParams,
-  StudentAttendanceRecord,
+  useGetStudentAttendanceByDateAndClassQuery,
+  createStudentAttendanceByDateAndClassParams,
+  StudentAttendanceDetail,
+  useUpdateStudentAttendanceMutation,
+  transformStudentAttendanceDetailToEditFormat,
 } from "../../api/attendance-api";
+import AttendanceEditModal from "./AttendanceEditModal";
 
 interface StudentAttendanceDetailsModalProps {
   visible: boolean;
   onClose: () => void;
   attendanceDate: string;
+  gradeLevelClassId: number;
   gradeLevelClassName: string;
 }
 
 const StudentAttendanceDetailsModal: React.FC<
   StudentAttendanceDetailsModalProps
-> = ({ visible, onClose, attendanceDate, gradeLevelClassName }) => {
+> = ({
+  visible,
+  onClose,
+  attendanceDate,
+  gradeLevelClassId,
+  gradeLevelClassName,
+}) => {
   // State management
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [searchPhrase, setSearchPhrase] = useState("");
+  const [pageSize] = useState(30);
+
+  // Edit modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedStudentForEdit, setSelectedStudentForEdit] =
+    useState<StudentAttendanceDetail | null>(null);
 
   // API query
-  const queryParams = createStudentAttendanceQueryParams(
+  const queryParams = createStudentAttendanceByDateAndClassParams(
+    gradeLevelClassId,
+    attendanceDate,
     currentPage,
     pageSize,
-    searchPhrase,
-    "All",
-    attendanceDate,
-    gradeLevelClassName,
   );
+
+  // Skip API call if essential parameters are missing or invalid
+  const shouldSkipQuery =
+    !attendanceDate || !gradeLevelClassId || attendanceDate.trim() === "";
 
   const {
     data: studentAttendanceData,
     error,
     isLoading,
     isFetching,
-  } = useGetStudentAttendanceListQuery(queryParams);
+  } = useGetStudentAttendanceByDateAndClassQuery(queryParams, {
+    skip: shouldSkipQuery,
+  });
 
-  // Reset page when search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchPhrase]);
+  // Update mutation
+  const [updateStudentAttendance, { isLoading: isUpdating }] =
+    useUpdateStudentAttendanceMutation();
 
   // Reset states when modal closes
   useEffect(() => {
     if (!visible) {
       setCurrentPage(1);
-      setSearchPhrase("");
+      setEditModalVisible(false);
+      setSelectedStudentForEdit(null);
     }
   }, [visible]);
-
-  // Handle search
-  const handleSearchChange = (text: string) => {
-    setSearchPhrase(text);
-  };
 
   // Handle pagination
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
   };
 
+  // Handle edit button press
+  const handleEditStudent = (record: StudentAttendanceDetail) => {
+    setSelectedStudentForEdit(record);
+    setEditModalVisible(true);
+  };
+
+  // Handle edit modal close
+  const handleEditModalClose = () => {
+    setEditModalVisible(false);
+    setSelectedStudentForEdit(null);
+  };
+
+  // Handle save attendance changes
+  const handleSaveAttendance = async (
+    studentId: number,
+    attendance: "present" | "absent" | "late",
+    reason?: string,
+    notes?: string,
+    inTime?: string,
+    outTime?: string,
+  ) => {
+    try {
+      // BUILD REQUEST MATCHING EXACT API DOCUMENTATION FORMAT
+      let updateData: any;
+
+      if (attendance === "present") {
+        // PRESENT ATTENDANCE - Always send reason as empty string
+        updateData = {
+          student_id: studentId,
+          grade_level_class_id: gradeLevelClassId,
+          date: attendanceDate,
+          attendance_status: "present",
+          in_time: inTime ? `${inTime.trim()}:00` : "08:30:00", // Default if not provided
+          out_time: outTime ? `${outTime.trim()}:00` : "15:30:00", // Default if not provided
+          notes: notes && notes.trim() ? notes.trim() : "", // Empty string, not null
+          reason: "", // ALWAYS empty string, never null to avoid undefined array key
+        };
+      } else if (attendance === "absent") {
+        // ABSENT ATTENDANCE - Match documentation example
+        updateData = {
+          student_id: studentId,
+          grade_level_class_id: gradeLevelClassId,
+          date: attendanceDate,
+          attendance_status: "absent",
+          in_time: null,
+          out_time: null,
+          notes: notes && notes.trim() ? notes.trim() : "", // Empty string, not null
+          reason: reason && reason.trim() ? reason.trim() : "", // Empty string, not null
+        };
+      } else if (attendance === "late") {
+        // LATE ATTENDANCE - Match documentation example
+        updateData = {
+          student_id: studentId,
+          grade_level_class_id: gradeLevelClassId,
+          date: attendanceDate,
+          attendance_status: "late",
+          in_time: inTime ? `${inTime.trim()}:00` : null,
+          out_time: outTime ? `${outTime.trim()}:00` : null,
+          notes: notes && notes.trim() ? notes.trim() : "", // Empty string, not null
+          reason: reason && reason.trim() ? reason.trim() : "", // Empty string, not null
+        };
+      }
+
+      // Optimistic update: update UI immediately before API call
+      if (selectedStudentForEdit) {
+        setSelectedStudentForEdit({
+          ...selectedStudentForEdit,
+          attendance_summary: {
+            ...selectedStudentForEdit.attendance_summary,
+            status:
+              attendance === "present"
+                ? "present"
+                : attendance === "absent"
+                  ? "absent"
+                  : "late",
+            in_time:
+              inTime && attendance !== "absent"
+                ? `${inTime.trim()}:00`
+                : selectedStudentForEdit.attendance_summary.in_time,
+            out_time:
+              outTime && attendance !== "absent"
+                ? `${outTime.trim()}:00`
+                : selectedStudentForEdit.attendance_summary.out_time,
+          },
+        });
+      }
+
+      await updateStudentAttendance(updateData).unwrap();
+    } catch (error) {
+      console.error("❌ Failed to update attendance:", error);
+    }
+  };
+
   // Calculate pagination info
-  const totalRecords = studentAttendanceData?.data.total || 0;
-  const totalPages = Math.ceil(totalRecords / pageSize);
-  const startRecord = (currentPage - 1) * pageSize + 1;
+  const totalRecords = studentAttendanceData?.data.pagination.total || 0;
+  const totalPages = studentAttendanceData?.data.pagination.total_pages || 1;
+  const startRecord = totalRecords > 0 ? (currentPage - 1) * pageSize + 1 : 0;
   const endRecord = Math.min(currentPage * pageSize, totalRecords);
 
   // Get attendance status color
-  const getAttendanceStatusColor = (attendanceType: string): string => {
-    switch (attendanceType.toLowerCase()) {
-      case "in":
+  const getAttendanceStatusColor = (status: string): string => {
+    switch (status.toLowerCase()) {
+      case "present":
         return "#4CAF50"; // Green
-      case "out":
+      case "late":
         return "#FF9800"; // Orange
       case "absent":
         return "#F44336"; // Red
+      case "partial":
+        return "#2196F3"; // Blue
       default:
         return "#666";
     }
   };
 
   // Get attendance status background color
-  const getAttendanceStatusBackground = (attendanceType: string): string => {
-    switch (attendanceType.toLowerCase()) {
-      case "in":
+  const getAttendanceStatusBackground = (status: string): string => {
+    switch (status.toLowerCase()) {
+      case "present":
         return "#E8F5E8"; // Light Green
-      case "out":
+      case "late":
         return "#FFF3E0"; // Light Orange
       case "absent":
         return "#FFEBEE"; // Light Red
+      case "partial":
+        return "#E3F2FD"; // Light Blue
       default:
         return "#F5F5F5";
     }
@@ -119,56 +228,78 @@ const StudentAttendanceDetailsModal: React.FC<
   };
 
   // Render student attendance record
-  const renderStudentRecord = (record: StudentAttendanceRecord) => {
-    const statusColor = getAttendanceStatusColor(record.attendance_type.name);
+  const renderStudentRecord = (
+    record: StudentAttendanceDetail,
+    index: number,
+  ) => {
+    const statusColor = getAttendanceStatusColor(
+      record.attendance_summary.status,
+    );
     const statusBackground = getAttendanceStatusBackground(
-      record.attendance_type.name,
+      record.attendance_summary.status,
     );
 
+    // Create a unique key using student_id, date and index to ensure uniqueness
+    const uniqueKey = `student-${record.student_id}-${record.date}-${index}`;
+
     return (
-      <View key={record.id} style={styles.recordCard}>
+      <View key={uniqueKey} style={styles.recordCard}>
         <View style={styles.recordHeader}>
           <View style={styles.studentInfo}>
             <Text style={styles.studentName}>
-              {record.student.full_name_with_title}
+              {record.student.student_calling_name ||
+                record.student.full_name_with_title}
             </Text>
             <Text style={styles.admissionNumber}>
-              ID: {record.student.admission_number}
+              {record.student.admission_number}
             </Text>
           </View>
-          <View
-            style={[styles.statusBadge, { backgroundColor: statusBackground }]}
-          >
-            <Text style={[styles.statusText, { color: statusColor }]}>
-              {record.attendance_type.name}
-            </Text>
+          <View style={styles.recordActions}>
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: statusBackground },
+              ]}
+            >
+              <Text style={[styles.statusText, { color: statusColor }]}>
+                {record.attendance_summary.status.toUpperCase()}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => handleEditStudent(record)}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <ActivityIndicator size={18} color="#999" />
+              ) : (
+                <MaterialIcons name="edit" size={18} color="#920734" />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.recordContent}>
-          {record.attendance_type.name !== "Absent" && (
+          {record.attendance_summary.status !== "absent" && (
             <View style={styles.timeInfo}>
-              {record.in_time && (
+              {record.attendance_summary.in_time && (
                 <View style={styles.timeItem}>
-                  <MaterialIcons name="login" size={14} color="#4CAF50" />
+                  <MaterialIcons name="login" size={16} color="#4CAF50" />
                   <Text style={styles.timeLabel}>In: </Text>
-                  <Text style={styles.timeValue}>{record.in_time}</Text>
+                  <Text style={styles.timeValue}>
+                    {record.attendance_summary.in_time}
+                  </Text>
                 </View>
               )}
-              {record.out_time && (
+              {record.attendance_summary.out_time && (
                 <View style={styles.timeItem}>
-                  <MaterialIcons name="logout" size={14} color="#FF9800" />
+                  <MaterialIcons name="logout" size={16} color="#FF9800" />
                   <Text style={styles.timeLabel}>Out: </Text>
-                  <Text style={styles.timeValue}>{record.out_time}</Text>
+                  <Text style={styles.timeValue}>
+                    {record.attendance_summary.out_time}
+                  </Text>
                 </View>
               )}
-            </View>
-          )}
-
-          {record.notes && (
-            <View style={styles.notesContainer}>
-              <MaterialIcons name="note" size={14} color="#666" />
-              <Text style={styles.notesText}>{record.notes}</Text>
             </View>
           )}
         </View>
@@ -188,6 +319,28 @@ const StudentAttendanceDetailsModal: React.FC<
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#920734" />
           <Text style={styles.loadingText}>Loading student attendance...</Text>
+        </View>
+      </FullScreenModal>
+    );
+  }
+
+  // Render state when required parameters are missing
+  if (shouldSkipQuery) {
+    return (
+      <FullScreenModal
+        visible={visible}
+        onClose={onClose}
+        title="Student Attendance Details"
+        backgroundColor="#F8F9FA"
+      >
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="info-outline" size={64} color="#FF9800" />
+          <Text style={styles.errorTitle}>Missing Information</Text>
+          <Text style={styles.errorText}>
+            {!attendanceDate || attendanceDate.trim() === ""
+              ? "Please select a date to view attendance details."
+              : "Please select a class to view attendance details."}
+          </Text>
         </View>
       </FullScreenModal>
     );
@@ -250,35 +403,31 @@ const StudentAttendanceDetailsModal: React.FC<
             {studentAttendanceData && (
               <View style={styles.summaryStats}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {studentAttendanceData.data.present_student_count}
+                  <Text style={[styles.statValue, { color: "#4CAF50" }]}>
+                    {studentAttendanceData.data.summary.present_count}
                   </Text>
                   <Text style={styles.statLabel}>Present</Text>
                 </View>
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {studentAttendanceData.data.absent_student_count}
+                  <Text style={[styles.statValue, { color: "#F44336" }]}>
+                    {studentAttendanceData.data.summary.absent_count}
                   </Text>
                   <Text style={styles.statLabel}>Absent</Text>
                 </View>
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{totalRecords}</Text>
+                  <Text style={[styles.statValue, { color: "#2196F3" }]}>
+                    {studentAttendanceData.data.summary.partial_count}
+                  </Text>
+                  <Text style={styles.statLabel}>Partial</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>
+                    {studentAttendanceData.data.summary.total_students}
+                  </Text>
                   <Text style={styles.statLabel}>Total</Text>
                 </View>
               </View>
             )}
-          </View>
-
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <MaterialIcons name="search" size={20} color="#666" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search students..."
-              placeholderTextColor="#666"
-              value={searchPhrase}
-              onChangeText={handleSearchChange}
-            />
           </View>
 
           {/* Results Info */}
@@ -291,8 +440,11 @@ const StudentAttendanceDetailsModal: React.FC<
 
           {/* Student Records */}
           <View style={styles.recordsList}>
-            {studentAttendanceData?.data.data?.length > 0 ? (
-              studentAttendanceData.data.data.map(renderStudentRecord)
+            {studentAttendanceData?.data?.attendance_records &&
+            studentAttendanceData.data.attendance_records.length > 0 ? (
+              studentAttendanceData.data.attendance_records.map(
+                (record, index) => renderStudentRecord(record, index),
+              )
             ) : (
               <View style={styles.noDataContainer}>
                 <MaterialIcons name="person-off" size={64} color="#999" />
@@ -363,6 +515,21 @@ const StudentAttendanceDetailsModal: React.FC<
           )}
         </View>
       </ScrollView>
+
+      {/* Attendance Edit Modal */}
+      {selectedStudentForEdit && (
+        <AttendanceEditModal
+          visible={editModalVisible}
+          student={transformStudentAttendanceDetailToEditFormat(
+            selectedStudentForEdit,
+            gradeLevelClassId,
+          )}
+          onClose={handleEditModalClose}
+          onSave={handleSaveAttendance}
+          attendanceDate={attendanceDate}
+          isLoading={isUpdating}
+        />
+      )}
     </FullScreenModal>
   );
 };
@@ -452,23 +619,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 2,
   },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-    marginLeft: 8,
-  },
   resultsInfo: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -504,6 +654,21 @@ const styles = StyleSheet.create({
   studentInfo: {
     flex: 1,
     marginRight: 12,
+  },
+  recordActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
   },
   studentName: {
     fontSize: 14,
@@ -555,6 +720,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     fontStyle: "italic",
+    flex: 1,
+  },
+  detailsContainer: {
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E0E0E0",
+  },
+  detailsTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 6,
+  },
+  detailRecord: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 2,
+    marginBottom: 2,
+  },
+  detailTime: {
+    fontSize: 12,
+    color: "#333",
+    minWidth: 50,
+  },
+  detailType: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 8,
+    minWidth: 40,
+  },
+  detailNotes: {
+    fontSize: 11,
+    color: "#999",
+    marginLeft: 8,
     flex: 1,
   },
   noDataContainer: {

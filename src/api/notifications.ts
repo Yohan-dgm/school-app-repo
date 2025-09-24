@@ -112,7 +112,7 @@ export const notificationsApi = apiServer1.injectEndpoints({
           };
         }
 
-        // Handle validation errors
+        // Handle validation errors gracefully - don't throw error for client consumption
         if (response?.success === false && response?.errors) {
           console.error("❌ Notification API validation errors:", {
             errors: response.errors,
@@ -120,19 +120,43 @@ export const notificationsApi = apiServer1.injectEndpoints({
             endpoint,
             method,
           });
-          throw new Error(
-            `Validation failed: ${response.message || "Check required parameters"}`,
-          );
+          // Return empty data instead of throwing to prevent UI crashes
+          return {
+            data: [],
+            metadata: {
+              current_page: 1,
+              total: 0,
+              per_page: 20,
+              last_page: 1,
+              from: 0,
+              to: 0,
+            },
+            unread_count: 0,
+            error: response.message || "Validation failed",
+          };
         }
 
-        // Handle server errors
+        // Handle server errors gracefully - don't throw error for client consumption
         if (response?.success === false && response?.message) {
           console.error("❌ Notification API server error:", {
             message: response.message,
             endpoint,
             method,
           });
-          throw new Error(`Server error: ${response.message}`);
+          // Return empty data instead of throwing to prevent UI crashes
+          return {
+            data: [],
+            metadata: {
+              current_page: 1,
+              total: 0,
+              per_page: 20,
+              last_page: 1,
+              from: 0,
+              to: 0,
+            },
+            unread_count: 0,
+            error: response.message,
+          };
         }
 
         // Handle unexpected response
@@ -148,6 +172,7 @@ export const notificationsApi = apiServer1.injectEndpoints({
             to: 0,
           },
           unread_count: 0,
+          error: "Unexpected response format",
         };
       },
     }),

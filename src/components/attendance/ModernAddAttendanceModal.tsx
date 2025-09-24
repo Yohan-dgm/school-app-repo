@@ -30,10 +30,14 @@ import {
   validateAttendanceData,
 } from "../../api/attendance-api";
 import {
-  useGetStudentsByGradeWithPaginationQuery,
-  useLazyGetStudentsByGradeWithPaginationQuery,
-} from "../../api/educator-feedback-api";
-import { GRADE_LEVELS } from "../../constants/gradeLevels";
+  useGetGradeLevelsWithClassesQuery,
+  GradeLevelWithClasses,
+  GradeLevelClass,
+} from "../../api/grade-level-api";
+import {
+  useGetStudentDetailsByClassQuery,
+  useLazyGetStudentDetailsByClassQuery,
+} from "../../api/student-details-api";
 
 // Import new modern components
 import ModernStudentAttendanceCard from "./ModernStudentAttendanceCard";
@@ -48,8 +52,9 @@ interface Student {
   id: number;
   name: string;
   full_name: string;
+  student_calling_name?: string;
   admission_number: string;
-  profile_image?: string;
+  profile_image?: string | null;
   attachment?: any;
   attachments?: any[];
   student_attachment_list?: any[];
@@ -75,7 +80,11 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
 }) => {
   // State management
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedGrade, setSelectedGrade] = useState<any>(null);
+  const [selectedGrade, setSelectedGrade] =
+    useState<GradeLevelWithClasses | null>(null);
+  const [selectedClass, setSelectedClass] = useState<GradeLevelClass | null>(
+    null,
+  );
   const [students, setStudents] = useState<Student[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,21 +122,28 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
     useCreateStudentAttendanceMutation();
 
   const {
+    data: gradeLevelsData,
+    isLoading: gradeLevelsLoading,
+    error: gradeLevelsError,
+  } = useGetGradeLevelsWithClassesQuery({
+    page_size: 50,
+    page: 1,
+  });
+
+  const {
     data: studentsData,
     error: studentsError,
     isLoading: studentsLoading,
-  } = useGetStudentsByGradeWithPaginationQuery(
+  } = useGetStudentDetailsByClassQuery(
     {
-      grade_level_id: selectedGrade?.id,
+      grade_level_class_id: selectedClass?.id || 0,
       page: 1,
-      page_size: 10000,
-      search_phrase: "",
-      search_filter_list: [],
+      page_size: 10,
     },
-    { skip: !selectedGrade?.id },
+    { skip: !selectedClass?.id },
   );
 
-  const [fetchAdditionalPages] = useLazyGetStudentsByGradeWithPaginationQuery();
+  const [fetchAdditionalPages] = useLazyGetStudentDetailsByClassQuery();
 
   // School houses are now fetched from API via student.school_house.name
 
@@ -136,6 +152,7 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
     console.log("🔄 Resetting Add Attendance Modal to default state...");
     console.log("   📅 Selected date: Reset to today");
     console.log("   🏫 Selected grade: Reset to null");
+    console.log("   🎓 Selected class: Reset to null");
     console.log("   👥 Students: Clear all data");
     console.log("   🔍 Search query: Clear search");
     console.log("   💾 Attendance details: Clear all details");
@@ -143,6 +160,7 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
 
     setSelectedDate(new Date());
     setSelectedGrade(null);
+    setSelectedClass(null);
     setStudents([]);
     setFilteredStudents([]);
     setSearchQuery("");
@@ -177,56 +195,52 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
 
   // Process API students data
   useEffect(() => {
-    if (selectedGrade) {
+    if (selectedClass) {
       if (studentsLoading) {
         setIsLoadingStudents(true);
         return;
       }
 
-      if (
-        studentsData?.data?.students &&
-        studentsData.data.students.length > 0
-      ) {
-        let apiStudents = studentsData.data.students.map((student, index) => ({
+      if (studentsData?.data?.data && studentsData.data.data.length > 0) {
+        let apiStudents = studentsData.data.data.map((student, index) => ({
           id: student.id || index + 1,
           name:
-            student.name || student.student_calling_name || "Unknown Student",
-          full_name:
+            student.student_calling_name ||
             student.full_name ||
-            student.student_full_name ||
-            student.name ||
             "Unknown Student",
+          full_name: student.full_name || "Unknown Student",
+          student_calling_name:
+            student.student_calling_name ||
+            `Student ${student.id || index + 1}`,
           admission_number:
             student.admission_number ||
-            student.student_admission_number ||
             `ADM${String(index + 1).padStart(3, "0")}`,
-          profile_image: student.profile_image || student.profile_picture,
-          attachment: student.attachment || null,
-          attachments: student.attachments || [],
+          profile_image:
+            student.student_attachment_list?.[0]?.file_name || null,
+          attachment: student.student_attachment_list?.[0] || null,
+          attachments: student.student_attachment_list || [],
           student_attachment_list: student.student_attachment_list || [],
-          grade: selectedGrade.display_name,
-          class: student.class || "A",
-          // house: student.school_house?.name || student.house || "No House",
+          grade:
+            selectedGrade?.name || student.grade_level?.name || "Unknown Grade",
+          class:
+            selectedClass.name ||
+            student.grade_level_class?.name ||
+            "Unknown Class",
           attendance: "present" as const,
           grade_level_id: student.grade_level_id,
           grade_level: student.grade_level,
-          // Add grade_level_class_id from student data if available
-          grade_level_class_id:
-            student.grade_level_class_id || student.grade_level_id,
+          grade_level_class_id: student.grade_level_class_id,
         }));
 
         // Frontend filtering as backup
-        const filteredByGrade = apiStudents.filter((student) => {
-          if (student.grade_level_id) {
-            return student.grade_level_id === selectedGrade.id;
-          }
-          if (student.grade_level?.id) {
-            return student.grade_level.id === selectedGrade.id;
+        const filteredByClass = apiStudents.filter((student) => {
+          if (student.grade_level_class_id) {
+            return student.grade_level_class_id === selectedClass.id;
           }
           return true;
         });
 
-        setStudents(filteredByGrade);
+        setStudents(filteredByClass);
       } else {
         setStudents([]);
       }
@@ -235,7 +249,13 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
       setStudents([]);
       setIsLoadingStudents(false);
     }
-  }, [selectedGrade, studentsData, studentsLoading, studentsError]);
+  }, [
+    selectedClass,
+    selectedGrade,
+    studentsData,
+    studentsLoading,
+    studentsError,
+  ]);
 
   // Filter students based on search
   useEffect(() => {
@@ -244,7 +264,9 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
     } else {
       const filtered = students.filter(
         (student) =>
-          student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          student.student_calling_name
+            ?.toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
           student.admission_number
             .toLowerCase()
             .includes(searchQuery.toLowerCase()),
@@ -344,10 +366,10 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
 
   // Save attendance data to backend
   const handleSaveAttendance = async () => {
-    if (!selectedGrade || students.length === 0) {
+    if (!selectedClass || students.length === 0) {
       Alert.alert(
         "Error",
-        "Please select a grade and ensure students are loaded.",
+        "Please select a class and ensure students are loaded.",
       );
       return;
     }
@@ -377,11 +399,11 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
         };
       });
 
-      // Transform data for API - use student's actual grade_level_id instead of selectedGrade.id
+      // Transform data for API - use student's actual grade_level_class_id
       const attendanceData = transformStudentsToAttendanceData(
         students,
         formatDateForCalendar(selectedDate), // YYYY-MM-DD format in local timezone
-        students[0]?.grade_level_id || selectedGrade.id, // Use actual student grade_level_id
+        students[0]?.grade_level_class_id || selectedClass.id, // Use actual student grade_level_class_id
         attendanceStates,
       );
 
@@ -391,8 +413,8 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
         selectedDateDisplay: formatAttendanceDate(
           formatDateForCalendar(selectedDate),
         ),
-        selectedGradeId: selectedGrade.id,
-        studentGradeLevelId: students[0]?.grade_level_id,
+        selectedClassId: selectedClass.id,
+        studentGradeLevelClassId: students[0]?.grade_level_class_id,
         studentsCount: students.length,
         sampleStudentData: students[0],
         attendanceData: attendanceData.slice(0, 2), // Log first 2 records
@@ -438,12 +460,12 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
 
   // Handle form submission
   const handleSubmit = async () => {
-    if (!selectedGrade) {
-      Alert.alert("Error", "Please select a grade");
+    if (!selectedClass) {
+      Alert.alert("Error", "Please select a class");
       return;
     }
     if (students.length === 0) {
-      Alert.alert("Error", "No students found for selected grade");
+      Alert.alert("Error", "No students found for selected class");
       return;
     }
 
@@ -531,7 +553,7 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
     >
       <Animated.View style={[styles.container, animatedStyle]}>
         {/* Main Content with Single FlatList */}
-        {selectedGrade && filteredStudents.length > 0 ? (
+        {selectedClass && filteredStudents.length > 0 ? (
           viewMode === "list" ? (
             <FlatList
               key="attendance-list-view"
@@ -575,61 +597,114 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
                     </LinearGradient>
                   </View>
 
-                  {/* Modern Grade Selection */}
+                  {/* Simple Grade Level List */}
                   <View style={styles.gradeSection}>
-                    <Text style={styles.sectionTitle}>Select Grade Level</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.gradeScroll}
-                      contentContainerStyle={styles.gradeScrollContent}
-                    >
-                      {GRADE_LEVELS.map((grade) => (
-                        <TouchableOpacity
-                          key={grade.id}
-                          style={[
-                            styles.gradeCard,
-                            selectedGrade?.id === grade.id &&
-                              styles.selectedGradeCard,
-                          ]}
-                          onPress={() => {
-                            setSelectedGrade(grade);
-                            setStudents([]);
-                          }}
-                        >
-                          <LinearGradient
-                            colors={
-                              selectedGrade?.id === grade.id
-                                ? ["#920734", "#A91D47"]
-                                : ["#FFFFFF", "#F8F9FA"]
-                            }
-                            style={styles.gradeCardGradient}
+                    {gradeLevelsLoading ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#920734" />
+                        <Text style={styles.loadingText}>
+                          Loading grades...
+                        </Text>
+                      </View>
+                    ) : gradeLevelsError ? (
+                      <View style={styles.errorContainer}>
+                        <MaterialIcons name="error" size={20} color="#F44336" />
+                        <Text style={styles.errorText}>
+                          Failed to load grades
+                        </Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.gradeScroll}
+                        contentContainerStyle={styles.gradeScrollContent}
+                      >
+                        {gradeLevelsData?.data?.data?.map((grade) => (
+                          <TouchableOpacity
+                            key={grade.id}
+                            style={[
+                              styles.gradeChip,
+                              selectedGrade?.id === grade.id &&
+                                styles.selectedGradeChip,
+                            ]}
+                            onPress={() => {
+                              if (selectedGrade?.id === grade.id) {
+                                setSelectedGrade(null);
+                                setSelectedClass(null);
+                                setStudents([]);
+                              } else {
+                                setSelectedGrade(grade);
+                                setSelectedClass(null);
+                                setStudents([]);
+                              }
+                            }}
                           >
                             <Text
                               style={[
-                                styles.gradeName,
+                                styles.gradeChipText,
                                 selectedGrade?.id === grade.id &&
-                                  styles.selectedGradeName,
+                                  styles.selectedGradeChipText,
                               ]}
                             >
-                              {grade.display_name}
+                              {grade.name}
                             </Text>
-                            <Text
-                              style={[
-                                styles.gradeCount,
-                                selectedGrade?.id === grade.id &&
-                                  styles.selectedGradeCount,
-                              ]}
-                            >
-                              {selectedGrade?.id === grade.id
-                                ? `${students.length} students`
-                                : "Select to view"}
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
+
+                  {/* Small Class Icons */}
+                  {selectedGrade && (
+                    <View style={styles.classIconsSection}>
+                      <View style={styles.classIconsContainer}>
+                        {selectedGrade.grade_level_class_list.map(
+                          (classItem) => (
+                            <TouchableOpacity
+                              key={classItem.id}
+                              style={[
+                                styles.classIcon,
+                                selectedClass?.id === classItem.id &&
+                                  styles.selectedClassIcon,
+                              ]}
+                              onPress={() => {
+                                setSelectedClass(classItem);
+                                setStudents([]);
+                              }}
+                            >
+                              <LinearGradient
+                                colors={
+                                  selectedClass?.id === classItem.id
+                                    ? ["#4CAF50", "#66BB6A"]
+                                    : ["#E3F2FD", "#BBDEFB"]
+                                }
+                                style={styles.classIconGradient}
+                              >
+                                <Text
+                                  style={[
+                                    styles.classIconText,
+                                    selectedClass?.id === classItem.id &&
+                                      styles.selectedClassIconText,
+                                  ]}
+                                >
+                                  {classItem.name
+                                    .split(" ")
+                                    .pop()
+                                    ?.replace(/[^0-9A-Z]/gi, "") || "C"}
+                                </Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ),
+                        )}
+                      </View>
+                      {selectedClass && (
+                        <Text style={styles.selectedClassLabel}>
+                          {selectedClass.name} • {students.length} students
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   {/* Search and Controls */}
                   <View style={styles.controlsSection}>
@@ -744,61 +819,114 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
                     </LinearGradient>
                   </View>
 
-                  {/* Modern Grade Selection */}
+                  {/* Simple Grade Level List */}
                   <View style={styles.gradeSection}>
-                    <Text style={styles.sectionTitle}>Select Grade Level</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.gradeScroll}
-                      contentContainerStyle={styles.gradeScrollContent}
-                    >
-                      {GRADE_LEVELS.map((grade) => (
-                        <TouchableOpacity
-                          key={grade.id}
-                          style={[
-                            styles.gradeCard,
-                            selectedGrade?.id === grade.id &&
-                              styles.selectedGradeCard,
-                          ]}
-                          onPress={() => {
-                            setSelectedGrade(grade);
-                            setStudents([]);
-                          }}
-                        >
-                          <LinearGradient
-                            colors={
-                              selectedGrade?.id === grade.id
-                                ? ["#920734", "#A91D47"]
-                                : ["#FFFFFF", "#F8F9FA"]
-                            }
-                            style={styles.gradeCardGradient}
+                    {gradeLevelsLoading ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#920734" />
+                        <Text style={styles.loadingText}>
+                          Loading grades...
+                        </Text>
+                      </View>
+                    ) : gradeLevelsError ? (
+                      <View style={styles.errorContainer}>
+                        <MaterialIcons name="error" size={20} color="#F44336" />
+                        <Text style={styles.errorText}>
+                          Failed to load grades
+                        </Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.gradeScroll}
+                        contentContainerStyle={styles.gradeScrollContent}
+                      >
+                        {gradeLevelsData?.data?.data?.map((grade) => (
+                          <TouchableOpacity
+                            key={grade.id}
+                            style={[
+                              styles.gradeChip,
+                              selectedGrade?.id === grade.id &&
+                                styles.selectedGradeChip,
+                            ]}
+                            onPress={() => {
+                              if (selectedGrade?.id === grade.id) {
+                                setSelectedGrade(null);
+                                setSelectedClass(null);
+                                setStudents([]);
+                              } else {
+                                setSelectedGrade(grade);
+                                setSelectedClass(null);
+                                setStudents([]);
+                              }
+                            }}
                           >
                             <Text
                               style={[
-                                styles.gradeName,
+                                styles.gradeChipText,
                                 selectedGrade?.id === grade.id &&
-                                  styles.selectedGradeName,
+                                  styles.selectedGradeChipText,
                               ]}
                             >
-                              {grade.display_name}
+                              {grade.name}
                             </Text>
-                            <Text
-                              style={[
-                                styles.gradeCount,
-                                selectedGrade?.id === grade.id &&
-                                  styles.selectedGradeCount,
-                              ]}
-                            >
-                              {selectedGrade?.id === grade.id
-                                ? `${students.length} students`
-                                : "Select to view"}
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
+
+                  {/* Small Class Icons */}
+                  {selectedGrade && (
+                    <View style={styles.classIconsSection}>
+                      <View style={styles.classIconsContainer}>
+                        {selectedGrade.grade_level_class_list.map(
+                          (classItem) => (
+                            <TouchableOpacity
+                              key={classItem.id}
+                              style={[
+                                styles.classIcon,
+                                selectedClass?.id === classItem.id &&
+                                  styles.selectedClassIcon,
+                              ]}
+                              onPress={() => {
+                                setSelectedClass(classItem);
+                                setStudents([]);
+                              }}
+                            >
+                              <LinearGradient
+                                colors={
+                                  selectedClass?.id === classItem.id
+                                    ? ["#4CAF50", "#66BB6A"]
+                                    : ["#E3F2FD", "#BBDEFB"]
+                                }
+                                style={styles.classIconGradient}
+                              >
+                                <Text
+                                  style={[
+                                    styles.classIconText,
+                                    selectedClass?.id === classItem.id &&
+                                      styles.selectedClassIconText,
+                                  ]}
+                                >
+                                  {classItem.name
+                                    .split(" ")
+                                    .pop()
+                                    ?.replace(/[^0-9A-Z]/gi, "") || "C"}
+                                </Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ),
+                        )}
+                      </View>
+                      {selectedClass && (
+                        <Text style={styles.selectedClassLabel}>
+                          {selectedClass.name} • {students.length} students
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   {/* Search and Controls */}
                   <View style={styles.controlsSection}>
@@ -895,64 +1023,128 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
               </LinearGradient>
             </View>
 
-            {/* Modern Grade Selection */}
+            {/* Simple Grade Level List */}
             <View style={styles.gradeSection}>
-              <Text style={styles.sectionTitle}>Select Grade Level</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.gradeScroll}
-                contentContainerStyle={styles.gradeScrollContent}
-              >
-                {GRADE_LEVELS.map((grade) => (
-                  <TouchableOpacity
-                    key={grade.id}
-                    style={[
-                      styles.gradeCard,
-                      selectedGrade?.id === grade.id &&
-                        styles.selectedGradeCard,
-                    ]}
-                    onPress={() => {
-                      setSelectedGrade(grade);
-                      setStudents([]);
-                    }}
-                  >
-                    <LinearGradient
-                      colors={
-                        selectedGrade?.id === grade.id
-                          ? ["#920734", "#A91D47"]
-                          : ["#FFFFFF", "#F8F9FA"]
-                      }
-                      style={styles.gradeCardGradient}
+              {gradeLevelsLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#920734" />
+                  <Text style={styles.loadingText}>Loading grades...</Text>
+                </View>
+              ) : gradeLevelsError ? (
+                <View style={styles.errorContainer}>
+                  <MaterialIcons name="error" size={20} color="#F44336" />
+                  <Text style={styles.errorText}>Failed to load grades</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.gradeScroll}
+                  contentContainerStyle={styles.gradeScrollContent}
+                >
+                  {gradeLevelsData?.data?.data?.map((grade) => (
+                    <TouchableOpacity
+                      key={grade.id}
+                      style={[
+                        styles.gradeChip,
+                        selectedGrade?.id === grade.id &&
+                          styles.selectedGradeChip,
+                      ]}
+                      onPress={() => {
+                        setSelectedGrade(grade);
+                        setSelectedClass(null);
+                        setStudents([]);
+                      }}
                     >
                       <Text
                         style={[
-                          styles.gradeName,
+                          styles.gradeChipText,
                           selectedGrade?.id === grade.id &&
-                            styles.selectedGradeName,
+                            styles.selectedGradeChipText,
                         ]}
                       >
-                        {grade.display_name}
+                        {grade.name}
                       </Text>
-                      <Text
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              {/* Class Selection */}
+              {selectedGrade && (
+                <View style={styles.classSection}>
+                  <Text style={styles.sectionTitle}>Classes</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.classScroll}
+                    contentContainerStyle={styles.classScrollContent}
+                  >
+                    {selectedGrade.grade_level_class_list.map((classItem) => (
+                      <TouchableOpacity
+                        key={classItem.id}
                         style={[
-                          styles.gradeCount,
-                          selectedGrade?.id === grade.id &&
-                            styles.selectedGradeCount,
+                          styles.classIcon,
+                          selectedClass?.id === classItem.id &&
+                            styles.selectedClassIcon,
                         ]}
+                        onPress={() => {
+                          setSelectedClass(classItem);
+                          setStudents([]);
+                        }}
                       >
-                        {selectedGrade?.id === grade.id
-                          ? `${students.length} students`
-                          : "Select to view"}
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                        <View style={styles.classIconInner}>
+                          {/* <MaterialIcons
+                            name="class"
+                            size={16}
+                            color={
+                              selectedClass?.id === classItem.id
+                                ? "#FFFFFF"
+                                : "#920734"
+                            }
+                          /> */}
+                          {/* {classItem.name} */}
+
+                          <LinearGradient
+                            colors={
+                              selectedClass?.id === classItem.id
+                                ? ["#4CAF50", "#66BB6A"]
+                                : ["#E3F2FD", "#BBDEFB"]
+                            }
+                            style={styles.classIconGradient}
+                          >
+                            <Text
+                              style={[
+                                styles.classIconText,
+                                selectedClass?.id === classItem.id &&
+                                  styles.selectedClassIconText,
+                              ]}
+                            >
+                              {classItem.name
+                                .split(" ")
+                                .pop()
+                                ?.replace(/[^0-9A-Z]/gi, "") || "C"}
+                            </Text>
+                          </LinearGradient>
+                        </View>
+                        <Text
+                          style={[
+                            styles.classIconText,
+                            selectedClass?.id === classItem.id &&
+                              styles.selectedClassIconText,
+                          ]}
+                        >
+                          {/* {classItem.name} */}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
             {/* Loading/Error/No Students States */}
-            {selectedGrade && (
+            {selectedClass && (
               <>
                 {isLoadingStudents || studentsLoading ? (
                   <View style={styles.loadingContainer}>
@@ -979,14 +1171,15 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
               </>
             )}
 
-            {!selectedGrade && (
+            {!selectedClass && (
               <View style={styles.selectPromptContainer}>
                 <MaterialIcons name="school" size={64} color="#920734" />
                 <Text style={styles.selectPromptText}>
-                  Select a grade to get started
+                  Select a class to get started
                 </Text>
                 <Text style={styles.selectPromptSubtext}>
-                  Choose a grade level to view and mark attendance for students
+                  Choose a grade level and class to view and mark attendance for
+                  students
                 </Text>
               </View>
             )}
@@ -994,7 +1187,7 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
         )}
 
         {/* Floating Action Buttons */}
-        {selectedGrade && students.length > 0 && (
+        {selectedClass && students.length > 0 && (
           <View style={styles.floatingActions}>
             <TouchableOpacity
               style={styles.floatingButton}
@@ -1014,7 +1207,7 @@ const ModernAddAttendanceModal: React.FC<AddAttendanceModalProps> = ({
         )}
 
         {/* Save Button */}
-        {selectedGrade && students.length > 0 && (
+        {selectedClass && students.length > 0 && (
           <View style={styles.saveContainer}>
             <TouchableOpacity
               style={[
@@ -1165,12 +1358,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   gradeSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1a1a1a",
     marginBottom: 16,
   },
   gradeScroll: {
@@ -1179,41 +1366,26 @@ const styles = StyleSheet.create({
   gradeScrollContent: {
     paddingRight: 16,
   },
-  gradeCard: {
-    marginRight: 12,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+  gradeChip: {
+    marginRight: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
   },
-  gradeCardGradient: {
-    padding: 16,
-    borderRadius: 16,
-    minWidth: 140,
-    alignItems: "center",
+  selectedGradeChip: {
+    backgroundColor: "#920734",
+    borderColor: "#920734",
   },
-  selectedGradeCard: {
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
+  gradeChipText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
   },
-  gradeName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 4,
-  },
-  selectedGradeName: {
+  selectedGradeChipText: {
     color: "#FFFFFF",
-  },
-  gradeCount: {
-    fontSize: 12,
-    color: "#666",
-  },
-  selectedGradeCount: {
-    color: "rgba(255,255,255,0.9)",
   },
   controlsSection: {
     marginBottom: 16,
@@ -1498,6 +1670,170 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     backgroundColor: "#666",
+  },
+
+  // New Styles for Grade & Class Selection
+  gradeClassContainer: {
+    maxHeight: 300,
+  },
+  gradeItem: {
+    marginBottom: 8,
+  },
+  gradeHeader: {
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  expandedGradeHeader: {
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  gradeHeaderGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderRadius: 12,
+  },
+  gradeHeaderContent: {
+    flex: 1,
+  },
+  gradeHeaderTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 2,
+  },
+  selectedGradeHeaderTitle: {
+    color: "#FFFFFF",
+  },
+  gradeHeaderSubtitle: {
+    fontSize: 12,
+    color: "#666",
+  },
+  selectedGradeHeaderSubtitle: {
+    color: "rgba(255,255,255,0.9)",
+  },
+  classesContainer: {
+    marginTop: 8,
+    paddingLeft: 16,
+    gap: 4,
+  },
+  classItem: {
+    borderRadius: 8,
+    marginBottom: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  selectedClassItem: {
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  classItemGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: 8,
+  },
+  classItemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  classItemTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginLeft: 8,
+  },
+  selectedClassItemTitle: {
+    color: "#FFFFFF",
+  },
+  classStudentCount: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.9)",
+    fontWeight: "600",
+  },
+
+  // Small Class Icon Styles
+  classIconsSection: {
+    marginBottom: 16,
+  },
+  classIconsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  classIcon: {
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  selectedClassIcon: {
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  classIconGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  classIconText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1976D2",
+  },
+  selectedClassIconText: {
+    color: "#FFFFFF",
+  },
+  selectedClassLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#4CAF50",
+    textAlign: "center",
+  },
+  classSection: {
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
+  classScroll: {
+    flexGrow: 0,
+  },
+  classScrollContent: {
+    paddingRight: 16,
+  },
+  classIconInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    margin: 6,
   },
 });
 

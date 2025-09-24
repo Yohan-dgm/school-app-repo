@@ -322,7 +322,15 @@ export const transformFilterToApiParam = (filter: string): FilterResult => {
     case "current-month":
       return { type: "month", year: currentYear, month: currentMonthId }; // Send both year and month
     case "all":
-    default:
       return { type: "all" }; // No additional parameters
+    default:
+      // Check if filter is a year (e.g., "2025", "2024", etc.)
+      const yearMatch = filter.match(/^\d{4}$/);
+      if (yearMatch) {
+        const filterYear = parseInt(filter, 10);
+        return { type: "year", year: filterYear };
+      }
+      // Fallback to all
+      return { type: "all" };
   }
 };

@@ -28,6 +28,7 @@ import {
   USER_CATEGORIES,
   getUserCategoryDisplayName,
 } from "../../constants/userCategories";
+import { getUserProfileImageSourceWithAuth } from "../../utils/profileImageUtils";
 
 // Import section components
 import ProfileSection from "../drawer/sections/profile/ProfileSection";
@@ -45,7 +46,11 @@ const DrawerMenu = ({ isVisible, onClose }) => {
   const { user, setUser } = useAuth();
   const router = useRouter();
   const dispatch = useDispatch();
-  const { sessionData } = useSelector((state) => state.app);
+  const {
+    sessionData,
+    user: reduxUser,
+    token,
+  } = useSelector((state) => state.app);
   const slideAnim = useSharedValue(-DRAWER_WIDTH);
   const overlayOpacity = useSharedValue(0);
   const insets = useSafeAreaInsets();
@@ -56,12 +61,47 @@ const DrawerMenu = ({ isVisible, onClose }) => {
   const isParent = userCategory === USER_CATEGORIES.PARENT;
   const userDisplayName = getUserCategoryDisplayName(userCategory);
 
-  console.log(
-    "🏠 DrawerMenu - User category:",
-    userCategory,
-    "Is parent:",
-    isParent
-  );
+  // console.log(
+  //   "🏠 DrawerMenu - User category:",
+  //   userCategory,
+  //   "Is parent:",
+  //   isParent,
+  // );
+
+  // Debug user data for profile image
+  // console.log("🏠 DrawerMenu - User data debug:", {
+  //   authUser: user,
+  //   reduxUser: reduxUser,
+  //   sessionData: sessionData?.data,
+  //   reduxUserProfileImage: reduxUser?.profile_image,
+  //   sessionDataProfileImage: sessionData?.data?.profile_image,
+  // });
+
+  // Get user profile image - try multiple sources with auth headers
+  const getDrawerProfileImage = () => {
+    // Try Redux user first
+    if (reduxUser?.profile_image && reduxUser.profile_image.id) {
+      // console.log("🏠 DrawerMenu - Using Redux user profile image with auth");
+      return getUserProfileImageSourceWithAuth(reduxUser, token);
+    }
+
+    // Try session data user
+    if (sessionData?.data?.profile_image && sessionData.data.profile_image.id) {
+      // console.log("🏠 DrawerMenu - Using session data profile image with auth");
+      return getUserProfileImageSourceWithAuth(sessionData.data, token);
+    }
+
+    // Try auth context user (though less likely to have profile image)
+    if (user?.profile_image && user.profile_image.id) {
+      // console.log(
+      //   "🏠 DrawerMenu - Using auth context user profile image with auth"
+      // );
+      return getUserProfileImageSourceWithAuth(user, token);
+    }
+
+    // console.log("🏠 DrawerMenu - No profile image found, using fallback");
+    return require("../../assets/images/sample-profile.png");
+  };
 
   // State for section overlay
   const [sectionOverlayVisible, setSectionOverlayVisible] = useState(false);
@@ -272,11 +312,14 @@ const DrawerMenu = ({ isVisible, onClose }) => {
 
             <View style={styles.userInfo}>
               <Image
-                source={require("../../assets/images/sample-profile.png")}
+                source={getDrawerProfileImage()}
                 style={styles.userAvatar}
               />
+
               <Text style={styles.userName}>
-                {user?.full_name || "Parent User"}
+                {reduxUser?.full_name ||
+                  sessionData?.data?.full_name ||
+                  "Parent User"}
               </Text>
               <Text style={styles.userRole}>{userDisplayName} Account</Text>
             </View>

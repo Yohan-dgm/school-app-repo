@@ -93,11 +93,115 @@ export interface StudentAttendanceByIdQueryParams {
   page_size: number;
 }
 
+// New interface for student attendance by date and class
+export interface StudentAttendanceByDateAndClassParams {
+  grade_level_class_id: number;
+  date: string;
+  page: number;
+  page_size: number;
+}
+
+// Today's attendance interface
+export interface TodayAttendanceQueryParams {
+  student_id: number;
+}
+
+export interface TodayAttendanceResponse {
+  status: "success" | "error";
+  data: {
+    student_id: number;
+    student: {
+      full_name_with_title: string;
+    };
+    date: string;
+    attendance_status: "present" | "absent" | null;
+    attendance_type_id: number;
+    time: string | null;
+    notes: string | null;
+    attendance_type: string | null;
+    attendance_reason: string | null;
+  };
+}
+
+// New interfaces for student attendance by date and class
+export interface AttendanceSummary {
+  status: "present" | "absent" | "late" | "partial";
+  in_time: string;
+  out_time: string;
+}
+
+export interface StudentAttendanceDetailRecord {
+  id: number;
+  attendance_type_id: number;
+  time: string;
+  notes: string | null;
+  attendance_type: {
+    id: number;
+    name: string;
+  };
+  attendance_reason: string | null;
+}
+
+export interface StudentAttendanceDetail {
+  student_id: number;
+  student: {
+    full_name: string;
+    full_name_with_title: string;
+    student_calling_name?: string;
+    admission_number: string;
+  };
+  date: string;
+  attendance_summary: AttendanceSummary;
+  attendance_records: StudentAttendanceDetailRecord[];
+}
+
+export interface AttendanceClassSummary {
+  total_students: number;
+  present_count: number;
+  absent_count: number;
+  partial_count: number;
+  date: string;
+  grade_level_class_id: number;
+}
+
+export interface AttendancePagination {
+  current_page: number;
+  total_pages: number;
+  per_page: number;
+  total: number;
+  has_more_pages: boolean;
+}
+
+export interface StudentAttendanceByDateAndClassResponse {
+  status: "success" | "error";
+  message: string;
+  data: {
+    attendance_records: StudentAttendanceDetail[];
+    summary: AttendanceClassSummary;
+    pagination: AttendancePagination;
+  };
+}
+
 export interface AttendanceResponse {
   status: string;
   message: string;
   data: {
     data: AttendanceRecord[];
+    total: number;
+    student_attendance_count: number;
+    grade_level_class_list: GradeLevelClass[];
+  };
+  metadata: {
+    is_system_update_pending: boolean;
+  };
+}
+
+// New interface for the real API response with numbered keys
+export interface AttendanceResponseWithNumberedKeys {
+  status: string;
+  message: string;
+  data: {
+    data: { [key: string]: AttendanceRecord };
     total: number;
     student_attendance_count: number;
     grade_level_class_list: GradeLevelClass[];
@@ -122,7 +226,29 @@ export interface StudentAttendanceResponse {
   };
 }
 
+// Laravel pagination response format (actual backend response)
 export interface StudentAttendanceByIdResponse {
+  current_page: number;
+  data: StudentAttendanceRecord[];
+  first_page_url: string;
+  from: number;
+  last_page: number;
+  last_page_url: string;
+  links: {
+    active: boolean;
+    label: string;
+    url: string | null;
+  }[];
+  next_page_url: string | null;
+  path: string;
+  per_page: number;
+  prev_page_url: string | null;
+  to: number;
+  total: number;
+}
+
+// Legacy interface (kept for reference)
+export interface StudentAttendanceByIdResponseLegacy {
   status: string;
   message: string;
   data: {
@@ -155,6 +281,26 @@ export interface StudentAttendanceData {
   out_time?: string; // HH:MM format (required for late)
   notes?: string;
   reason?: string; // Reason for absence/late
+}
+
+// ===== UPDATE ATTENDANCE INTERFACES =====
+
+export interface UpdateStudentAttendanceRequest {
+  student_id: number;
+  grade_level_class_id: number;
+  date: string; // YYYY-MM-DD format
+  attendance_status: "present" | "absent" | "late"; // String status instead of type_id
+  in_time: string | null; // HH:MM:SS format or null
+  out_time: string | null; // HH:MM:SS format or null
+  notes: string; // String value (empty string or actual notes)
+  reason: string; // ALWAYS string (empty string or actual reason) - never null
+}
+
+export interface UpdateAttendanceResponse {
+  attendance_records: StudentAttendanceRecord[];
+  total_records: number;
+  status: string;
+  message: string;
 }
 
 export interface CreateAttendanceRequest {
@@ -199,6 +345,10 @@ export const attendanceApi = apiServer1.injectEndpoints({
           method: "POST",
           body: params,
         };
+      },
+      transformResponse: (response: AttendanceResponseWithNumberedKeys) => {
+        // Transform the numbered keys response to array format
+        return transformNumberedKeysResponse(response);
       },
       providesTags: ["StudentAttendanceAggregated"],
     }),
@@ -441,64 +591,17 @@ export const attendanceApi = apiServer1.injectEndpoints({
       StudentAttendanceByIdResponse,
       StudentAttendanceByIdQueryParams
     >({
-      // TEMPORARY MOCK - Remove when backend endpoint is ready
-      queryFn: async (params) => {
-        console.log("🔗 Mock Student Attendance By ID API Request:", {
-          params,
-        });
-
-        // Simulate API delay
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        // Generate mock attendance records for specific student
-        const attendanceRecords = generateMockStudentAttendanceById(params);
-
-        const mockData: StudentAttendanceByIdResponse = {
-          status: "successful",
-          message: "",
-          data: {
-            attendance_records: attendanceRecords.records,
-            pagination: attendanceRecords.pagination,
-            student_info: attendanceRecords.studentInfo,
-          },
-          metadata: {
-            is_system_update_pending: true,
-          },
-        };
-
-        console.log("📊 Mock Student Attendance By ID Response:", {
-          status: mockData.status,
-          recordsCount: mockData.data.attendance_records.length,
-          totalRecords: mockData.data.pagination.total,
-          studentName: mockData.data.student_info.full_name,
-          currentPage: params.page,
-          pageSize: params.page_size,
-        });
-
-        // Log monthly distribution for debugging
-        const monthlyDistribution = mockData.data.attendance_records.reduce(
-          (acc, record) => {
-            const month = record.date.substring(0, 7); // Get YYYY-MM
-            if (!acc[month]) acc[month] = 0;
-            acc[month]++;
-            return acc;
-          },
-          {} as Record<string, number>,
-        );
-
-        console.log("📅 Monthly Distribution of Records:", monthlyDistribution);
-
-        return { data: mockData };
-      },
-
-      // REAL API CALL - Uncomment when backend is ready
-      /*
       query: (params) => {
         console.log("🔗 Student Attendance By ID API Request:", {
           url: "api/attendance-management/student-attendance/get-student-attendance-by-id",
           method: "POST",
-          params,
+          params: {
+            student_id: params.student_id,
+            page: params.page,
+            page_size: params.page_size,
+          },
           baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+          fullUrl: `${process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1}/api/attendance-management/student-attendance/get-student-attendance-by-id`,
         });
         return {
           url: "api/attendance-management/student-attendance/get-student-attendance-by-id",
@@ -506,9 +609,10 @@ export const attendanceApi = apiServer1.injectEndpoints({
           body: params,
         };
       },
-      */
-
-      providesTags: ["StudentAttendanceById"],
+      providesTags: (result, error, args) => [
+        { type: "StudentAttendanceById", id: args.student_id },
+        "StudentAttendanceById",
+      ],
     }),
 
     createStudentAttendance: builder.mutation<
@@ -551,143 +655,150 @@ export const attendanceApi = apiServer1.injectEndpoints({
         "StudentAttendanceById",
       ],
     }),
+
+    getTodayStudentAttendanceById: builder.query<
+      TodayAttendanceResponse,
+      TodayAttendanceQueryParams
+    >({
+      query: (params) => {
+        console.log("🔗 Today's Student Attendance API Request:", {
+          url: "api/attendance-management/student-attendance/get-today-student-attendance-by-student-id",
+          method: "POST",
+          params: {
+            student_id: params.student_id,
+          },
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+          fullUrl: `${process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1}/api/attendance-management/student-attendance/get-today-student-attendance-by-student-id`,
+        });
+        return {
+          url: "api/attendance-management/student-attendance/get-today-student-attendance-by-student-id",
+          method: "POST",
+          body: params,
+        };
+      },
+      providesTags: (result, error, args) => [
+        { type: "StudentAttendanceById", id: args.student_id },
+        "StudentAttendanceById",
+      ],
+    }),
+
+    getStudentAttendanceByDateAndClass: builder.query<
+      StudentAttendanceByDateAndClassResponse,
+      StudentAttendanceByDateAndClassParams
+    >({
+      query: (params) => {
+        console.log("🔗 Student Attendance By Date and Class API Request:", {
+          url: "api/attendance-management/student-attendance/get-student-attendance-by-date-and-class",
+          method: "POST",
+          params: {
+            grade_level_class_id: params.grade_level_class_id,
+            date: params.date,
+            page: params.page,
+            page_size: params.page_size,
+          },
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+          fullUrl: `${process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1}/api/attendance-management/student-attendance/get-student-attendance-by-date-and-class`,
+        });
+        return {
+          url: "api/attendance-management/student-attendance/get-student-attendance-by-date-and-class",
+          method: "POST",
+          body: params,
+        };
+      },
+      providesTags: (result, error, args) => [
+        {
+          type: "StudentAttendanceByDateAndClass",
+          id: `${args.grade_level_class_id}-${args.date}`,
+        },
+        "StudentAttendanceByDateAndClass",
+      ],
+    }),
+
+    updateStudentAttendance: builder.mutation<
+      UpdateAttendanceResponse,
+      UpdateStudentAttendanceRequest
+    >({
+      query: (attendanceData) => {
+        console.log("🔗 Update Student Attendance API Request:", {
+          url: "api/attendance-management/student-attendance/update-student-attendance",
+          method: "POST",
+          data: attendanceData,
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+        });
+
+        // Validate that we're not sending undefined values
+        const hasUndefinedValues = Object.entries(attendanceData).some(
+          ([key, value]) => value === undefined,
+        );
+        if (hasUndefinedValues) {
+          console.error(
+            "🚨 CRITICAL: Request contains undefined values!",
+            attendanceData,
+          );
+        }
+
+        // Check specifically for problematic fields
+        if ("notes" in attendanceData && attendanceData.notes === undefined) {
+          console.error("🚨 CRITICAL: notes field is undefined!");
+        }
+        if ("reason" in attendanceData && attendanceData.reason === undefined) {
+          console.error("🚨 CRITICAL: reason field is undefined!");
+        }
+
+        // Log the attendance data being sent
+        console.log("📊 Update Attendance Data:", {
+          studentId: attendanceData.student_id,
+          attendanceStatus: attendanceData.attendance_status,
+          date: attendanceData.date,
+          inTime: attendanceData.in_time,
+          outTime: attendanceData.out_time,
+          notes: attendanceData.notes,
+          reason: attendanceData.reason,
+        });
+
+        // Log the exact request body being sent to help debug
+        console.log(
+          "📤 Exact Request Body:",
+          JSON.stringify(attendanceData, null, 2),
+        );
+        console.log("📤 Request Body Keys:", Object.keys(attendanceData));
+        console.log("📤 Request Body Values:", Object.values(attendanceData));
+
+        // Final safeguard: remove any undefined values from the request
+        const cleanedData = cleanRequestObject(attendanceData);
+        console.log(
+          "🧹 Cleaned Request Body:",
+          JSON.stringify(cleanedData, null, 2),
+        );
+
+        return {
+          url: "api/attendance-management/student-attendance/update-student-attendance",
+          method: "POST",
+          body: cleanedData,
+        };
+      },
+      invalidatesTags: (result, error, args) => {
+        if (error) return [];
+
+        // Only invalidate specific, relevant data to minimize cache refreshes
+        return [
+          // Invalidate the specific student's attendance data
+          { type: "StudentAttendanceById", id: args.student_id },
+          // Invalidate the specific date and class combination
+          {
+            type: "StudentAttendanceByDateAndClass",
+            id: `${args.grade_level_class_id}-${args.date}`,
+          },
+          // Keep general invalidation for broad views that need updates
+          "StudentAttendanceAggregated",
+        ];
+      },
+    }),
   }),
   overrideExisting: false,
 });
 
-// Mock data generators
-function generateMockStudentAttendanceById(
-  params: StudentAttendanceByIdQueryParams,
-): {
-  records: StudentAttendanceRecord[];
-  pagination: {
-    page: number;
-    page_size: number;
-    total: number;
-    total_pages: number;
-  };
-  studentInfo: {
-    id: number;
-    full_name: string;
-    admission_number: string;
-  };
-} {
-  const { student_id, page, page_size } = params;
-
-  // Generate consistent student info based on student_id
-  const studentNames = [
-    "Thanumi Sasithma Dissanayake",
-    "Godakumbure Gedara Upeksha Sathsarani Bandara",
-    "Dissanayaka Mudiyanselage Sehas Saswindu Bandara",
-    "Liyanage Disas Damyuga Perara",
-    "Mirihagalla Kankanamlage Shiyon Menosha Mirihagalla",
-    "Wijesinghe Mudiyanselage Rivitha Nethdula Wijesinghe",
-    "Zero Senaji",
-    "Ranpati Dewage Kusal Bimsara Dissanayake",
-    "Withan Kankanamlage Lagni Akelya Withana",
-    "Kande Hevayalage Osindu Nethmina Jayarathna",
-  ];
-
-  const studentInfo = {
-    id: student_id,
-    full_name:
-      studentNames[(student_id - 1) % studentNames.length] || "Unknown Student",
-    admission_number: `NY24/${String(student_id).padStart(3, "0")}`,
-  };
-
-  // Generate mock attendance records for the current full calendar year
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const allRecords: StudentAttendanceRecord[] = [];
-
-  // Generate records for all 12 months of the current year
-  for (let month = 1; month <= 12; month++) {
-    // Get number of days in this month
-    const daysInMonth = new Date(currentYear, month, 0).getDate();
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(currentYear, month - 1, day);
-
-      // Skip weekends (Saturday = 6, Sunday = 0) for school attendance
-      if (date.getDay() === 0 || date.getDay() === 6) {
-        continue;
-      }
-
-      // Skip future dates (don't generate attendance for future school days)
-      if (date > now) {
-        continue;
-      }
-
-      // Fix timezone issue: use local date instead of UTC
-      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
-      // Determine attendance pattern (90% present, 10% absent)
-      // Use date and student_id as seed for consistent patterns
-      const seed = student_id + date.getTime() / 1000000;
-      const random = Math.sin(seed) * 10000;
-      const randomValue = random - Math.floor(random);
-
-      let attendanceTypeId: number;
-      let inTime: string | null = null;
-      let outTime: string | null = null;
-
-      if (randomValue < 0.9) {
-        // Present - create single record with both in and out times
-        inTime = "07:30";
-        outTime = "13:00";
-        attendanceTypeId = 1; // Use type 1 for present (with both times)
-
-        allRecords.push({
-          id: 25000 + allRecords.length,
-          date: dateStr,
-          time: inTime, // Primary time (in time)
-          student_id: student_id,
-          attendance_type_id: attendanceTypeId,
-          notes: null,
-          out_time: outTime,
-          in_time: inTime,
-          attendance_type: { id: 1, name: "Present" },
-          student: studentInfo,
-        });
-      } else {
-        // Absent (attendance_type_id = 3)
-        allRecords.push({
-          id: 25000 + allRecords.length,
-          date: dateStr,
-          time: null,
-          student_id: student_id,
-          attendance_type_id: 3,
-          notes: "",
-          out_time: null,
-          in_time: null,
-          attendance_type: { id: 3, name: "Absent" },
-          student: studentInfo,
-        });
-      }
-    }
-  }
-
-  // Sort by date descending
-  allRecords.sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  );
-
-  // Apply pagination
-  const startIndex = (page - 1) * page_size;
-  const endIndex = startIndex + page_size;
-  const paginatedRecords = allRecords.slice(startIndex, endIndex);
-
-  return {
-    records: paginatedRecords,
-    pagination: {
-      page: page,
-      page_size: page_size,
-      total: allRecords.length,
-      total_pages: Math.ceil(allRecords.length / page_size),
-    },
-    studentInfo,
-  };
-}
+// Mock data generator removed - now using real API calls only
 
 function generateMockAttendanceRecords(params: AttendanceQueryParams): {
   filteredRecords: AttendanceRecord[];
@@ -1082,6 +1193,26 @@ function generateMockGradeLevelClasses(): GradeLevelClass[] {
   ];
 }
 
+// ===== DATA TRANSFORMATION UTILITIES =====
+
+/**
+ * Transforms the numbered keys API response to array format for component usage
+ */
+export const transformNumberedKeysResponse = (
+  response: AttendanceResponseWithNumberedKeys,
+): AttendanceResponse => {
+  // Convert the numbered object to array
+  const recordsArray = Object.values(response.data.data);
+
+  return {
+    ...response,
+    data: {
+      ...response.data,
+      data: recordsArray,
+    },
+  };
+};
+
 // ===== EXPORT HOOKS =====
 
 export const {
@@ -1094,6 +1225,11 @@ export const {
   useGetStudentAttendanceByIdQuery,
   useLazyGetStudentAttendanceByIdQuery,
   useCreateStudentAttendanceMutation,
+  useGetTodayStudentAttendanceByIdQuery,
+  useLazyGetTodayStudentAttendanceByIdQuery,
+  useGetStudentAttendanceByDateAndClassQuery,
+  useLazyGetStudentAttendanceByDateAndClassQuery,
+  useUpdateStudentAttendanceMutation,
 } = attendanceApi;
 
 // ===== UTILITY FUNCTIONS =====
@@ -1127,6 +1263,35 @@ export const createStudentAttendanceQueryParams = (
   attendance_date: attendanceDate,
   grade_level_class_name: gradeLevelClassName,
 });
+
+export const createStudentAttendanceByDateAndClassParams = (
+  gradeLevelClassId: number,
+  date: string,
+  page: number = 1,
+  pageSize: number = 10,
+): StudentAttendanceByDateAndClassParams => {
+  // Validate required parameters
+  if (!date || date.trim() === "") {
+    console.warn(
+      "⚠️ createStudentAttendanceByDateAndClassParams: Empty or invalid date provided:",
+      date,
+    );
+  }
+
+  if (!gradeLevelClassId || gradeLevelClassId <= 0) {
+    console.warn(
+      "⚠️ createStudentAttendanceByDateAndClassParams: Invalid gradeLevelClassId provided:",
+      gradeLevelClassId,
+    );
+  }
+
+  return {
+    grade_level_class_id: gradeLevelClassId,
+    date: date.trim(), // Ensure no whitespace issues
+    page,
+    page_size: pageSize,
+  };
+};
 
 export const getTotalStudentsCount = (record: AttendanceRecord): number => {
   return record.present_student_count + record.absent_student_count;
@@ -1242,11 +1407,18 @@ export const processAttendanceDataForChart = (
       month,
       monthLabel: label,
       year,
-      totalStudents,
-      presentCount: totalPresent,
-      absentCount: totalAbsent,
+      monthNumber: parseInt(month.split("-")[1]),
+      totalPresentStudents: totalPresent,
+      totalStudentDays: totalStudents,
+      averageDailyPresent:
+        monthRecords.length > 0 ? totalPresent / monthRecords.length : 0,
       attendanceRate: Math.round(attendanceRate * 10) / 10, // Round to 1 decimal
-      recordsCount: monthRecords.length,
+      daysWithData: monthRecords.length,
+      totalDaysInMonth: new Date(
+        year,
+        parseInt(month.split("-")[1]),
+        0,
+      ).getDate(),
     });
   });
 
@@ -1518,6 +1690,161 @@ export const generateMonthlyAttendanceStats = (
     worstMonth,
     trend,
   };
+};
+
+// ===== ATTENDANCE EDIT MODAL TRANSFORMATION UTILITIES =====
+
+/**
+ * Transforms StudentAttendanceDetail to format expected by AttendanceEditModal
+ */
+export const transformStudentAttendanceDetailToEditFormat = (
+  record: StudentAttendanceDetail,
+  gradeLevelClassId: number,
+): {
+  id: number;
+  name: string;
+  full_name: string;
+  student_calling_name?: string;
+  admission_number: string;
+  profile_image?: string;
+  grade: string;
+  class: string;
+  attendance: "present" | "absent" | "late";
+} => {
+  return {
+    id: record.student_id,
+    name: record.student.full_name,
+    full_name: record.student.full_name,
+    student_calling_name: record.student.student_calling_name,
+    admission_number: record.student.admission_number,
+    profile_image: undefined, // Not available in StudentAttendanceDetail
+    grade: `Class ${gradeLevelClassId}`, // Simple format for now
+    class: `Class ${gradeLevelClassId}`,
+    attendance: record.attendance_summary.status as
+      | "present"
+      | "absent"
+      | "late",
+  };
+};
+
+/**
+ * Transforms attendance edit data to UpdateStudentAttendanceRequest format
+ */
+export const transformEditDataToUpdateRequest = (
+  studentId: number,
+  gradeLevelClassId: number,
+  date: string,
+  attendance: "present" | "absent" | "late",
+  reason?: string,
+  notes?: string,
+  inTime?: string,
+  outTime?: string,
+): UpdateStudentAttendanceRequest => {
+  console.log("🔧 TRANSFORM FUNCTION - Input parameters:", {
+    studentId,
+    gradeLevelClassId,
+    date,
+    attendance,
+    reason: reason || "undefined",
+    notes: notes || "undefined",
+    inTime: inTime || "undefined",
+    outTime: outTime || "undefined",
+  });
+
+  // Start with required fields only
+  const updateData: UpdateStudentAttendanceRequest = {
+    student_id: studentId,
+    grade_level_class_id: gradeLevelClassId,
+    date: date,
+    attendance_status: attendance,
+  };
+
+  console.log(
+    "🔧 TRANSFORM FUNCTION - Base updateData:",
+    JSON.stringify(updateData, null, 2),
+  );
+
+  // Only add optional fields if they have actual values
+  if (notes && notes.trim().length > 0) {
+    updateData.notes = notes.trim();
+    console.log("✅ Added notes to request:", notes.trim());
+  } else {
+    console.log("❌ Notes NOT added - value:", notes);
+  }
+
+  if (reason && reason.trim().length > 0) {
+    updateData.reason = reason.trim();
+    console.log("✅ Added reason to request:", reason.trim());
+  } else {
+    console.log("❌ Reason NOT added - value:", reason);
+  }
+
+  // Add time fields for present and late attendance (both need times)
+  if (attendance === "present" || attendance === "late") {
+    console.log("🕒 Processing time fields for attendance:", attendance);
+
+    if (inTime && inTime.trim().length > 0) {
+      updateData.in_time = convertToFullTimeFormat(inTime.trim());
+      console.log("✅ Added in_time to request:", updateData.in_time);
+    } else {
+      console.log("❌ in_time NOT added - value:", inTime);
+    }
+
+    if (outTime && outTime.trim().length > 0) {
+      updateData.out_time = convertToFullTimeFormat(outTime.trim());
+      console.log("✅ Added out_time to request:", updateData.out_time);
+    } else {
+      console.log("❌ out_time NOT added - value:", outTime);
+    }
+  } else {
+    console.log("⏭️ Skipping time fields for attendance:", attendance);
+  }
+
+  console.log(
+    "🎯 TRANSFORM FUNCTION - Final updateData:",
+    JSON.stringify(updateData, null, 2),
+  );
+  console.log("🎯 TRANSFORM FUNCTION - Object keys:", Object.keys(updateData));
+
+  return updateData;
+};
+
+/**
+ * Converts HH:MM format to HH:MM:SS format
+ */
+export const convertToFullTimeFormat = (time: string): string => {
+  // If already in HH:MM:SS format, return as is
+  if (time.length === 8 && time.split(":").length === 3) {
+    return time;
+  }
+
+  // If in HH:MM format, add ":00" for seconds
+  if (time.length === 5 && time.split(":").length === 2) {
+    return `${time}:00`;
+  }
+
+  // If invalid format, return with ":00" appended
+  return `${time}:00`;
+};
+
+/**
+ * Removes undefined values from request object to prevent backend errors
+ */
+export const cleanRequestObject = (obj: any): any => {
+  const cleaned = {};
+
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      cleaned[key] = value;
+    }
+  });
+
+  console.log(
+    "🧹 cleanRequestObject - Removed keys:",
+    Object.keys(obj).filter((key) => !(key in cleaned)),
+  );
+
+  return cleaned;
 };
 
 // ===== ATTENDANCE CREATION UTILITY FUNCTIONS =====

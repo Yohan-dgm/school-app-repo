@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Modal,
+} from "react-native";
 import NetInfo from "@react-native-community/netinfo";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useSelector } from "react-redux";
@@ -13,6 +20,11 @@ import ClassTabWithAPI from "./tabs/ClassTabWithAPI";
 import StudentTabWithAPI from "./tabs/StudentTabWithAPI";
 import FilterBar from "./FilterBar";
 
+// Import drawer components
+import SchoolPostDrawer from "./SchoolPostDrawer";
+import ClassPostDrawer from "./ClassPostDrawer";
+import UniversalPostCreationDrawer from "./UniversalPostCreationDrawer";
+
 const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [activeTab, setActiveTab] = useState("School");
@@ -20,8 +32,14 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
     searchTerm: "",
     dateRange: { start: null, end: null },
     category: "all",
+    year: "all",
     hashtags: [],
   });
+
+  // Drawer states
+  const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
+  const [showSchoolDrawer, setShowSchoolDrawer] = useState(false);
+  const [showClassDrawer, setShowClassDrawer] = useState(false);
 
   // Get posts data from Redux for dynamic filtering
   const { posts: schoolPosts, allPosts: schoolAllPosts } = useSelector(
@@ -38,20 +56,6 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
     console.log("🎯 ActivityFeed: Filters updated:", filters);
   }, [filters]);
 
-  // Get current tab's posts data for dynamic filtering
-  const getCurrentTabPosts = () => {
-    switch (activeTab) {
-      case "School":
-        return schoolPosts || [];
-      case "Class":
-        return classPosts || [];
-      case "Student":
-        return studentPosts || [];
-      default:
-        return [];
-    }
-  };
-
   // Get all posts (unfiltered) for filter options
   const getAllPostsForFilters = () => {
     switch (activeTab) {
@@ -66,7 +70,6 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
     }
   };
 
-  const currentTabPosts = getCurrentTabPosts();
   const allPostsForFilters = getAllPostsForFilters();
 
   // Check internet connectivity
@@ -100,8 +103,35 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
       searchTerm: "",
       dateRange: { start: null, end: null },
       category: "all",
+      year: "all",
       hashtags: [],
     });
+  };
+
+  // Handle add post - open universal drawer
+  const handleAddPost = () => {
+    setShowUniversalDrawer(true);
+  };
+
+  // Handle section selection from universal drawer
+  const handleSectionSelect = (sectionId) => {
+    switch (sectionId) {
+      case "school":
+        setShowSchoolDrawer(true);
+        break;
+      case "class":
+        setShowClassDrawer(true);
+        break;
+      default:
+        Alert.alert("Error", "Unable to create post for this section");
+    }
+  };
+
+  // Handle post creation success - refresh posts
+  const handlePostCreated = () => {
+    // TODO: Add logic to refresh posts for the active tab
+    console.log("📝 Post created successfully for tab:", activeTab);
+    // This could trigger a refetch of posts or invalidate cache
   };
 
   // Render the active tab content with conditional rendering to prevent key conflicts
@@ -121,6 +151,8 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
         onFilterChange={handleFilterChange}
         onClearFilters={clearFilters}
         postsData={allPostsForFilters}
+        onAddPost={handleAddPost}
+        userCategory={userCategory}
       />
 
       {/* Tab Content */}
@@ -147,6 +179,27 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
           />
         )}
       </View>
+
+      {/* Universal Post Creation Drawer */}
+      <UniversalPostCreationDrawer
+        visible={showUniversalDrawer}
+        onClose={() => setShowUniversalDrawer(false)}
+        onSectionSelect={handleSectionSelect}
+        activeTab={activeTab}
+      />
+
+      {/* Post Creation Drawers */}
+      <SchoolPostDrawer
+        visible={showSchoolDrawer}
+        onClose={() => setShowSchoolDrawer(false)}
+        onPostCreated={handlePostCreated}
+      />
+
+      <ClassPostDrawer
+        visible={showClassDrawer}
+        onClose={() => setShowClassDrawer(false)}
+        onPostCreated={handlePostCreated}
+      />
     </View>
   );
 };

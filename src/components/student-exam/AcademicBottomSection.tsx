@@ -1,20 +1,30 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import LinearGradient from 'react-native-linear-gradient';
-import { modernTheme } from '../../styles/modernTheme';
-import { AnimatedCard } from '../ui/AnimatedCard';
-import { PerformanceRing } from '../ui/PerformanceRing';
-import { StudentExamData } from '../../types/student-exam';
+import React, { useState, useMemo } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+} from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
+import LinearGradient from "react-native-linear-gradient";
+import { modernTheme } from "../../styles/modernTheme";
+import { AnimatedCard } from "../ui/AnimatedCard";
+import { PerformanceRing } from "../ui/PerformanceRing";
+import { StudentExamData } from "../../types/student-exam";
 
 interface AcademicBottomSectionProps {
   data: StudentExamData;
 }
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) => {
-  const [activeWidget, setActiveWidget] = useState<'calendar' | 'gpa' | 'goals' | 'tips'>('calendar');
+const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({
+  data,
+}) => {
+  const [activeWidget, setActiveWidget] = useState<
+    "calendar" | "gpa" | "goals" | "tips"
+  >("calendar");
 
   // Calculate academic metrics
   const academicMetrics = useMemo(() => {
@@ -32,35 +42,50 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
     }
 
     // Calculate GPA (simplified 4.0 scale)
-    const currentGPA = examMarks.length > 0 
-      ? (examMarks.reduce((sum, exam) => {
-          const percentage = exam.percentage || 0;
-          // Convert percentage to 4.0 scale
-          if (percentage >= 85) return sum + 4.0;
-          if (percentage >= 75) return sum + 3.0;
-          if (percentage >= 65) return sum + 2.0;
-          if (percentage >= 55) return sum + 1.0;
-          return sum + 0.0;
-        }, 0) / examMarks.length).toFixed(2)
-      : '0.00';
+    const currentGPA =
+      examMarks.length > 0
+        ? (
+            examMarks.reduce((sum, exam) => {
+              const percentage = exam.percentage || 0;
+              // Convert percentage to 4.0 scale
+              if (percentage >= 85) return sum + 4.0;
+              if (percentage >= 75) return sum + 3.0;
+              if (percentage >= 65) return sum + 2.0;
+              if (percentage >= 55) return sum + 1.0;
+              return sum + 0.0;
+            }, 0) / examMarks.length
+          ).toFixed(2)
+        : "0.00";
 
     // Get recent and upcoming exams
     const now = new Date();
     const recentExams = examMarks
-      .filter(exam => exam.exam?.exam_date && new Date(exam.exam.exam_date) <= now)
-      .sort((a, b) => new Date(b.exam?.exam_date || 0).getTime() - new Date(a.exam?.exam_date || 0).getTime())
+      .filter(
+        (exam) => exam.exam?.exam_date && new Date(exam.exam.exam_date) <= now,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.exam?.exam_date || 0).getTime() -
+          new Date(a.exam?.exam_date || 0).getTime(),
+      )
       .slice(0, 3);
 
     const upcomingExams = examMarks
-      .filter(exam => exam.exam?.exam_date && new Date(exam.exam.exam_date) > now)
-      .sort((a, b) => new Date(a.exam?.exam_date || 0).getTime() - new Date(b.exam?.exam_date || 0).getTime())
+      .filter(
+        (exam) => exam.exam?.exam_date && new Date(exam.exam.exam_date) > now,
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.exam?.exam_date || 0).getTime() -
+          new Date(b.exam?.exam_date || 0).getTime(),
+      )
       .slice(0, 3);
 
     // Academic goals (mock data - would come from backend)
     const academicGoals = [
-      { id: 1, title: 'Maintain 85% Average', progress: 78, target: 85 },
-      { id: 2, title: 'Improve Mathematics', progress: 72, target: 80 },
-      { id: 3, title: 'Perfect Attendance', progress: 94, target: 100 },
+      { id: 1, title: "Maintain 85% Average", progress: 78, target: 85 },
+      { id: 2, title: "Improve Mathematics", progress: 72, target: 80 },
+      { id: 3, title: "Perfect Attendance", progress: 94, target: 100 },
     ];
 
     return {
@@ -91,14 +116,14 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
   };
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return 'TBD';
+    if (!dateString) return "TBD";
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
+      return new Date(dateString).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
       });
     } catch {
-      return 'TBD';
+      return "TBD";
     }
   };
 
@@ -110,15 +135,15 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
           <View key={index} style={styles.examItem}>
             <View style={styles.examDate}>
               <Text style={styles.examDateText}>
-                {formatDate(exam.exam?.exam_date || '')}
+                {formatDate(exam.exam?.exam_date || "")}
               </Text>
             </View>
             <View style={styles.examInfo}>
               <Text style={styles.examName} numberOfLines={1}>
-                {exam.exam?.exam_name || 'Exam'}
+                {exam.exam?.exam_name || "Exam"}
               </Text>
               <Text style={styles.examType}>
-                {exam.exam?.exam_type || 'Regular'}
+                {exam.exam?.exam_type || "Regular"}
               </Text>
             </View>
           </View>
@@ -160,9 +185,7 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
             <Text style={styles.goalTitle} numberOfLines={1}>
               {goal.title}
             </Text>
-            <Text style={styles.goalProgress}>
-              {goal.progress}%
-            </Text>
+            <Text style={styles.goalProgress}>{goal.progress}%</Text>
           </View>
           <View style={styles.goalProgressBar}>
             <View
@@ -170,9 +193,10 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
                 styles.goalProgressFill,
                 {
                   width: `${(goal.progress / goal.target) * 100}%`,
-                  backgroundColor: goal.progress >= goal.target 
-                    ? modernTheme.colors.success 
-                    : modernTheme.colors.primary,
+                  backgroundColor:
+                    goal.progress >= goal.target
+                      ? modernTheme.colors.success
+                      : modernTheme.colors.primary,
                 },
               ]}
             />
@@ -186,11 +210,13 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
     <View style={styles.widgetContent}>
       <Text style={styles.widgetTitle}>Study Tip</Text>
       <View style={styles.tipContainer}>
-        <Text style={styles.tipText}>
-          {studyTips[currentTipIndex]}
-        </Text>
+        <Text style={styles.tipText}>{studyTips[currentTipIndex]}</Text>
         <TouchableOpacity onPress={nextTip} style={styles.nextTipButton}>
-          <MaterialIcons name="refresh" size={18} color={modernTheme.colors.primary} />
+          <MaterialIcons
+            name="refresh"
+            size={18}
+            color={modernTheme.colors.primary}
+          />
           <Text style={styles.nextTipText}>Next Tip</Text>
         </TouchableOpacity>
       </View>
@@ -199,13 +225,13 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
 
   const renderActiveWidget = () => {
     switch (activeWidget) {
-      case 'calendar':
+      case "calendar":
         return renderCalendarWidget();
-      case 'gpa':
+      case "gpa":
         return renderGPAWidget();
-      case 'goals':
+      case "goals":
         return renderGoalsWidget();
-      case 'tips':
+      case "tips":
         return renderTipsWidget();
       default:
         return renderCalendarWidget();
@@ -215,14 +241,14 @@ const AcademicBottomSection: React.FC<AcademicBottomSectionProps> = ({ data }) =
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Academic Dashboard</Text>
-      
+
       {/* Widget Selector */}
       <View style={styles.widgetSelector}>
         {[
-          { id: 'calendar', icon: 'event', label: 'Calendar' },
-          { id: 'gpa', icon: 'calculate', label: 'GPA' },
-          { id: 'goals', icon: 'flag', label: 'Goals' },
-          { id: 'tips', icon: 'lightbulb', label: 'Tips' },
+          { id: "calendar", icon: "event", label: "Calendar" },
+          { id: "gpa", icon: "calculate", label: "GPA" },
+          { id: "goals", icon: "flag", label: "Goals" },
+          { id: "tips", icon: "lightbulb", label: "Tips" },
         ].map((widget) => (
           <TouchableOpacity
             key={widget.id}
@@ -272,12 +298,12 @@ const styles = StyleSheet.create({
     fontSize: modernTheme.fontSizes.title,
     color: modernTheme.colors.primary,
     marginBottom: modernTheme.spacing.lg,
-    textAlign: 'center',
+    textAlign: "center",
   },
 
   // Widget Selector
   widgetSelector: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: modernTheme.colors.surface,
     borderRadius: modernTheme.borderRadius.lg,
     padding: 4,
@@ -287,9 +313,9 @@ const styles = StyleSheet.create({
 
   widgetTab: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: modernTheme.spacing.xs,
     paddingVertical: modernTheme.spacing.sm,
     borderRadius: modernTheme.borderRadius.md,
@@ -325,13 +351,13 @@ const styles = StyleSheet.create({
     fontSize: modernTheme.fontSizes.body,
     color: modernTheme.colors.text,
     marginBottom: modernTheme.spacing.md,
-    textAlign: 'center',
+    textAlign: "center",
   },
 
   // Calendar Widget
   examItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: modernTheme.spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: modernTheme.colors.borderLight,
@@ -339,7 +365,7 @@ const styles = StyleSheet.create({
 
   examDate: {
     width: 50,
-    alignItems: 'center',
+    alignItems: "center",
     marginRight: modernTheme.spacing.md,
   },
 
@@ -368,14 +394,14 @@ const styles = StyleSheet.create({
 
   // GPA Widget
   gpaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: modernTheme.spacing.lg,
   },
 
   gpaDetails: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   gpaValue: {
@@ -404,9 +430,9 @@ const styles = StyleSheet.create({
   },
 
   goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: modernTheme.spacing.xs,
   },
 
@@ -427,17 +453,17 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: modernTheme.colors.borderLight,
     borderRadius: modernTheme.borderRadius.xs,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
 
   goalProgressFill: {
-    height: '100%',
+    height: "100%",
     borderRadius: modernTheme.borderRadius.xs,
   },
 
   // Tips Widget
   tipContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: modernTheme.spacing.lg,
   },
 
@@ -445,14 +471,14 @@ const styles = StyleSheet.create({
     fontFamily: modernTheme.fonts.bodyRegular,
     fontSize: modernTheme.fontSizes.body,
     color: modernTheme.colors.text,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 24,
     marginBottom: modernTheme.spacing.lg,
   },
 
   nextTipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: modernTheme.spacing.xs,
     paddingHorizontal: modernTheme.spacing.md,
     paddingVertical: modernTheme.spacing.sm,
@@ -471,7 +497,7 @@ const styles = StyleSheet.create({
     fontFamily: modernTheme.fonts.bodyRegular,
     fontSize: modernTheme.fontSizes.caption,
     color: modernTheme.colors.textTertiary,
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: modernTheme.spacing.xl,
   },
 });

@@ -19,6 +19,9 @@ import SchoolFacilitiesModal from "../../principal/dashboard/modals/SchoolFacili
 import FinancialOverviewModal from "../../principal/dashboard/modals/FinancialOverviewModal";
 import ParentCommunicationModal from "../../principal/dashboard/modals/ParentCommunicationModal";
 import EmergencyManagementModal from "../../principal/dashboard/modals/EmergencyManagementModal";
+import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
+import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
+import { GradeLevelClass } from "../../../../api/grade-level-api";
 
 // Configuration: Set to false to hide "All Teachers" section for educators
 // To hide teachers section: Change this to false
@@ -37,6 +40,12 @@ export interface DashboardItem {
 function EducatorDashboardMain() {
   // Full-screen modal state
   const [activeModal, setActiveModal] = useState<string | null>(null);
+
+  // My Class drawer states
+  const [selectedClassData, setSelectedClassData] = useState<(GradeLevelClass & { gradeLevelName: string }) | null>(null);
+  const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
+  const [showStudentDetails, setShowStudentDetails] = useState(false);
+  const [showClassSelectionDrawer, setShowClassSelectionDrawer] = useState(false);
 
   // Modal refs
   const academicReportsModalRef = useRef<Modalize>(null);
@@ -60,6 +69,33 @@ function EducatorDashboardMain() {
 
   const openStudentAttendanceModal = () => {
     setActiveModal("student_attendance");
+  };
+
+  const openMyClassDrawer = () => {
+    console.log("🔔 Opening Grade Level Class Selection Drawer...");
+    setShowClassSelectionDrawer(true);
+  };
+
+  const handleClassSelection = (classData: GradeLevelClass & { gradeLevelName: string }) => {
+    console.log("✅ Class selected in GradeLevelClassSelectionDrawer...", classData);
+    // Don't automatically open UniversalDrawerMenu anymore
+    // The GradeLevelClassSelectionDrawer handles student details internally now
+    setSelectedClassData(classData);
+  };
+
+  const handleCloseUniversalDrawer = () => {
+    setShowUniversalDrawer(false);
+    setShowStudentDetails(false);
+    setSelectedClassData(null);
+  };
+
+  const handleBackFromStudentDetails = () => {
+    setShowStudentDetails(false);
+    setShowClassSelectionDrawer(true);
+  };
+
+  const handleCloseClassSelectionDrawer = () => {
+    setShowClassSelectionDrawer(false);
   };
 
   const renderModalContent = (modalId: string) => {
@@ -144,6 +180,15 @@ function EducatorDashboardMain() {
   // Educator Dashboard Items - Configurable Teachers section
   const dashboardItems: DashboardItem[] = [
     {
+      id: "my_class",
+      title: "My Class",
+      subtitle: "Student Details & Management",
+      icon: "class",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openMyClassDrawer,
+    },
+    {
       id: "all_students",
       title: "Students Overview",
       subtitle: "View All Students",
@@ -222,6 +267,23 @@ function EducatorDashboardMain() {
       <FinancialOverviewModal ref={financialOverviewModalRef} />
       <ParentCommunicationModal ref={parentCommunicationModalRef} />
       <EmergencyManagementModal ref={emergencyManagementModalRef} />
+      {showClassSelectionDrawer && (
+        <GradeLevelClassSelectionDrawer
+          onClose={handleCloseClassSelectionDrawer}
+          onSelectClass={handleClassSelection}
+        />
+      )}
+      
+      {showUniversalDrawer && (
+        <UniversalDrawerMenu
+          onClose={handleCloseUniversalDrawer}
+          showStudentDetails={showStudentDetails}
+          selectedClassId={selectedClassData?.id}
+          selectedClassName={selectedClassData?.name}
+          selectedGradeLevelName={selectedClassData?.gradeLevelName}
+          onBack={handleBackFromStudentDetails}
+        />
+      )}
 
       {/* Full-Screen Modal */}
       {activeModal &&

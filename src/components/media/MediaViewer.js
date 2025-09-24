@@ -12,14 +12,21 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
-import { useEvent } from "expo";
+import { Video } from "expo-av";
 import { WebView } from "react-native-webview";
 import Icon from "@expo/vector-icons/MaterialIcons";
 import { useSelector } from "react-redux";
 import { theme } from "../../styles/theme";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+
+// PDF rendering methods constant
+const PDF_RENDER_METHODS = {
+  BASE64_INLINE: "base64_inline",
+  PDFJS_VIEWER: "pdfjs_viewer",
+  OBJECT_EMBED: "object_embed",
+  DIRECT_URL: "direct_url",
+};
 
 const MediaViewer = ({
   media,
@@ -37,254 +44,232 @@ const MediaViewer = ({
 
   const [imageLoadError, setImageLoadError] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState(false);
-  const [useWebViewFallback, setUseWebViewFallback] = useState(false);
-  const [isVideoLoading, setIsVideoLoading] = useState(false);
-  const loadingOperationRef = useRef(null);
-  const currentVideoUriRef = useRef(null);
+  const [pdfLoadError, setPdfLoadError] = useState(false);
+  const [pdfLoadingState, setPdfLoadingState] = useState("loading"); // "loading", "loaded", "error"
+  const [currentPdfMethod, setCurrentPdfMethod] = useState(
+    PDF_RENDER_METHODS.BASE64_INLINE,
+  );
+  const [pdfMethodIndex, setPdfMethodIndex] = useState(0);
+  const [pdfBase64Data, setPdfBase64Data] = useState(null);
+  const videoRef = useRef(null);
 
   // Get authentication token from Redux store
   const token = useSelector((state) => state.app.token);
 
-  // Create video player without initial source to avoid race conditions
-  const videoPlayer = useVideoPlayer(null, (player) => {
-    if (player) {
-      console.log("🎬 Video player created successfully");
-      player.loop = false;
-      player.muted = false;
-    }
-  });
+  // Handle video load errors
+  const handleVideoError = (error) => {
+    console.log("❌ Video load error:", error);
+    setVideoLoadError(true);
+  };
 
-  // Listen to video player events
-  const { status, error } = useEvent(videoPlayer, "statusChange", {
-    status: videoPlayer?.status || "idle",
-    error: null,
-  });
-
-  const { isPlaying } = useEvent(videoPlayer, "playingChange", {
-    isPlaying: videoPlayer?.playing || false,
-  });
-
-  // Log status changes for debugging
-  React.useEffect(() => {
-    console.log("🎬 Video player status changed:", status);
-    if (error) {
-      console.log("❌ Video player error:", error);
-    }
-  }, [status, error]);
-
-  // Handle video player status changes
-  useEffect(() => {
-    if (selectedMedia?.type === "video") {
-      console.log("📹 Video player status:", status);
-      if (error) {
-        console.log("❌ Video player error:", error);
-        setVideoLoadError(true);
-      } else if (status === "readyToPlay") {
-        console.log("✅ Video ready to play");
-        setVideoLoadError(false);
-      } else if (status === "loading") {
-        console.log("⏳ Video loading...");
-        setVideoLoadError(false);
-      }
-    }
-  }, [status, error, selectedMedia?.type]);
-
-  // Load video source function - PRODUCTION VERSION with backend URLs
-  const loadVideoSource = async (videoUri) => {
-    console.log("🎬 Loading backend video:", videoUri);
-
-    // Prevent race conditions
-    if (currentVideoUriRef.current === videoUri) {
-      console.log("🎬 Video already loaded:", videoUri);
-      return;
-    }
-
-    // Cancel any previous loading operation
-    if (loadingOperationRef.current) {
-      loadingOperationRef.current.cancelled = true;
-    }
-
-    // Create new loading operation
-    const loadingOperation = { cancelled: false };
-    loadingOperationRef.current = loadingOperation;
-    currentVideoUriRef.current = videoUri;
-
-    setIsVideoLoading(true);
+  const handleVideoLoad = (status) => {
+    console.log("✅ Video loaded successfully:", status);
     setVideoLoadError(false);
+  };
 
+  // PDF handling functions with multiple methods
+  const convertPdfToBase64 = async (pdfUrl) => {
     try {
-      if (!videoPlayer) {
-        throw new Error("Video player not available");
+      console.log("📄 Converting PDF to base64:", pdfUrl);
+      const response = await fetch(pdfUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      console.log("🎬 Replacing video source with backend URL...");
-      console.log("🎬 Video URI:", videoUri);
-      console.log("🎬 Token available:", !!token);
-
-      // Enhanced HTTP video loading strategy
-
-      // Enhanced loading strategy for HTTP videos
-      const isHttpVideo = videoUri.startsWith("http://");
-      const waitTime = isHttpVideo ? 6000 : 3000; // Longer wait for HTTP videos
-
-      // Try direct URI first (expo-video might not support headers properly)
-      try {
-        console.log(
-          `🎬 Attempting direct URI load (${isHttpVideo ? "HTTP" : "HTTPS"})...`,
-        );
-        await videoPlayer.replaceAsync(videoUri);
-
-        // Wait longer for HTTP videos to load
-        console.log(`🎬 Waiting ${waitTime}ms for video to load...`);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-
-        // Check if video loaded successfully
-        if (videoPlayer.status !== "error" && !loadingOperation.cancelled) {
-          console.log("✅ Direct URI load successful");
-          setIsVideoLoading(false);
-          return;
-        } else {
-          throw new Error(`Video status: ${videoPlayer.status}`);
-        }
-      } catch (directError) {
-        console.log("❌ Direct URI failed:", directError.message);
-
-        // Try with enhanced headers as fallback
-        const videoSource = {
-          uri: videoUri,
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-                Accept: "video/*",
-                "Cache-Control": "no-cache",
-                "User-Agent": "SchoolApp/1.0 (Mobile)",
-                Connection: "keep-alive",
-              }
-            : {
-                Accept: "video/*",
-                "Cache-Control": "no-cache",
-                "User-Agent": "SchoolApp/1.0 (Mobile)",
-                Connection: "keep-alive",
-              },
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result.split(",")[1];
+          resolve(base64);
         };
-
-        console.log("🎬 Trying with enhanced headers:", videoSource);
-        await videoPlayer.replaceAsync(videoSource);
-
-        // Wait for headers approach
-        console.log(`🎬 Waiting ${waitTime}ms for headers approach...`);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-
-        if (videoPlayer.status !== "error" && !loadingOperation.cancelled) {
-          console.log("✅ Enhanced headers approach successful");
-        } else {
-          throw new Error(
-            `Headers approach failed, status: ${videoPlayer.status}`,
-          );
-        }
-      }
-
-      // Check if operation was cancelled
-      if (loadingOperation.cancelled) {
-        console.log("🎬 Video loading cancelled");
-        return;
-      }
-
-      console.log("🎬 Backend video loaded successfully");
-      setIsVideoLoading(false);
-
-      // Auto-play the video
-      try {
-        videoPlayer.play();
-        console.log("🎬 Backend video started playing");
-      } catch (playError) {
-        console.log(
-          "⚠️ Auto-play failed (this is normal on some devices):",
-          playError.message,
-        );
-      }
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     } catch (error) {
-      if (!loadingOperation.cancelled) {
-        console.log("❌ Final error loading backend video:", error);
-        console.log("❌ Video URI that failed:", videoUri);
-        console.log("❌ Token available:", !!token);
-        console.log("❌ Error details:", error.message);
-
-        // Show error message for HTTP video loading issues
-        console.log(
-          "❌ Video loading failed - likely due to HTTP URL restrictions",
-        );
-        setVideoLoadError(true);
-        setIsVideoLoading(false);
-      }
+      console.log("❌ Failed to convert PDF to base64:", error);
+      throw error;
     }
   };
 
-  // Load video when selectedMedia changes - now using WebView for all videos
-  useEffect(() => {
-    if (
-      selectedMedia?.type === "video" &&
-      selectedMedia?.uri &&
-      videoModalVisible
-    ) {
-      console.log("🌐 All videos now use WebView player directly");
-      // All videos now use WebView - no need for complex loading logic
-      setUseWebViewFallback(true);
-      setVideoLoadError(false);
-      setIsVideoLoading(false);
-    }
-  }, [selectedMedia?.uri, selectedMedia?.type, videoModalVisible]);
+  const createBase64PdfHtml = (base64Data) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background: #f5f5f5;
+              height: 100vh;
+              overflow: hidden;
+            }
+            .pdf-container {
+              width: 100%;
+              height: 100vh;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+            }
+            object, iframe {
+              width: 100%;
+              height: 100%;
+              border: none;
+            }
+            .error-message {
+              text-align: center;
+              padding: 20px;
+              color: #666;
+              font-family: Arial, sans-serif;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="pdf-container">
+            <object data="data:application/pdf;base64,${base64Data}" type="application/pdf">
+              <iframe src="data:application/pdf;base64,${base64Data}">
+                <div class="error-message">
+                  <p>PDF cannot be displayed</p>
+                </div>
+              </iframe>
+            </object>
+          </div>
+        </body>
+      </html>
+    `;
+  };
 
-  // Reset loading state when modal is closed
+  const createPdfJsViewerHtml = (pdfUrl) => {
+    const encodedUrl = encodeURIComponent(pdfUrl);
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+            iframe { width: 100%; height: 100%; border: none; }
+          </style>
+        </head>
+        <body>
+          <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUrl}"></iframe>
+        </body>
+      </html>
+    `;
+  };
+
+  const createObjectEmbedHtml = (pdfUrl) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              height: 100vh;
+              background: #f5f5f5;
+            }
+            .pdf-container {
+              width: 100%;
+              height: 100vh;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+            }
+            object, embed {
+              width: 100%;
+              height: 100%;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="pdf-container">
+            <object data="${pdfUrl}" type="application/pdf">
+              <embed src="${pdfUrl}" type="application/pdf">
+                <p>PDF cannot be displayed. <a href="${pdfUrl}" target="_blank">Click here to view</a></p>
+              </embed>
+            </object>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const handlePdfError = (error) => {
+    console.log("❌ PDF load error:", error);
+    setPdfLoadError(true);
+    setPdfLoadingState("error");
+  };
+
+  const handlePdfLoad = () => {
+    console.log("✅ PDF loaded successfully");
+    setPdfLoadError(false);
+    setPdfLoadingState("loaded");
+  };
+
+  // Automatic method switching
+  const tryNextPdfMethod = async () => {
+    const methods = Object.values(PDF_RENDER_METHODS);
+    const nextIndex = (pdfMethodIndex + 1) % methods.length;
+    const nextMethod = methods[nextIndex];
+
+    console.log(`🔄 Trying next PDF method: ${nextMethod}`);
+    setCurrentPdfMethod(nextMethod);
+    setPdfMethodIndex(nextIndex);
+    setPdfLoadError(false);
+    setPdfLoadingState("loading");
+
+    // Reset base64 data when switching methods
+    if (nextMethod !== PDF_RENDER_METHODS.BASE64_INLINE) {
+      setPdfBase64Data(null);
+    }
+  };
+
+  // Initialize PDF loading with automatic method switching
+  const initializePdfLoad = async (pdfUri) => {
+    console.log("📄 Initializing PDF load with method:", currentPdfMethod);
+    setPdfLoadingState("loading");
+    setPdfLoadError(false);
+
+    try {
+      if (
+        currentPdfMethod === PDF_RENDER_METHODS.BASE64_INLINE &&
+        !pdfBase64Data
+      ) {
+        console.log("📄 Converting PDF to base64 for inline display");
+        const base64Data = await convertPdfToBase64(pdfUri);
+        setPdfBase64Data(base64Data);
+      }
+    } catch (error) {
+      console.log("❌ Failed to initialize PDF load:", error);
+      // Automatically try next method
+      setTimeout(tryNextPdfMethod, 1000);
+    }
+  };
+
+  // Reset error states when modals are closed
   useEffect(() => {
     if (!videoModalVisible) {
-      setIsVideoLoading(false);
       setVideoLoadError(false);
-      setUseWebViewFallback(false);
-      // Reset video error state
-      currentVideoUriRef.current = null;
-      // Cancel any ongoing loading operation
-      if (loadingOperationRef.current) {
-        loadingOperationRef.current.cancelled = true;
-        loadingOperationRef.current = null;
-      }
     }
   }, [videoModalVisible]);
 
-  // Add timeout for video loading to prevent stuck loading state
   useEffect(() => {
-    let loadingTimeout;
-
-    if (isVideoLoading) {
-      loadingTimeout = setTimeout(() => {
-        console.log("⏰ Video loading timeout - resetting loading state");
-        setIsVideoLoading(false);
-        setVideoLoadError(true);
-        // Cancel the loading operation
-        if (loadingOperationRef.current) {
-          loadingOperationRef.current.cancelled = true;
-          loadingOperationRef.current = null;
-        }
-      }, 10000); // 10 second timeout
+    if (!pdfModalVisible) {
+      setPdfLoadError(false);
+      setPdfLoadingState("loading");
+      setCurrentPdfMethod(PDF_RENDER_METHODS.BASE64_INLINE);
+      setPdfMethodIndex(0);
+      setPdfBase64Data(null);
     }
-
-    return () => {
-      if (loadingTimeout) {
-        clearTimeout(loadingTimeout);
-      }
-    };
-  }, [isVideoLoading]);
-
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      // Cancel any ongoing loading operation on unmount
-      if (loadingOperationRef.current) {
-        loadingOperationRef.current.cancelled = true;
-        loadingOperationRef.current = null;
-      }
-    };
-  }, []);
+  }, [pdfModalVisible]);
 
   // Media handlers
   const handleImagePress = (mediaData, index = 0) => {
@@ -295,38 +280,39 @@ const MediaViewer = ({
     if (onPress) onPress(mediaData, "image");
   };
 
-  const handleVideoPress = async (mediaData) => {
-    console.log(
-      "🎬 Opening fullscreen WebView video player for:",
-      mediaData.uri,
-    );
-    console.log("🎬 Video media data:", mediaData);
-
-    // Always use fullscreen WebView for all videos - no backdrop or modal overlay
-    console.log("🌐 Using fullscreen WebView player directly");
+  const handleVideoPress = (mediaData) => {
+    console.log("🎬 Opening expo-av video player for:", mediaData.uri);
     setSelectedMedia(mediaData);
     setVideoLoadError(false);
-    setUseWebViewFallback(true);
-    setVideoModalVisible(true); // This will show fullscreen WebView
+    setVideoModalVisible(true);
     if (onPress) onPress(mediaData, "video");
   };
 
   const handlePdfPress = (mediaData) => {
     console.log("📄 Opening PDF modal for:", mediaData.uri);
-    console.log("📄 PDF media data:", mediaData);
     setSelectedMedia(mediaData);
+    setPdfLoadError(false);
+    setPdfLoadingState("loading");
+    setCurrentPdfMethod(PDF_RENDER_METHODS.BASE64_INLINE);
+    setPdfMethodIndex(0);
+    setPdfBase64Data(null);
     setPdfModalVisible(true);
+
+    // Initialize PDF loading
+    initializePdfLoad(mediaData.uri);
+
     if (onPress) onPress(mediaData, "pdf");
   };
 
-  // Close video modal - Force close completely
+  // Close video modal
   const closeVideoModal = () => {
-    console.log("🎬 Force closing video modal completely");
+    console.log("🎬 Closing video modal");
     setVideoModalVisible(false);
     setSelectedMedia(null);
     setVideoLoadError(false);
-    setUseWebViewFallback(false);
-    setIsVideoLoading(false);
+    if (videoRef.current) {
+      videoRef.current.pauseAsync();
+    }
   };
 
   // Render different media types
@@ -573,7 +559,7 @@ const MediaViewer = ({
     </Modal>
   );
 
-  // Video Modal Component - Fullscreen WebView with Close Button
+  // Video Modal Component - Native expo-av Video Player
   const renderVideoModal = () => (
     <Modal
       visible={videoModalVisible}
@@ -581,74 +567,53 @@ const MediaViewer = ({
       animationType="slide"
       onRequestClose={closeVideoModal}
       onShow={() => {
-        console.log("🎬 Video player is now visible");
+        console.log("🎬 expo-av video player is now visible");
         console.log("🎬 Selected media for video:", selectedMedia);
       }}
     >
       <View style={styles.fullscreenVideoContainer}>
-        <WebView
-          source={{
-            html: `
-              <!DOCTYPE html>
-              <html>
-                <head>
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <style>
-                    body {
-                      margin: 0;
-                      padding: 0;
-                      background: #000;
-                      display: flex;
-                      justify-content: center;
-                      align-items: center;
-                      height: 100vh;
-                      position: relative;
-                    }
-                    video {
-                      width: 100%;
-                      height: 100vh;
-                      object-fit: contain;
-                    }
+        {videoLoadError ? (
+          <View style={styles.errorContainer}>
+            <Icon name="error" size={64} color="#666" />
+            <Text style={styles.errorText}>Unable to load video</Text>
+            <Text style={styles.errorSubText}>
+              Please check your internet connection or try again later
+            </Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => {
+                setVideoLoadError(false);
+              }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Video
+            ref={videoRef}
+            source={{
+              uri: selectedMedia?.uri,
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            }}
+            style={styles.fullscreenVideo}
+            useNativeControls
+            resizeMode="contain"
+            shouldPlay={false}
+            isLooping={false}
+            onError={handleVideoError}
+            onLoad={handleVideoLoad}
+            onPlaybackStatusUpdate={(status) => {
+              if (status.error) {
+                handleVideoError(status.error);
+              }
+            }}
+          />
+        )}
 
-                  </style>
-                </head>
-                <body>
-                  <video controls autoplay style="width: 100%; height: 100vh;">
-                    <source src="${selectedMedia?.uri}" type="video/mp4">
-                    Your browser does not support the video tag.
-                  </video>
-                </body>
-              </html>
-            `,
-          }}
-          style={styles.reducedHeightWebView}
-          allowsInlineMediaPlayback={true}
-          mediaPlaybackRequiresUserAction={false}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          startInLoadingState={true}
-          scalesPageToFit={true}
-          onShouldStartLoadWithRequest={() => true}
-          onMessage={(event) => {
-            console.log("🎬 WebView message received:", event.nativeEvent.data);
-            if (event.nativeEvent.data === "CLOSE_VIDEO") {
-              console.log(
-                "🎬 WebView close button pressed - closing video player",
-              );
-              closeVideoModal();
-            }
-          }}
-        />
-
-        {/* React Native Close Button - Positioned above WebView */}
+        {/* Close Button */}
         <TouchableOpacity
           style={styles.videoCloseButton}
-          onPress={() => {
-            console.log(
-              "🎬 React Native close button pressed - closing video player",
-            );
-            closeVideoModal();
-          }}
+          onPress={closeVideoModal}
           activeOpacity={0.8}
         >
           <Text style={styles.videoCloseButtonText}>✕</Text>
@@ -657,68 +622,136 @@ const MediaViewer = ({
     </Modal>
   );
 
-  // PDF Modal Component
-  const renderPdfModal = () => (
-    <Modal
-      visible={pdfModalVisible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setPdfModalVisible(false)}
-      onShow={() => {
-        console.log("📄 PDF modal is now visible");
-        console.log("📄 Selected media for PDF:", selectedMedia);
-      }}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setPdfModalVisible(false)}
-          >
-            <Icon name="close" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+  // Enhanced PDF Modal Component with Multi-Method Support
+  const renderPdfModal = () => {
+    const getPdfContent = () => {
+      if (!selectedMedia?.uri) return null;
 
-          <View style={styles.pdfContainer}>
-            <View style={styles.pdfHeader}>
-              <Icon name="picture-as-pdf" size={32} color="#FF5722" />
-              <Text style={styles.pdfTitle}>{selectedMedia?.fileName}</Text>
-              <Text style={styles.pdfSize}>{selectedMedia?.fileSize}</Text>
-            </View>
-            <View style={styles.pdfViewerContainer}>
-              <WebView
-                source={{
-                  uri:
-                    selectedMedia?.uri ||
-                    "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf",
-                  headers: token ? { Authorization: `Bearer ${token}` } : {},
-                }}
-                style={styles.pdfWebView}
-                startInLoadingState={true}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                renderLoading={() => (
+      switch (currentPdfMethod) {
+        case PDF_RENDER_METHODS.BASE64_INLINE:
+          return pdfBase64Data ? createBase64PdfHtml(pdfBase64Data) : null;
+        case PDF_RENDER_METHODS.PDFJS_VIEWER:
+          return createPdfJsViewerHtml(selectedMedia.uri);
+        case PDF_RENDER_METHODS.OBJECT_EMBED:
+          return createObjectEmbedHtml(selectedMedia.uri);
+        case PDF_RENDER_METHODS.DIRECT_URL:
+          return selectedMedia.uri;
+        default:
+          return null;
+      }
+    };
+
+    const pdfContent = getPdfContent();
+
+    return (
+      <Modal
+        visible={pdfModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPdfModalVisible(false)}
+        onShow={() => {
+          console.log("📄 PDF modal is now visible");
+          console.log("📄 Current method:", currentPdfMethod);
+          console.log("📄 Selected media URI:", selectedMedia?.uri);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setPdfModalVisible(false)}
+            >
+              <Icon name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={styles.pdfContainer}>
+              {/* PDF Content */}
+              <View style={styles.pdfViewerContainer}>
+                {pdfLoadingState === "error" ? (
+                  <View style={styles.errorContainer}>
+                    <Icon name="error" size={64} color="#666" />
+                    <Text style={styles.errorText}>Unable to load PDF</Text>
+                    <Text style={styles.errorSubText}>
+                      Please check your internet connection and try again.
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.retryButton}
+                      onPress={() => tryNextPdfMethod()}
+                    >
+                      <Text style={styles.retryButtonText}>Try Again</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : pdfLoadingState === "loading" ? (
                   <View style={styles.pdfLoadingContainer}>
                     <Icon name="picture-as-pdf" size={48} color="#FF5722" />
                     <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
                   </View>
+                ) : pdfContent ? (
+                  <WebView
+                    source={{
+                      ...(currentPdfMethod === PDF_RENDER_METHODS.DIRECT_URL
+                        ? {
+                            uri: pdfContent,
+                            headers: token
+                              ? { Authorization: `Bearer ${token}` }
+                              : {},
+                          }
+                        : { html: pdfContent }),
+                    }}
+                    style={styles.pdfWebView}
+                    startInLoadingState={true}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    onError={(error) => {
+                      console.log(
+                        `❌ PDF WebView Error (${currentPdfMethod}):`,
+                        error,
+                      );
+                      handlePdfError(error);
+                      // Automatically try next method after error
+                      setTimeout(tryNextPdfMethod, 2000);
+                    }}
+                    onLoad={() => {
+                      console.log(
+                        `✅ PDF loaded successfully with method: ${currentPdfMethod}`,
+                      );
+                      handlePdfLoad();
+                    }}
+                    onLoadStart={() => {
+                      setPdfLoadingState("loading");
+                    }}
+                    onLoadEnd={() => {
+                      // Check if WebView actually loaded content
+                      setTimeout(() => {
+                        if (pdfLoadingState === "loading") {
+                          console.log(
+                            "⚠️ PDF may not have loaded properly, trying next method",
+                          );
+                          tryNextPdfMethod();
+                        }
+                      }, 5000);
+                    }}
+                  />
+                ) : (
+                  <View style={styles.errorContainer}>
+                    <Icon name="error" size={64} color="#666" />
+                    <Text style={styles.errorText}>Unable to load PDF</Text>
+                    <TouchableOpacity
+                      style={styles.retryButton}
+                      onPress={() => initializePdfLoad(selectedMedia?.uri)}
+                    >
+                      <Text style={styles.retryButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
-                onError={(error) => {
-                  console.log("❌ PDF WebView Error:", error);
-                  console.log("❌ PDF URI:", selectedMedia?.uri);
-                }}
-                onLoad={() => {
-                  console.log(
-                    "✅ PDF loaded successfully:",
-                    selectedMedia?.uri,
-                  );
-                }}
-              />
+              </View>
             </View>
           </View>
         </View>
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  };
 
   return (
     <View>
@@ -877,7 +910,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
 
-  fullscreenWebView: {
+  fullscreenVideo: {
     flex: 1,
     backgroundColor: "#000000",
   },
@@ -889,19 +922,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     overflow: "hidden",
-  },
-
-  pdfHeader: {
-    padding: 20,
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E5EA",
-  },
-
-  pdfTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: theme.colors.text,
   },
 
   // Multiple media container styles
@@ -1020,55 +1040,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     padding: 10,
     marginHorizontal: 10,
-  },
-
-  // WebView Fallback Styles
-  webViewContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-
-  webViewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#f8f8f8",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-
-  webViewHeaderText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    flex: 1,
-  },
-
-  webViewBadge: {
-    backgroundColor: "#9b0737",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-
-  webViewBadgeText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  webView: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-
-  // Reduced height WebView for video player to show React Native close button
-  reducedHeightWebView: {
-    flex: 1,
-    backgroundColor: "#000",
-    marginTop: 80, // Leave space for close button
   },
 
   // Video close button styles

@@ -17,10 +17,11 @@ import {
   Inter_500Medium,
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
-import { Platform, LogBox } from "react-native";
+import { Platform, LogBox, useWindowDimensions } from "react-native";
 import * as ExpoSplashScreen from "expo-splash-screen";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ScreenOrientation from "expo-screen-orientation";
 import NetInfo from "@react-native-community/netinfo";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 // import { SplashUtils } from "../utils/splash-utils";
 import "../../global.css";
 
@@ -54,12 +55,36 @@ function AppContent() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const { width } = useWindowDimensions();
 
   useEffect(() => {
     if (!isInitialized) {
       initializeApp();
     }
   }, [isInitialized]);
+
+  // Runtime orientation control based on screen size
+  useEffect(() => {
+    const handleOrientationControl = async () => {
+      try {
+        if (width < 600) {
+          // Phone: Lock to portrait
+          await ScreenOrientation.lockAsync(
+            ScreenOrientation.OrientationLock.PORTRAIT_UP,
+          );
+        } else {
+          // Tablet/foldable: Allow all orientations
+          await ScreenOrientation.unlockAsync();
+        }
+      } catch (error) {
+        console.warn("Error controlling screen orientation:", error);
+      }
+    };
+
+    if (appIsReady && width) {
+      handleOrientationControl();
+    }
+  }, [width, appIsReady]);
 
   const initializeApp = async () => {
     try {
@@ -202,15 +227,17 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <DrawerProvider>
-          <Provider store={stateStore}>
-            <PersistGate loading={null} persistor={persistor}>
-              <AppContent />
-            </PersistGate>
-          </Provider>
-        </DrawerProvider>
-      </AuthProvider>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <DrawerProvider>
+            <Provider store={stateStore}>
+              <PersistGate loading={null} persistor={persistor}>
+                <AppContent />
+              </PersistGate>
+            </Provider>
+          </DrawerProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

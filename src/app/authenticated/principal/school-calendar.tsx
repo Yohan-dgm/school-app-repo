@@ -1,6 +1,6 @@
 import React from "react";
-import PrincipalCalendarMain from "../../../screens/authenticated/principal/calendar/PrincipalCalendarMain";
+import SchoolCalendarMain from "../../../screens/authenticated/principal/school-calendar/SchoolCalendarMain";
 
 export default function PrincipalSchoolCalendarPage() {
-  return <PrincipalCalendarMain />;
+  return <SchoolCalendarMain />;
 }

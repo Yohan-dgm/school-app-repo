@@ -11,6 +11,7 @@ interface Student {
   id: number;
   name: string;
   full_name: string;
+  student_calling_name?: string;
   admission_number: string;
   profile_image?: string;
   attachment?: any;
@@ -148,7 +149,7 @@ const ModernStudentAttendanceListItem: React.FC<
         {/* Middle Section - Student Info */}
         <View style={styles.infoSection}>
           <Text style={styles.studentName} numberOfLines={1}>
-            {student.full_name}
+            {student.student_calling_name || `Student ${student.id}`}
           </Text>
           <Text style={styles.admissionNumber}>
             ID: {student.admission_number}

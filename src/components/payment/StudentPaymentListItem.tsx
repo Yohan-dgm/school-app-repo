@@ -19,7 +19,7 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
   summary,
   studentInfo,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   );
@@ -72,9 +72,9 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
 
         <View style={styles.paymentInfo}>
           <Text style={styles.totalAmount}>
-            {formatAmount(summary.totalAmount)}
+            {summary.billsCount} bills paid
           </Text>
-          <Text style={styles.billCount}>{summary.billsCount} bills paid</Text>
+          {/* <Text style={styles.billCount}>{summary.billsCount} bills paid</Text> */}
         </View>
 
         <View style={styles.expandIcon}>
@@ -90,7 +90,7 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
         <View style={styles.expandedContent}>
           <View style={styles.statusRow}>
             <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-            <Text style={styles.statusText}>All Bills Paid</Text>
+            <Text style={styles.statusText}>All Bills</Text>
           </View>
 
           <View style={styles.billCategoriesContainer}>
@@ -117,9 +117,9 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
                       </View>
                     </View>
                     <View style={styles.categoryRightSection}>
-                      <Text style={styles.categoryAmount}>
+                      {/* <Text style={styles.categoryAmount}>
                         {formatAmount(category.amount)}
-                      </Text>
+                      </Text> */}
                       <MaterialIcons
                         name={
                           expandedCategories.has(category.id)
@@ -138,9 +138,9 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
                         // Generate unique key based on bill type and available ID
                         const getBillKey = () => {
                           switch (category.id) {
-                            case 'term_fee':
-                            case 'exam_bills':
-                            case 'sport_fee':
+                            case "term_fee":
+                            case "exam_bills":
+                            case "sport_fee":
                               return `${category.id}-${bill.invoice_header?.id || billIndex}`;
                             default:
                               return `${category.id}-${bill.id || billIndex}`;

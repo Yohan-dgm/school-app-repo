@@ -13,36 +13,75 @@ interface FilterOption {
   id: string;
   label: string;
   active: boolean;
+  actualValue?: string; // For backend - stores actual year value
 }
 
 interface IntelligenceGridFilterProps {
-  onFilterChange?: (filterId: string) => void;
+  onFilterChange?: (filterId: string, actualValue?: string) => void;
   selectedFilter?: string;
 }
 
-// Dynamic filter generation based on current date
-const getCurrentFilters = (): FilterOption[] => {
+// Academic year utility functions
+const getCurrentAcademicYear = () => {
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth(); // 0-based (0 = January, 8 = September)
+
+  if (currentMonth >= 8) {
+    // September or later (month 8+)
+    return `${currentYear}/${String(currentYear + 1).slice(-2)}`;
+  } else {
+    // Before September
+    return `${currentYear - 1}/${String(currentYear).slice(-2)}`;
+  }
+};
+
+const getCurrentYear = () => {
+  return new Date().getFullYear();
+};
+
+const getYearOptions = (): FilterOption[] => {
   const now = new Date();
-  const currentYear = now.getFullYear();
+  const currentYear = getCurrentYear();
+  const currentAcademicYear = getCurrentAcademicYear();
   const currentMonth = now.toLocaleDateString("en-US", { month: "short" });
 
-  return [
-    { id: "all", label: "All", active: false },
-    { id: "current-year", label: currentYear.toString(), active: true }, // Auto-selected
+  const options: FilterOption[] = [
+    {
+      id: "all",
+      label: "All",
+      active: false,
+      actualValue: "all",
+    },
+    // Add current academic year
+    {
+      id: currentYear.toString(),
+      label: currentAcademicYear,
+      active: false,
+      actualValue: currentYear.toString(),
+    },
+    // Add current month
     {
       id: "current-month",
       label: `${currentMonth} ${currentYear}`,
       active: false,
+      actualValue: "current-month",
     },
   ];
+
+  return options;
+};
+
+// Dynamic filter generation based on current date
+const getCurrentFilters = (): FilterOption[] => {
+  return getYearOptions();
 };
 
 const IntelligenceGridFilter: React.FC<IntelligenceGridFilterProps> = ({
   onFilterChange,
   selectedFilter: externalSelectedFilter,
 }) => {
-  const [internalSelectedFilter, setInternalSelectedFilter] =
-    useState("current-year");
+  const [internalSelectedFilter, setInternalSelectedFilter] = useState("all"); // Default to "All"
   const [scaleAnim] = useState(new Animated.Value(1));
   const selectedFilter = externalSelectedFilter || internalSelectedFilter;
 
@@ -66,7 +105,12 @@ const IntelligenceGridFilter: React.FC<IntelligenceGridFilterProps> = ({
     ]).start();
 
     setInternalSelectedFilter(filterId);
-    onFilterChange?.(filterId);
+
+    // Find the filter option to get the actualValue for backend
+    const selectedOption = intelligenceGridFilters.find(
+      (filter) => filter.id === filterId,
+    );
+    onFilterChange?.(filterId, selectedOption?.actualValue);
   };
 
   return (
@@ -139,13 +183,13 @@ const styles = StyleSheet.create({
     elevation: 8,
     borderWidth: 1,
     borderColor: "rgba(128, 0, 0, 0.1)",
-    minWidth: 240,
-    maxWidth: 280,
+    minWidth: 280,
+    maxWidth: 320, // Adjusted for 3 options: All, Academic Year, Current Month
   },
   selectedButtonGradient: {
     borderRadius: 22,
     marginHorizontal: 1,
-    minWidth: 70,
+    minWidth: 80, // Increased to accommodate academic year format
   },
   selectedButton: {
     paddingVertical: 8,
@@ -167,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 22,
     marginHorizontal: 1,
-    minWidth: 70,
+    minWidth: 80, // Increased to accommodate academic year format
   },
   unselectedButtonText: {
     fontSize: 12,

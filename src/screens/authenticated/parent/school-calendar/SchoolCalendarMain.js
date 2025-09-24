@@ -4,7 +4,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { theme } from "../../../../styles/theme";
 import { USER_CATEGORIES } from "../../../../constants/userCategories";
 import { transformStudentWithProfilePicture } from "../../../../utils/studentProfileUtils";
-import CalendarMain from "../calendar/CalendarMain";
+import UniversalSchoolCalendar from "../../../../components/common/UniversalSchoolCalendar";
 import { setSelectedStudent } from "../../../../state-store/slices/app-slice";
 
 const SchoolCalendarMain = () => {
@@ -71,7 +71,15 @@ const SchoolCalendarMain = () => {
 
       {/* Calendar Component */}
       <View style={styles.calendarContainer}>
-        <CalendarMain />
+        <UniversalSchoolCalendar
+          userCategory={userCategory}
+          title="School Calendar & Events"
+          subtitle={
+            isParent && selectedStudent
+              ? `Calendar for ${selectedStudent.student_calling_name} - ${selectedStudent.grade}`
+              : "Events, holidays, classes & exams"
+          }
+        />
       </View>
     </View>
   );
@@ -81,6 +89,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+    paddingBottom: 50,
   },
   headerSection: {
     paddingHorizontal: theme.spacing.lg,

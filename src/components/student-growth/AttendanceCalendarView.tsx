@@ -9,8 +9,8 @@ interface AttendanceRecord {
   id: number;
   date: string;
   attendance_type_id: number;
-  in_time: string | null;
-  out_time: string | null;
+  in_time?: string | null;
+  out_time?: string | null;
   notes: string | null;
 }
 
@@ -47,8 +47,11 @@ const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
     const markedDates: { [key: string]: MarkedDate } = {};
 
     attendanceRecords.forEach((record) => {
+      // Debug: Log date format to ensure it's proper YYYY-MM-DD
+      console.log("📅 Processing attendance record date:", record.date);
+
       const isPresent = record.attendance_type_id === 1;
-      const isAbsent = record.attendance_type_id === 3;
+      const isAbsent = record.attendance_type_id === 4; // Updated: 4 means absent, not 3
 
       if (isPresent || isAbsent) {
         const isSelectedDate = selectedDate === record.date;
@@ -134,8 +137,9 @@ const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
     }
   };
 
-  // Get attendance stats for current month
+  // Get attendance stats for current month - only from actual database records
   const getMonthStats = () => {
+    // Only consider records that actually exist in the database
     const monthRecords = attendanceRecords.filter((record) =>
       record.date.startsWith(currentMonth),
     );
@@ -144,7 +148,7 @@ const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
       (r) => r.attendance_type_id === 1,
     ).length;
     const absentDays = monthRecords.filter(
-      (r) => r.attendance_type_id === 3,
+      (r) => r.attendance_type_id === 4, // Updated: 4 means absent, not 3
     ).length;
     const totalDays = presentDays + absentDays;
     const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0;
@@ -155,6 +159,9 @@ const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
   const monthStats = getMonthStats();
   const selectedDateData = selectedDate ? getMarkedDates()[selectedDate] : null;
 
+  // Check if there are any attendance records at all
+  const hasAttendanceData = attendanceRecords && attendanceRecords.length > 0;
+
   return (
     <ScrollView
       style={styles.container}
@@ -163,38 +170,48 @@ const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
     >
       {/* Calendar Header with Stats */}
       <View style={styles.header}>
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <View
-              style={[
-                styles.statDot,
-                { backgroundColor: feedbackCardTheme.success },
-              ]}
-            />
-            <Text style={styles.statText}>
-              Present: {monthStats.presentDays}
+        {hasAttendanceData ? (
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <View
+                style={[
+                  styles.statDot,
+                  { backgroundColor: feedbackCardTheme.success },
+                ]}
+              />
+              <Text style={styles.statText}>
+                Present: {monthStats.presentDays}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <View
+                style={[
+                  styles.statDot,
+                  { backgroundColor: feedbackCardTheme.error },
+                ]}
+              />
+              <Text style={styles.statText}>
+                Absent: {monthStats.absentDays}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <MaterialIcons
+                name="trending-up"
+                size={16}
+                color={feedbackCardTheme.primary}
+              />
+              <Text style={styles.statText}>
+                {monthStats.attendanceRate.toFixed(1)}%
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.noDataHeader}>
+            <Text style={styles.noDataText}>
+              No attendance data available for any month
             </Text>
           </View>
-          <View style={styles.statItem}>
-            <View
-              style={[
-                styles.statDot,
-                { backgroundColor: feedbackCardTheme.error },
-              ]}
-            />
-            <Text style={styles.statText}>Absent: {monthStats.absentDays}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <MaterialIcons
-              name="trending-up"
-              size={16}
-              color={feedbackCardTheme.primary}
-            />
-            <Text style={styles.statText}>
-              {monthStats.attendanceRate.toFixed(1)}%
-            </Text>
-          </View>
-        </View>
+        )}
       </View>
 
       {/* Calendar */}
@@ -377,6 +394,15 @@ const styles = StyleSheet.create({
     color: feedbackCardTheme.grayMedium,
     fontStyle: "italic",
     marginTop: 4,
+  },
+  noDataHeader: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  noDataText: {
+    fontSize: 12,
+    color: feedbackCardTheme.grayMedium,
+    fontStyle: "italic",
   },
 });
 

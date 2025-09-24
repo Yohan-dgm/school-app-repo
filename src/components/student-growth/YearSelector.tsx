@@ -11,6 +11,27 @@ import { Picker } from "@react-native-picker/picker";
 import { MaterialIcons } from "@expo/vector-icons";
 import { modernColors, maroonTheme } from "../../data/studentGrowthData";
 
+// Academic year utility function
+const getAcademicYearDisplay = (year: number) => {
+  const currentDate = new Date();
+  const currentMonth = currentDate.getMonth(); // 0-based (0 = January, 8 = September)
+  const currentYear = currentDate.getFullYear();
+
+  // For the current year, check if we're in academic year or previous academic year
+  if (year === currentYear) {
+    if (currentMonth >= 8) {
+      // September or later (month 8+)
+      return `${year}/${String(year + 1).slice(-2)}`;
+    } else {
+      // Before September
+      return `${year - 1}/${String(year).slice(-2)}`;
+    }
+  } else {
+    // For other years, assume it's the start of that academic year
+    return `${year}/${String(year + 1).slice(-2)}`;
+  }
+};
+
 interface YearSelectorProps {
   selectedYear: number;
   onYearChange: (year: number) => void;
@@ -44,7 +65,7 @@ const YearSelector: React.FC<YearSelectorProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Academic Year</Text>
+      <Text style={styles.label}>Academic Years</Text>
 
       {/* Selected Year Display */}
       <TouchableOpacity
@@ -53,7 +74,9 @@ const YearSelector: React.FC<YearSelectorProps> = ({
         disabled={disabled}
         activeOpacity={0.7}
       >
-        <Text style={styles.selectedYearText}>{selectedYear}</Text>
+        <Text style={styles.selectedYearText}>
+          {getAcademicYearDisplay(selectedYear)}
+        </Text>
         <MaterialIcons
           name="arrow-drop-down"
           size={24}
@@ -93,7 +116,11 @@ const YearSelector: React.FC<YearSelectorProps> = ({
                   itemStyle={styles.pickerItem}
                 >
                   {years.map((year) => (
-                    <Picker.Item key={year} label={`${year}`} value={year} />
+                    <Picker.Item
+                      key={year}
+                      label={getAcademicYearDisplay(year)}
+                      value={year}
+                    />
                   ))}
                 </Picker>
               ) : (
@@ -114,7 +141,7 @@ const YearSelector: React.FC<YearSelectorProps> = ({
                             styles.selectedYearOptionText,
                         ]}
                       >
-                        {year}
+                        {getAcademicYearDisplay(year)}
                       </Text>
                       {year === selectedYear && (
                         <MaterialIcons

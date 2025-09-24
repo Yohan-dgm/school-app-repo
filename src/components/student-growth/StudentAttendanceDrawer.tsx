@@ -43,7 +43,7 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
   const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar"); // Default to calendar view
   const [selectedDate, setSelectedDate] = useState<string | undefined>();
   const scrollViewRef = useRef<ScrollView>(null);
-  const pageSize = 20; // Load 20 records per page as requested
+  const pageSize = 10; // Load 10 records per page as requested
 
   // API call for paginated attendance data (for list view)
   const {
@@ -99,6 +99,26 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
   console.log("🎯 StudentAttendanceDrawer - Student ID:", studentId);
   console.log("🎯 StudentAttendanceDrawer - Visible:", visible);
 
+  // Enhanced debugging for data structure
+  if (apiResponse) {
+    console.log("📊 API Response Structure:", {
+      // Laravel pagination format (actual format from backend)
+      isLaravelPagination: !!apiResponse.current_page,
+      current_page: apiResponse.current_page,
+      total: apiResponse.total,
+      per_page: apiResponse.per_page,
+      last_page: apiResponse.last_page,
+      data_count: apiResponse.data?.length || 0,
+
+      // Show first record for debugging
+      first_record: apiResponse.data?.[0],
+    });
+  }
+
+  if (isError) {
+    console.log("❌ API Error:", error);
+  }
+
   // Animation effects
   useEffect(() => {
     if (visible) {
@@ -149,7 +169,7 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
   };
 
   const handleNextPage = () => {
-    const totalPages = apiResponse?.data?.pagination?.total_pages || 0;
+    const totalPages = apiResponse?.last_page || 0;
     if (currentPage < totalPages) {
       setCurrentPage(currentPage + 1);
       // Auto-scroll to top when changing page
@@ -171,29 +191,44 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
 
   // Filter attendance records based on selected date (for list view)
   const getFilteredAttendanceRecords = () => {
-    const attendanceRecords = apiResponse?.data?.attendance_records || [];
+    // API now returns properly formatted single records per date with server-side pagination
+    const attendanceRecords = apiResponse?.data || [];
+
+    console.log(
+      "🔍 getFilteredAttendanceRecords - API records:",
+      attendanceRecords?.length || 0,
+    );
+    console.log("🔍 Selected Date:", selectedDate, "View Mode:", viewMode);
 
     if (selectedDate && viewMode === "list") {
-      // First check paginated data, if not found, check all data
-      const paginatedFiltered = attendanceRecords.filter(
+      // Filter for selected date - check in all data since paginated data might not contain the date
+      const allRecords = allDataResponse?.data || [];
+      const dateFiltered = allRecords.filter(
         (record: any) => record.date === selectedDate,
       );
 
-      if (paginatedFiltered.length === 0) {
-        // If not in paginated data, get from all data
-        const allRecords = allDataResponse?.data?.attendance_records || [];
-        return allRecords.filter((record: any) => record.date === selectedDate);
-      }
-
-      return paginatedFiltered;
+      console.log("🔍 Date filtered records:", dateFiltered?.length || 0);
+      return dateFiltered;
     }
 
+    // For list view without date filter, use paginated records from API (server-side pagination)
+    console.log(
+      "🔍 Returning API paginated records:",
+      attendanceRecords?.length || 0,
+    );
     return attendanceRecords;
   };
 
   // Get all attendance records for calendar view
   const getAllAttendanceRecords = () => {
-    return allDataResponse?.data?.attendance_records || [];
+    // API now returns properly formatted single records per date - no grouping needed
+    const allRecords = (allDataResponse?.data || []) as any[];
+    console.log(
+      "📅 getAllAttendanceRecords - All records count:",
+      allRecords?.length || 0,
+    );
+
+    return allRecords;
   };
 
   // Reset selection when switching to calendar view
@@ -234,10 +269,10 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
       (("status" in error && (error as any).status === 404) ||
         ("data" in error && (error as any).data?.status === "not-found"));
 
-    let iconName = "error-outline";
+    let iconName: any = "error-outline";
     let iconColor = feedbackCardTheme.error;
     let title = "Unable to Load Attendance";
-    let subtitle = "Please try again later";
+    let subtitle = "Please try again later or contact support if this persists";
     let showRetry = true;
 
     if (isAuthError) {
@@ -249,15 +284,15 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
     } else if (isServerError) {
       iconName = "build-outline";
       iconColor = "#FF6B35";
-      title = "Feature Under Development";
+      title = "Server Error";
       subtitle =
-        "The attendance feature is not yet available on the server. Please check back later.";
-      showRetry = false;
+        "Unable to connect to the attendance server. Please try again later.";
+      showRetry = true;
     } else if (isNotFoundError) {
-      iconName = "search-off";
+      iconName = "help-outline";
       iconColor = "#FF6B35";
-      title = "Feature Not Available";
-      subtitle = "The attendance API endpoint is not available yet.";
+      title = "No Attendance Data";
+      subtitle = "No attendance records found for this student.";
       showRetry = false;
     }
 
@@ -292,7 +327,8 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
       />
       <Text style={styles.emptyTitle}>No Attendance Records</Text>
       <Text style={styles.emptySubtitle}>
-        No attendance records have been found for {studentName} yet.
+        No attendance records have been recorded for {studentName} yet.
+        Attendance records will appear here once they are entered in the system.
       </Text>
     </View>
   );
@@ -337,24 +373,28 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
       return renderErrorState();
     }
 
-    const allAttendanceRecords = getAllAttendanceRecords(); // For calendar view
-    const paginatedAttendanceRecords =
-      apiResponse?.data?.attendance_records || []; // For list view
-    const filteredAttendanceRecords = getFilteredAttendanceRecords();
-    const pagination = apiResponse?.data?.pagination;
-    const studentInfo =
-      apiResponse?.data?.student_info || allDataResponse?.data?.student_info;
+    const allAttendanceRecords = getAllAttendanceRecords(); // For calendar view (grouped by date)
+    const filteredAttendanceRecords = getFilteredAttendanceRecords(); // For list view (grouped by date)
+
+    // Build pagination object from API's Laravel pagination format
+    const pagination = apiResponse
+      ? {
+          page: apiResponse.current_page || 1,
+          page_size: apiResponse.per_page || pageSize,
+          total: apiResponse.total || 0,
+          total_pages: apiResponse.last_page || 1,
+        }
+      : null;
+
+    // Extract student info from first record (since Laravel format doesn't have separate student_info)
+    // Note: For now we don't display student info in the UI, so we'll keep it simple
 
     console.log(
       "🎯 renderContent - allAttendanceRecords (calendar):",
       allAttendanceRecords.length,
     );
     console.log(
-      "🎯 renderContent - paginatedAttendanceRecords (list):",
-      paginatedAttendanceRecords.length,
-    );
-    console.log(
-      "🎯 renderContent - filteredAttendanceRecords:",
+      "🎯 renderContent - filteredAttendanceRecords (list):",
       filteredAttendanceRecords.length,
     );
     console.log("🎯 renderContent - selectedDate:", selectedDate);
@@ -364,7 +404,7 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
     const hasDataForView =
       viewMode === "calendar"
         ? allAttendanceRecords.length > 0
-        : paginatedAttendanceRecords.length > 0;
+        : filteredAttendanceRecords.length > 0;
 
     if (!hasDataForView && !isLoading && !isLoadingAllData) {
       return renderEmptyState();
@@ -466,7 +506,7 @@ const StudentAttendanceDrawer: React.FC<StudentAttendanceDrawerProps> = ({
             ))}
           </ScrollView>
 
-          {/* Only show pagination when not filtering by date */}
+          {/* Show pagination when not filtering by date and there are multiple pages */}
           {!selectedDate && pagination && pagination.total_pages > 1 && (
             <AttendancePagination
               currentPage={currentPage}

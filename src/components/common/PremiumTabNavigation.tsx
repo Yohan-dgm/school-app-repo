@@ -371,7 +371,7 @@ const PremiumTabNavigation: React.FC<PremiumTabNavigationProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "transparent",
+    backgroundColor: "white",
     paddingTop: 8,
     paddingBottom: 6,
     position: "relative",
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
       },
       android: {
-        elevation: 4,
+        elevation: 0,
       },
     }),
   },
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
       },
       android: {
-        elevation: 3,
+        elevation: 1,
       },
     }),
   },
