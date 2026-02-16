@@ -358,7 +358,7 @@ const DrawerMenu = ({ isVisible, onClose }) => {
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.appVersion}>School App v1.0.0</Text>
+            <Text style={styles.appVersion}>School App v1.0.8</Text>
             <Text style={styles.footerText}>Nexis College International</Text>
           </View>
         </Animated.View>

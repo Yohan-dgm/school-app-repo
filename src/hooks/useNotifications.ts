@@ -1,9 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import * as Notifications from "expo-notifications";
 import PushNotificationService, {
-  NotificationData,
+  NotificationData as PushNotificationData,
   ScheduledNotification,
 } from "../services/notifications/PushNotificationService";
+import NotificationManager, {
+  NotificationData,
+  NotificationManagerCallbacks,
+  NotificationManagerConfig,
+} from "../services/notifications/NotificationManager";
+import RealTimeNotificationService from "../services/notifications/RealTimeNotificationService";
 
 export interface UseNotificationsReturn {
   // State
@@ -13,8 +19,14 @@ export interface UseNotificationsReturn {
   lastResponse: Notifications.NotificationResponse | null;
   badgeCount: number;
 
+  // New unified notification state
+  notifications: NotificationData[];
+  unreadNotifications: NotificationData[];
+  unreadCount: number;
+  isConnected: boolean;
+
   // Actions
-  sendNotification: (notification: NotificationData) => Promise<string>;
+  sendNotification: (notification: PushNotificationData) => Promise<string>;
   scheduleNotification: (
     notification: ScheduledNotification,
   ) => Promise<string>;
@@ -22,6 +34,11 @@ export interface UseNotificationsReturn {
   cancelAllNotifications: () => Promise<void>;
   updateBadgeCount: (count: number) => Promise<void>;
   clearBadge: () => Promise<void>;
+
+  // New unified notification actions
+  markAsRead: (notificationId: number) => Promise<boolean>;
+  markAllAsRead: () => Promise<boolean>;
+  refreshNotifications: () => void;
 
   // School-specific actions
   sendAcademicAlert: (
@@ -44,9 +61,15 @@ export interface UseNotificationsReturn {
     body: string,
     data?: Record<string, any>,
   ) => Promise<string>;
+
+  // Service status
+  getServiceStatus: () => any;
 }
 
-export const useNotifications = (): UseNotificationsReturn => {
+export const useNotifications = (
+  authToken?: string,
+  userId?: string,
+): UseNotificationsReturn => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [lastNotification, setLastNotification] =
@@ -55,29 +78,94 @@ export const useNotifications = (): UseNotificationsReturn => {
     useState<Notifications.NotificationResponse | null>(null);
   const [badgeCount, setBadgeCount] = useState(0);
 
-  // Initialize push notification service
+  // New unified notification state
+  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState<
+    NotificationData[]
+  >([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Initialize notification manager
   useEffect(() => {
     const initializeNotifications = async () => {
+      if (!authToken || !userId) {
+        console.warn(
+          "⚠️ Missing auth token or user ID for notification initialization",
+        );
+        return;
+      }
+
       try {
-        await PushNotificationService.initialize();
-        const token = PushNotificationService.getPushToken();
-        setPushToken(token);
+        console.log("🔔 Initializing notifications in hook...");
 
-        // Get current badge count
-        const currentBadgeCount = await PushNotificationService.getBadgeCount();
-        setBadgeCount(currentBadgeCount);
+        // Setup callbacks for NotificationManager
+        const callbacks: NotificationManagerCallbacks = {
+          onNewNotification: (notification) => {
+            console.log("🆕 New notification in hook:", notification);
+            refreshNotificationState();
+          },
+          onNotificationRead: (notificationId) => {
+            console.log("✅ Notification read in hook:", notificationId);
+            refreshNotificationState();
+          },
+          onUnreadCountChange: (count) => {
+            console.log("📊 Unread count changed:", count);
+            setUnreadCount(count);
+            setBadgeCount(count);
+          },
+          onConnectionStateChange: (connected) => {
+            console.log("🔗 Connection state changed:", connected);
+            setIsConnected(connected);
+          },
+          onError: (error) => {
+            console.error("❌ Notification error:", error);
+          },
+        };
 
-        setIsInitialized(true);
-        console.log("🔔 useNotifications hook initialized");
+        // Initialize NotificationManager
+        const initialized = await NotificationManager.initialize(
+          authToken,
+          userId,
+          callbacks,
+        );
+
+        if (initialized) {
+          // Get push token from service
+          const token = PushNotificationService.getPushToken();
+          setPushToken(token);
+
+          // Initial state refresh
+          refreshNotificationState();
+
+          setIsInitialized(true);
+          console.log("✅ useNotifications hook initialized successfully");
+        } else {
+          console.warn("⚠️ Notification manager initialization failed");
+        }
       } catch (error) {
         console.error("❌ Failed to initialize notifications in hook:", error);
       }
     };
 
     initializeNotifications();
+  }, [authToken, userId]);
+
+  // Helper function to refresh notification state
+  const refreshNotificationState = useCallback(() => {
+    const allNotifications = NotificationManager.getNotifications();
+    const unread = NotificationManager.getUnreadNotifications();
+    const count = NotificationManager.getUnreadCount();
+
+    setNotifications(allNotifications);
+    setUnreadNotifications(unread);
+    setUnreadCount(count);
+    setBadgeCount(count);
   }, []);
 
-  // Set up notification listeners
+  // DISABLED: Push notification listeners
+  // Keeping code for future re-enabling
+  /*
   useEffect(() => {
     if (!isInitialized) return;
 
@@ -99,14 +187,31 @@ export const useNotifications = (): UseNotificationsReturn => {
       PushNotificationService.removeResponseListener(responseListener);
     };
   }, [isInitialized]);
+  */
 
-  // Action callbacks
+  // Action callbacks (enhanced with unified system)
   const sendNotification = useCallback(
-    async (notification: NotificationData): Promise<string> => {
+    async (notification: PushNotificationData): Promise<string> => {
       return await PushNotificationService.sendLocalNotification(notification);
     },
     [],
   );
+
+  // New unified notification actions
+  const markAsRead = useCallback(
+    async (notificationId: number): Promise<boolean> => {
+      return await NotificationManager.markAsRead(notificationId);
+    },
+    [],
+  );
+
+  const markAllAsRead = useCallback(async (): Promise<boolean> => {
+    return await NotificationManager.markAllAsRead();
+  }, []);
+
+  const refreshNotifications = useCallback(() => {
+    refreshNotificationState();
+  }, [refreshNotificationState]);
 
   const scheduleNotification = useCallback(
     async (notification: ScheduledNotification): Promise<string> => {
@@ -186,6 +291,15 @@ export const useNotifications = (): UseNotificationsReturn => {
     [],
   );
 
+  // Service status
+  const getServiceStatus = useCallback(() => {
+    return {
+      notificationManager: NotificationManager.getStatus(),
+      realTimeService: RealTimeNotificationService.getStatus(),
+      pushService: PushNotificationService.getServiceStatus(),
+    };
+  }, []);
+
   return {
     // State
     isInitialized,
@@ -193,6 +307,12 @@ export const useNotifications = (): UseNotificationsReturn => {
     lastNotification,
     lastResponse,
     badgeCount,
+
+    // New unified notification state
+    notifications,
+    unreadNotifications,
+    unreadCount,
+    isConnected,
 
     // Actions
     sendNotification,
@@ -202,10 +322,18 @@ export const useNotifications = (): UseNotificationsReturn => {
     updateBadgeCount,
     clearBadge,
 
+    // New unified notification actions
+    markAsRead,
+    markAllAsRead,
+    refreshNotifications,
+
     // School-specific actions
     sendAcademicAlert,
     sendPaymentReminder,
     sendEventNotification,
     sendGeneralNotification,
+
+    // Service status
+    getServiceStatus,
   };
 };

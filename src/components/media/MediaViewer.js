@@ -12,7 +12,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import { Video } from "expo-av";
+import { Video, Audio } from "expo-av";
 import { WebView } from "react-native-webview";
 import Icon from "@expo/vector-icons/MaterialIcons";
 import { useSelector } from "react-redux";
@@ -56,15 +56,34 @@ const MediaViewer = ({
   // Get authentication token from Redux store
   const token = useSelector((state) => state.app.token);
 
+  // Configure audio mode for video playback (especially important for iOS)
+  const configureAudioMode = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true, // Allow sound even when phone is in silent mode
+        staysActiveInBackground: false, // Don't keep audio active in background
+        shouldDuckAndroid: true, // Lower other audio when playing
+        interruptionModeIOS: 1, // Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX
+        allowsRecordingIOS: false, // CRITICAL: Prevent audio routing to earpiece
+      });
+      console.log("✅ Audio mode configured for video playback (iOS optimized)");
+    } catch (error) {
+      console.log("⚠️ Failed to configure audio mode:", error);
+    }
+  };
+
   // Handle video load errors
   const handleVideoError = (error) => {
     console.log("❌ Video load error:", error);
     setVideoLoadError(true);
   };
 
-  const handleVideoLoad = (status) => {
+  const handleVideoLoad = async (status) => {
     console.log("✅ Video loaded successfully:", status);
     setVideoLoadError(false);
+
+    // Configure audio mode when video loads (critical timing for iOS)
+    await configureAudioMode();
   };
 
   // PDF handling functions with multiple methods
@@ -253,6 +272,13 @@ const MediaViewer = ({
       setTimeout(tryNextPdfMethod, 1000);
     }
   };
+
+  // Configure audio mode when video modal becomes visible
+  useEffect(() => {
+    if (videoModalVisible) {
+      configureAudioMode();
+    }
+  }, [videoModalVisible]);
 
   // Reset error states when modals are closed
   useEffect(() => {
@@ -598,8 +624,10 @@ const MediaViewer = ({
             style={styles.fullscreenVideo}
             useNativeControls
             resizeMode="contain"
-            shouldPlay={false}
+            shouldPlay={true}
             isLooping={false}
+            isMuted={false}
+            volume={1.0}
             onError={handleVideoError}
             onLoad={handleVideoLoad}
             onPlaybackStatusUpdate={(status) => {

@@ -35,6 +35,7 @@ const BADGE_IMAGE_MAPPING = {
   "Best Peer Mentor Award": "Best Role Model.png", // No exact match, using Best Role Model
   "Dedication to School Award": "Best Role Model.png", // No exact match, using Best Role Model
   "Athletic Star": "athletic star.png",
+  "High Flyer in Sport": "High flyer in sport.png",
 };
 
 // Available badge images in assets (all 14 PNG files)
@@ -53,6 +54,7 @@ const AVAILABLE_BADGE_IMAGES = {
   "Perseverance Award.png": require("../assets/Badges/Perseverance Award.png"),
   "Positive Attitude Award.png": require("../assets/Badges/Positive Attitude Award.png"),
   "athletic star.png": require("../assets/Badges/athletic star.png"),
+  "High flyer in sport.png": require("../assets/Badges/High flyer in sport.png"),
 };
 
 // Default fallback badge for unmapped achievements

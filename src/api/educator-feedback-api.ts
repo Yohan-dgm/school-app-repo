@@ -1483,6 +1483,80 @@ export const educatorFeedbackApi = apiServer1
         },
       }),
 
+      // ===== SECTION-SPECIFIC CATEGORY ENDPOINTS =====
+      
+      // Early Years Categories API
+      getCategoryEyList: build.query({
+        query: () => {
+          console.log("📤 Early Years Category List Request");
+          return {
+            url: "api/educator-feedback-management/category/ey/list",
+            method: "POST",
+            body: {},
+            credentials: "include",
+          };
+        },
+        providesTags: [{ type: "FeedbackCategories", id: "EY" }],
+        transformResponse: (response: any) => {
+          console.log("📋 EY Categories Response:", response);
+          if (response?.success === true && response?.data) {
+            return { status: "successful", data: response.data };
+          }
+          if (response?.status === "successful" && response?.data) {
+            return response;
+          }
+          throw new Error("Failed to load Early Years categories");
+        },
+      }),
+
+      // Primary Categories API  
+      getCategoryPrList: build.query({
+        query: () => {
+          console.log("📤 Primary Category List Request");
+          return {
+            url: "api/educator-feedback-management/category/pr/list",
+            method: "POST",
+            body: {},
+            credentials: "include",
+          };
+        },
+        providesTags: [{ type: "FeedbackCategories", id: "PR" }],
+        transformResponse: (response: any) => {
+          console.log("📋 PR Categories Response:", response);
+          if (response?.success === true && response?.data) {
+            return { status: "successful", data: response.data };
+          }
+          if (response?.status === "successful" && response?.data) {
+            return response;
+          }
+          throw new Error("Failed to load Primary categories");
+        },
+      }),
+
+      // Secondary Categories API
+      getCategoryScList: build.query({
+        query: () => {
+          console.log("📤 Secondary Category List Request");
+          return {
+            url: "api/educator-feedback-management/category/sc/list",
+            method: "POST",
+            body: {},
+            credentials: "include",
+          };
+        },
+        providesTags: [{ type: "FeedbackCategories", id: "SC" }],
+        transformResponse: (response: any) => {
+          console.log("📋 SC Categories Response:", response);
+          if (response?.success === true && response?.data) {
+            return { status: "successful", data: response.data };
+          }
+          if (response?.status === "successful" && response?.data) {
+            return response;
+          }
+          throw new Error("Failed to load Secondary categories");
+        },
+      }),
+
       // ===== POST FEEDBACK CATEGORIES WITH QUESTIONS (Legacy) =====
       getFeedbackCategoriesWithQuestions: build.query({
         query: () => {
@@ -1663,22 +1737,17 @@ export const educatorFeedbackApi = apiServer1
             page,
             search_phrase: filters.search || "",
             search_filter_list: filters.search_filter_list || [],
-            grade_filter: filters.grade_filter || "", // 🚨 BACKEND: Implement grade filtering
-            evaluation_type_filter: filters.evaluation_type_filter || null, // 🚨 BACKEND: Implement evaluation type filtering
+            grade_filter: filters.grade_filter ?? null, // Send null explicitly for "All Grades"
           };
 
           console.log("📤 DETAILED getEducatorFeedbacks Request:", {
             endpoint: "api/educator-feedback-management/feedback/list",
             method: "POST",
             requestBody,
-            // 🚨 BACKEND TEAM: Verify these parameters are being processed
             backendFilterStatus: {
               grade_filter: requestBody.grade_filter
                 ? `Filtering grade ${requestBody.grade_filter}`
                 : "All grades",
-              evaluation_type_filter: requestBody.evaluation_type_filter
-                ? `Filtering evaluation type ${requestBody.evaluation_type_filter}`
-                : "All evaluation types",
               search_phrase: requestBody.search_phrase
                 ? `Searching: "${requestBody.search_phrase}"`
                 : "No search",
@@ -1865,6 +1934,39 @@ export const educatorFeedbackApi = apiServer1
           console.error("❌ Unexpected feedbacks API response:", response);
           throw new Error("Failed to load feedback list. Please try again.");
         },
+      }),
+
+      // ===== MY FEEDBACKS ENDPOINT =====
+      // Get feedbacks created by the logged-in user only
+      // With parent comments included
+      // Filters by grade_level_id (1-15) - null shows all grades
+      getMyFeedbacks: build.query({
+        query: ({
+          grade_level_id = null,
+          page = 1,
+          page_size = 10,
+        }) => ({
+          url: "/api/educator-feedback-management/feedback/my-list",
+          method: "POST",
+          body: {
+            grade_level_id,
+            page,
+            page_size,
+          },
+        }),
+        transformResponse: (response: any) => {
+          console.log("📥 My Feedbacks API Response:", response);
+
+          if (response?.success && response?.data) {
+            return {
+              success: true,
+              data: response.data,
+            };
+          }
+
+          throw new Error("Failed to load my feedbacks");
+        },
+        providesTags: ["EducatorFeedback"],
       }),
 
       // ===== NEW FEEDBACK LIST ENDPOINT =====
@@ -2154,12 +2256,13 @@ export const educatorFeedbackApi = apiServer1
         query: (feedbackData) => {
           // Transform data to match backend API format
           const requestBody = {
-            student_id: feedbackData.student_id,
+            student_ids: feedbackData.student_ids || (feedbackData.student_id ? [feedbackData.student_id] : []),
             grade_level_id: feedbackData.grade_level_id,
             grade_level_class_id:
               feedbackData.grade_level_class_id || feedbackData.grade_level_id, // Same as grade_level_id if not provided
             edu_fb_category_id: feedbackData.edu_fb_category_id,
             rating: feedbackData.rating || null,
+            decline_reason: feedbackData.decline_reason || null,
             created_by_designation: feedbackData.created_by_designation || null,
             comments: feedbackData.comments || null,
             question_answers: feedbackData.question_answers || [],
@@ -2847,6 +2950,300 @@ export const educatorFeedbackApi = apiServer1
           return response;
         },
       }),
+
+      // ===== GET EDUCATOR FEEDBACK STATISTICS =====
+      getEducatorFeedbackStats: build.query({
+        query: ({ period }: { period?: "this_week" | "this_month" | "this_year" | null }) => {
+          console.log("📤 Educator Feedback Stats API Request:", { period });
+          return {
+            url: "api/educator-feedback-management/stats/educator-feedback-counts",
+            method: "POST",
+            body: period ? { period } : {},
+          };
+        },
+        providesTags: [{ type: "EducatorFeedback", id: "STATS" }],
+        transformResponse: (response: any) => {
+          console.log("📊 Educator Feedback Stats Response:", response);
+
+          // Handle HTML error responses
+          if (
+            typeof response === "string" &&
+            response.includes("<!DOCTYPE html>")
+          ) {
+            console.error("❌ API returned HTML error page");
+            throw new Error(
+              "Server returned an error page. Please check if the API endpoint exists.",
+            );
+          }
+
+          // Handle authentication errors
+          if (response?.status === "authentication-required") {
+            console.error("🔒 Authentication required for feedback stats");
+            throw new Error("Authentication required. Please log in again.");
+          }
+
+          // Handle API errors
+          if (!response?.success) {
+            console.error("❌ Educator Feedback Stats API Error:", response);
+            throw new Error(
+              response?.message || "Failed to fetch educator feedback statistics",
+            );
+          }
+
+          // Validate response structure
+          if (!response?.data) {
+            console.error("❌ Invalid response structure - missing data");
+            throw new Error("Invalid response format from server");
+          }
+
+          return response;
+        },
+        transformErrorResponse: (response: any, meta: any) => {
+          console.log("❌ Educator Feedback Stats Error Response:", response, meta);
+
+          // Handle 401 authentication errors
+          if (meta?.response?.status === 401) {
+            return {
+              status: 401,
+              data: {
+                status: "authentication-required",
+                message: "Authentication required. Please log in again.",
+              },
+            };
+          }
+
+          // Handle 500 server errors
+          if (meta?.response?.status === 500) {
+            return {
+              status: 500,
+              data: {
+                status: "server-error",
+                message:
+                  "Server error occurred. This API endpoint may not be implemented yet or there's a server configuration issue.",
+              },
+            };
+          }
+
+          // Handle 404 not found errors
+          if (meta?.response?.status === 404) {
+            return {
+              status: 404,
+              data: {
+                status: "not-found",
+                message:
+                  "API endpoint not found. This feature may not be available yet.",
+              },
+            };
+          }
+
+          return response;
+        },
+      }),
+
+      // ===== GET STUDENT FEEDBACK STATISTICS =====
+      getStudentFeedbackStats: build.query({
+        query: ({ period }: { period?: "this_week" | "this_month" | "this_year" | null }) => {
+          console.log("📤 Student Feedback Stats API Request:", { period });
+          return {
+            url: "api/educator-feedback-management/stats/student-feedback-counts",
+            method: "POST",
+            body: period ? { period } : {},
+          };
+        },
+        providesTags: [{ type: "EducatorFeedback", id: "STUDENT_STATS" }],
+        transformResponse: (response: any) => {
+          console.log("📊 Student Feedback Stats Response:", response);
+
+          // Handle HTML error responses
+          if (
+            typeof response === "string" &&
+            response.includes("<!DOCTYPE html>")
+          ) {
+            console.error("❌ API returned HTML error page");
+            throw new Error(
+              "Server returned an error page. Please check if the API endpoint exists.",
+            );
+          }
+
+          // Handle authentication errors
+          if (response?.status === "authentication-required") {
+            console.error("🔒 Authentication required for student feedback stats");
+            throw new Error("Authentication required. Please log in again.");
+          }
+
+          // Handle API errors
+          if (!response?.success) {
+            console.error("❌ Student Feedback Stats API Error:", response);
+            throw new Error(
+              response?.message || "Failed to fetch student feedback statistics",
+            );
+          }
+
+          // Validate response structure
+          if (!response?.data) {
+            console.error("❌ Invalid response structure - missing data");
+            throw new Error("Invalid response format from server");
+          }
+
+          return response;
+        },
+        transformErrorResponse: (response: any, meta: any) => {
+          console.log("❌ Student Feedback Stats Error Response:", response, meta);
+
+          // Handle 401 authentication errors
+          if (meta?.response?.status === 401) {
+            return {
+              status: 401,
+              data: {
+                status: "authentication-required",
+                message: "Authentication required. Please log in again.",
+              },
+            };
+          }
+
+          // Handle 500 server errors
+          if (meta?.response?.status === 500) {
+            return {
+              status: 500,
+              data: {
+                status: "server-error",
+                message:
+                  "Server error occurred. This API endpoint may not be implemented yet or there's a server configuration issue.",
+              },
+            };
+          }
+
+          // Handle 404 not found errors
+          if (meta?.response?.status === 404) {
+            return {
+              status: 404,
+              data: {
+                status: "not-found",
+                message:
+                  "API endpoint not found. This feature may not be available yet.",
+              },
+            };
+          }
+
+          return response;
+        },
+      }),
+
+      // ===== PARENT COMMENT MANAGEMENT =====
+
+      // Get parent comments for a specific educator feedback
+      getParentComments: build.query({
+        query: ({ edu_fb_id }: { edu_fb_id: string }) => {
+          console.log("📤 Get Parent Comments API Request:", { edu_fb_id });
+          return {
+            url: "api/educator-feedback-management/parent-comment/list",
+            method: "POST",
+            body: { edu_fb_id },
+          };
+        },
+        providesTags: (result, error, { edu_fb_id }) => [
+          { type: "EducatorFeedback", id: `PARENT_COMMENTS_${edu_fb_id}` },
+        ],
+        transformResponse: (response: any) => {
+          console.log("💬 Parent Comments Response:", response);
+
+          // Handle no response or empty - return empty array
+          if (!response) {
+            return { success: true, data: [] };
+          }
+
+          // Handle array response directly
+          if (Array.isArray(response)) {
+            return { success: true, data: response };
+          }
+
+          // Handle object with data array
+          if (response.data && Array.isArray(response.data)) {
+            return response;
+          }
+
+          // Handle success with empty data
+          if (response.success && !response.data) {
+            return { success: true, data: [] };
+          }
+
+          // Default: return as-is or empty
+          return response || { success: true, data: [] };
+        },
+        transformErrorResponse: (response: any, meta: any) => {
+          console.log("⚠️ Parent Comments Error (treating as empty):", response, meta);
+
+          // Treat 404 as empty comments (not an error)
+          if (meta?.response?.status === 404) {
+            return { status: 404, data: { success: true, data: [] } };
+          }
+
+          // Treat validation errors as empty
+          if (meta?.response?.status === 422) {
+            return { status: 422, data: { success: true, data: [] } };
+          }
+
+          // Return error for real issues (500, network, etc.)
+          return response;
+        },
+      }),
+
+      // Create a new parent comment
+      createParentComment: build.mutation({
+        query: ({ edu_fb_id, comment }: { edu_fb_id: string; comment: string }) => {
+          console.log("📤 Create Parent Comment API Request:", { edu_fb_id, comment });
+          return {
+            url: "api/educator-feedback-management/parent-comment/create",
+            method: "POST",
+            body: { edu_fb_id, comment },
+          };
+        },
+        invalidatesTags: (result, error, { edu_fb_id }) => [
+          { type: "EducatorFeedback", id: `PARENT_COMMENTS_${edu_fb_id}` },
+        ],
+        transformResponse: (response: any) => {
+          console.log("💬 Create Parent Comment Response:", response);
+          return response;
+        },
+      }),
+
+      // Update an existing parent comment
+      updateParentComment: build.mutation({
+        query: ({ id, comment, edu_fb_id }: { id: number; comment: string; edu_fb_id: string }) => {
+          console.log("📤 Update Parent Comment API Request:", { id, comment });
+          return {
+            url: "api/educator-feedback-management/parent-comment/update",
+            method: "POST",
+            body: { id, comment },
+          };
+        },
+        invalidatesTags: (result, error, { edu_fb_id }) => [
+          { type: "EducatorFeedback", id: `PARENT_COMMENTS_${edu_fb_id}` },
+        ],
+        transformResponse: (response: any) => {
+          console.log("💬 Update Parent Comment Response:", response);
+          return response;
+        },
+      }),
+
+      // Delete a parent comment (soft delete)
+      deleteParentComment: build.mutation({
+        query: ({ id, edu_fb_id }: { id: number; edu_fb_id: string }) => {
+          console.log("📤 Delete Parent Comment API Request:", { id });
+          return {
+            url: "api/educator-feedback-management/parent-comment/delete",
+            method: "POST",
+            body: { id },
+          };
+        },
+        invalidatesTags: (result, error, { edu_fb_id }) => [
+          { type: "EducatorFeedback", id: `PARENT_COMMENTS_${edu_fb_id}` },
+        ],
+        transformResponse: (response: any) => {
+          console.log("💬 Delete Parent Comment Response:", response);
+          return response;
+        },
+      }),
     }),
   });
 
@@ -2862,10 +3259,19 @@ export const {
   useLazyGetStudentsByGradeWithPaginationQuery,
   useGetCategoryListQuery,
   useLazyGetCategoryListQuery,
+  // Section-specific category hooks
+  useGetCategoryEyListQuery,
+  useLazyGetCategoryEyListQuery,
+  useGetCategoryPrListQuery,
+  useLazyGetCategoryPrListQuery,
+  useGetCategoryScListQuery,
+  useLazyGetCategoryScListQuery,
   useGetFeedbackCategoriesWithQuestionsQuery,
   useLazyGetFeedbackCategoriesWithQuestionsQuery,
   useGetEducatorFeedbacksQuery,
   useLazyGetEducatorFeedbacksQuery,
+  useGetMyFeedbacksQuery,
+  useLazyGetMyFeedbacksQuery,
   useGetFeedbackListQuery,
   useLazyGetFeedbackListQuery,
   useSubmitEducatorFeedbackMutation,
@@ -2884,4 +3290,14 @@ export const {
   useLazyGetStudentRatingsByTermQuery,
   useGetStudentCategoryFeedbackListQuery,
   useLazyGetStudentCategoryFeedbackListQuery,
+  useGetEducatorFeedbackStatsQuery,
+  useLazyGetEducatorFeedbackStatsQuery,
+  useGetStudentFeedbackStatsQuery,
+  useLazyGetStudentFeedbackStatsQuery,
+  // Parent comment hooks
+  useGetParentCommentsQuery,
+  useLazyGetParentCommentsQuery,
+  useCreateParentCommentMutation,
+  useUpdateParentCommentMutation,
+  useDeleteParentCommentMutation,
 } = educatorFeedbackApi;

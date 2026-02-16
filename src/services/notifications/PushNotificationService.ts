@@ -2,6 +2,8 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import axios from "axios";
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -27,9 +29,32 @@ export interface ScheduledNotification extends NotificationData {
   trigger: Notifications.NotificationTriggerInput;
 }
 
+export interface PushTokenRegistrationData {
+  push_token: string;
+  device_id: string;
+  platform: "ios" | "android";
+  app_version: string;
+  device_name?: string;
+  device_model?: string;
+  os_version?: string;
+}
+
+export interface BackendApiResponse {
+  success: boolean;
+  message: string;
+  data?: any;
+  errors?: any;
+}
+
 class PushNotificationService {
+  // ENABLED: Push notifications are now enabled
+  private static PUSH_NOTIFICATIONS_DISABLED = false;
+
   private static instance: PushNotificationService;
   private pushToken: string | null = null;
+  private authToken: string | null = null;
+  private userId: string | null = null;
+  private isRegisteredWithBackend: boolean = false;
   private notificationListeners: ((
     notification: Notifications.Notification,
   ) => void)[] = [];
@@ -44,9 +69,22 @@ class PushNotificationService {
     return PushNotificationService.instance;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(authToken?: string, userId?: string): Promise<void> {
+    // Check if push notifications are disabled
+    if (PushNotificationService.PUSH_NOTIFICATIONS_DISABLED) {
+      console.log("⚠️ Push notifications are disabled by feature flag");
+      return;
+    }
+
     try {
-      console.log("📱 Initializing push notification service...");
+      console.log("📱 Initializing push notification service...", {
+        hasAuthToken: !!authToken,
+        userId: userId || "not provided",
+      });
+
+      // Store authentication details
+      this.authToken = authToken || null;
+      this.userId = userId || null;
 
       // Request permissions (this may fail on simulator)
       const permissionsGranted = await this.requestPermissions();
@@ -64,6 +102,14 @@ class PushNotificationService {
         console.warn(
           "⚠️ Push token not available, but local notifications will still work",
         );
+      }
+
+      // Register with backend if we have authentication and token
+      // NOTE: This is optional - local notifications work without backend registration
+      if (token && authToken && userId) {
+        this.registerTokenWithBackend(token).catch((error) => {
+          console.warn("⚠️ Backend registration failed, but local notifications will still work:", error?.message || error);
+        });
       }
 
       // Set up listeners (this should always work)
@@ -135,9 +181,12 @@ class PushNotificationService {
         return this.pushToken;
       }
 
-      // Check if we have a valid project ID
-      const projectId = process.env.EXPO_PROJECT_ID;
-      if (!projectId || projectId === "your-project-id") {
+      // Get project ID from Constants or environment
+      const projectId =
+        Constants.expoConfig?.extra?.eas?.projectId ||
+        process.env.EXPO_PUBLIC_PROJECT_ID;
+
+      if (!projectId) {
         console.warn(
           "⚠️ No valid Expo project ID configured. Push notifications will work locally only.",
         );
@@ -149,6 +198,8 @@ class PushNotificationService {
 
         return null;
       }
+
+      console.log("📱 Using project ID for push token:", projectId);
 
       // Try to get Expo push token
       const token = await Notifications.getExpoPushTokenAsync({
@@ -234,13 +285,21 @@ class PushNotificationService {
   }
 
   async sendLocalNotification(notification: NotificationData): Promise<string> {
+    // Check if notifications are disabled
+    if (PushNotificationService.PUSH_NOTIFICATIONS_DISABLED) {
+      console.log("⚠️ Local notifications are disabled by feature flag");
+      return "disabled";
+    }
+
     try {
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
           title: notification.title,
           body: notification.body,
           data: notification.data || {},
-          categoryIdentifier: notification.categoryId,
+          ...(notification.categoryId && {
+            categoryIdentifier: notification.categoryId,
+          }),
           priority: this.mapPriority(notification.priority),
           sound: notification.sound || "default",
         },
@@ -264,7 +323,9 @@ class PushNotificationService {
           title: notification.title,
           body: notification.body,
           data: notification.data || {},
-          categoryIdentifier: notification.categoryId,
+          ...(notification.categoryId && {
+            categoryIdentifier: notification.categoryId,
+          }),
           priority: this.mapPriority(notification.priority),
           sound: notification.sound || "default",
         },
@@ -373,6 +434,263 @@ class PushNotificationService {
       default:
         return Notifications.AndroidNotificationPriority.DEFAULT;
     }
+  }
+
+  // Backend Integration Methods
+
+  /**
+   * Register push token with Laravel backend
+   */
+  async registerTokenWithBackend(pushToken: string, retryCount = 0): Promise<boolean> {
+    const maxRetries = 2; // Allow 2 retries
+    try {
+      if (!this.authToken) {
+        console.warn("⚠️ No auth token available for backend registration");
+        return false;
+      }
+
+      const deviceInfo = await this.getDeviceInfo();
+      const registrationData: PushTokenRegistrationData = {
+        push_token: pushToken,
+        ...deviceInfo,
+      };
+
+      console.log("📤 Registering push token with backend:", {
+        ...registrationData,
+        push_token: `${pushToken.substring(0, 20)}...`,
+        tokenLength: this.authToken?.length
+      });
+
+      // Get base URL from environment
+      const baseUrl = 
+        process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 || 
+        process.env.EXPO_PUBLIC_API_BASE_URL || 
+        "http://172.20.10.3:9999";
+      
+      console.log("🔧 [DEBUG] Base URL resolution:", {
+        finalBaseUrl: baseUrl
+      });
+      
+      const response = await axios.post<BackendApiResponse>(
+        `${baseUrl}/api/user-management/push-tokens/register`,
+        registrationData,
+        {
+          headers: {
+            Authorization: `Bearer ${this.authToken}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          timeout: 30000, // 30 second timeout
+        },
+      );
+
+      if (response.data?.success) {
+        console.log(
+          "✅ Push token registered successfully with backend:",
+          response.data.data,
+        );
+        this.isRegisteredWithBackend = true;
+        return true;
+      } else {
+        console.error(
+          "❌ Failed to register push token:",
+          response.data?.message,
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Error registering push token with backend:", error);
+
+      if (axios.isAxiosError(error)) {
+        console.error("API Error details:", {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message,
+          url: error.config?.url,
+          method: error.config?.method,
+        });
+        
+        // Log specific error details for debugging
+        if (error.response?.status === 500) {
+          console.warn("🔧 Backend server error (500) - this is likely a backend issue, not frontend");
+          console.warn("💡 Local notifications will still work fine without backend registration");
+        } else if (error.response?.status === 422) {
+          console.warn("🔧 Validation error (422) - check device data format:");
+          console.warn("📋 Registration data sent:", registrationData);
+        } else if (error.response?.status === 401) {
+          console.warn("🔧 Authentication error (401) - token might be invalid for this endpoint");
+        }
+      }
+
+      // Retry logic for specific error types
+      if (retryCount < maxRetries) {
+        if (axios.isAxiosError(error) && (
+          error.response?.status === 500 || // Server error
+          error.response?.status === 503 || // Service unavailable
+          error.code === 'NETWORK_ERROR' || 
+          error.code === 'TIMEOUT'
+        )) {
+          const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+          console.warn(`🔄 Retrying backend registration in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+          
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return this.registerTokenWithBackend(pushToken, retryCount + 1);
+        }
+      }
+
+      // Don't throw - return false to indicate failure but allow service to continue
+      return false;
+    }
+  }
+
+  /**
+   * Remove push token from backend (on logout)
+   */
+  async removeTokenFromBackend(deviceId?: string): Promise<boolean> {
+    try {
+      if (!this.authToken) {
+        console.warn("⚠️ No auth token available for backend token removal");
+        return false;
+      }
+
+      const payload: any = {};
+      if (deviceId) {
+        payload.device_id = deviceId;
+      } else if (this.pushToken) {
+        payload.push_token = this.pushToken;
+      }
+
+      console.log("🗑️ Removing push token from backend:", payload);
+
+      const baseUrl =
+        process.env.EXPO_PUBLIC_API_BASE_URL ||
+        process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 ||
+        "http://172.20.10.3:9999"; // Updated fallback to match new server
+      const response = await axios.post<BackendApiResponse>(
+        `${baseUrl}/api/user-management/push-tokens/delete`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.authToken}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          timeout: 30000,
+        },
+      );
+
+      if (response.data?.success) {
+        console.log("✅ Push token removed successfully from backend");
+        this.isRegisteredWithBackend = false;
+        return true;
+      } else {
+        console.error(
+          "❌ Failed to remove push token:",
+          response.data?.message,
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Error removing push token from backend:", error);
+
+      if (axios.isAxiosError(error)) {
+        console.error("API Error details:", {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message,
+        });
+      }
+
+      return false;
+    }
+  }
+
+  /**
+   * Update authentication token and re-register if needed
+   */
+  async updateAuthToken(authToken: string, userId: string): Promise<void> {
+    console.log("🔄 Updating auth token and re-registering with backend");
+
+    this.authToken = authToken;
+    this.userId = userId;
+
+    // Re-register with backend if we have a push token
+    if (this.pushToken) {
+      await this.registerTokenWithBackend(this.pushToken);
+    }
+  }
+
+  /**
+   * Get device information for registration
+   */
+  private async getDeviceInfo(): Promise<
+    Omit<PushTokenRegistrationData, "push_token">
+  > {
+    const appVersion = Constants.expoConfig?.version || "1.0.0";
+
+    return {
+      device_id: await this.getDeviceId(),
+      platform: Platform.OS as "ios" | "android",
+      app_version: appVersion,
+      device_name: Device.deviceName || "Unknown Device",
+      device_model: Device.modelName || "Unknown Model",
+      os_version: Device.osVersion || "Unknown OS",
+    };
+  }
+
+  /**
+   * Get a unique device identifier
+   */
+  private async getDeviceId(): Promise<string> {
+    try {
+      // Try to get stored device ID first
+      let deviceId = await AsyncStorage.getItem("device_id");
+
+      if (!deviceId) {
+        // Generate a new device ID using available device info
+        const deviceName = Device.deviceName || "UnknownDevice";
+        const modelName = Device.modelName || "UnknownModel";
+        const timestamp = Date.now().toString();
+        deviceId =
+          `${Platform.OS}_${deviceName}_${modelName}_${timestamp}`.replace(
+            /[^a-zA-Z0-9_-]/g,
+            "_",
+          );
+
+        // Store it for future use
+        await AsyncStorage.setItem("device_id", deviceId);
+      }
+
+      return deviceId;
+    } catch (error) {
+      console.error("❌ Error getting device ID:", error);
+      // Fallback device ID
+      return `${Platform.OS}_${Date.now()}`;
+    }
+  }
+
+  /**
+   * Check if token is registered with backend
+   */
+  isTokenRegisteredWithBackend(): boolean {
+    return this.isRegisteredWithBackend;
+  }
+
+  /**
+   * Get service status for debugging
+   */
+  getServiceStatus() {
+    return {
+      hasPushToken: !!this.pushToken,
+      hasAuthToken: !!this.authToken,
+      userId: this.userId,
+      isRegisteredWithBackend: this.isRegisteredWithBackend,
+      isPushNotificationAvailable: this.isPushNotificationAvailable(),
+      isLocalNotificationAvailable: this.isLocalNotificationAvailable(),
+      // Additional status info
+      serviceReady: this.isLocalNotificationAvailable(), // Service is ready if local notifications work
+      backendOptional: true, // Backend registration is optional for functionality
+    };
   }
 
   // School-specific notification methods

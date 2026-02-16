@@ -1,68 +1,65 @@
+import * as Notifications from "expo-notifications";
+import { AppState } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { formatDistanceToNow, parseISO } from "date-fns";
+
 import PushNotificationService from "./PushNotificationService";
-import WebSocketService from "../websocket/WebSocketService";
-// Removed RTK Query imports to avoid circular dependency
-import type {
-  NotificationMessage,
-  RealTimeUpdate,
-} from "../websocket/WebSocketService";
-import type { Notification } from "../api/NotificationApiService";
+import RealTimeNotificationService, {
+  RealTimeNotification,
+  NotificationStats,
+  RealTimeCallbacks,
+} from "./RealTimeNotificationService";
 
-export interface UnifiedNotification {
-  id: string;
+export interface NotificationData {
+  id: number;
+  recipient_id: number;
   title: string;
-  body: string;
-  type: "academic" | "payment" | "event" | "general" | "emergency";
-  category?: string;
-  priority: "low" | "normal" | "high" | "urgent";
-  source: "local" | "push" | "websocket" | "api";
-  read: boolean;
-  timestamp: string;
-  userId?: string;
-  userCategory?: number;
-  studentId?: string;
-  data?: Record<string, any>;
-  actions?: NotificationAction[];
+  message: string;
+  priority: "normal" | "high" | "urgent";
+  priority_label?: string;
+  priority_color?: string;
+  type: string;
+  type_name?: string;
+  action_url?: string;
+  action_text?: string;
+  image_url?: string;
+  is_read: boolean;
+  is_delivered: boolean;
+  created_at: string;
+  read_at?: string;
+  time_ago?: string;
 }
 
-export interface NotificationAction {
-  id: string;
-  title: string;
-  type: "button" | "input" | "link" | "navigate";
-  url?: string;
-  screen?: string;
-  data?: Record<string, any>;
-  handler?: (data?: any) => void | Promise<void>;
+export interface NotificationManagerCallbacks {
+  onNewNotification?: (notification: NotificationData) => void;
+  onNotificationRead?: (notificationId: number) => void;
+  onUnreadCountChange?: (count: number) => void;
+  onConnectionStateChange?: (connected: boolean) => void;
+  onError?: (error: any) => void;
 }
 
-export interface NotificationStats {
-  total: number;
-  unread: number;
-  byType: Record<string, number>;
-  byPriority: Record<string, number>;
-  bySource: Record<string, number>;
+export interface NotificationManagerConfig {
+  enableRealTime: boolean;
+  enablePushNotifications: boolean;
+  deduplicationWindowMs: number;
 }
-
-export interface NotificationFilters {
-  type?: string[];
-  priority?: string[];
-  source?: string[];
-  read?: boolean;
-  dateRange?: {
-    start: Date;
-    end: Date;
-  };
-  studentId?: string;
-}
-
-type NotificationListener = (notification: UnifiedNotification) => void;
-type StatsUpdateListener = (stats: NotificationStats) => void;
 
 class NotificationManager {
   private static instance: NotificationManager;
-  private notifications: Map<string, UnifiedNotification> = new Map();
-  private listeners: NotificationListener[] = [];
-  private statsListeners: StatsUpdateListener[] = [];
-  private isInitialized = false;
+  private notifications: Map<number, NotificationData> = new Map();
+  private recentNotificationIds: Set<number> = new Set();
+  private unreadCount: number = 0;
+  private callbacks: NotificationManagerCallbacks = {};
+  private config: NotificationManagerConfig = {
+    enableRealTime: true,
+    enablePushNotifications: true,
+    deduplicationWindowMs: 5000, // 5 seconds
+  };
+
+  private authToken: string | null = null;
+  private userId: string | null = null;
+  private isInitialized: boolean = false;
+  private _isConnected: boolean = false;
 
   static getInstance(): NotificationManager {
     if (!NotificationManager.instance) {
@@ -71,532 +68,600 @@ class NotificationManager {
     return NotificationManager.instance;
   }
 
-  async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      console.log("📋 Notification manager already initialized");
+  /**
+   * Initialize the notification manager
+   */
+  async initialize(
+    authToken: string,
+    userId: string,
+    callbacks: NotificationManagerCallbacks = {},
+    config: Partial<NotificationManagerConfig> = {},
+  ): Promise<boolean> {
+    try {
+      console.log("🚀 Initializing NotificationManager...", {
+        userId,
+        hasAuthToken: !!authToken,
+        enableRealTime: config.enableRealTime ?? this.config.enableRealTime,
+        enablePushNotifications:
+          config.enablePushNotifications ?? this.config.enablePushNotifications,
+      });
+
+      // Store configuration
+      this.authToken = authToken;
+      this.userId = userId;
+      this.callbacks = callbacks;
+      this.config = { ...this.config, ...config };
+
+      let initResults = { push: false, realTime: false };
+
+      // DISABLED: Push notifications initialization
+      // Keeping code for future re-enabling
+      /*
+      if (this.config.enablePushNotifications) {
+        try {
+          await PushNotificationService.initialize(authToken, userId);
+          this.setupPushNotificationListeners();
+          initResults.push = true;
+          console.log("✅ Push notifications initialized");
+        } catch (error) {
+          console.error("❌ Push notifications initialization failed:", error);
+          this.callbacks.onError?.(error);
+        }
+      }
+      */
+      // Skip push notification initialization
+      console.log("⚠️ Push notifications are disabled")
+
+      // Initialize real-time notifications if enabled
+      if (this.config.enableRealTime) {
+        try {
+          const realTimeCallbacks: RealTimeCallbacks = {
+            onNotificationCreated: this.handleRealTimeNotification.bind(this),
+            onNotificationRead: this.handleRealTimeNotificationRead.bind(this),
+            onStatsUpdated: this.handleStatsUpdate.bind(this),
+            onConnectionStateChange:
+              this.handleConnectionStateChange.bind(this),
+            onError: this.callbacks.onError,
+          };
+
+          initResults.realTime = await RealTimeNotificationService.initialize(
+            authToken,
+            userId,
+            realTimeCallbacks,
+          );
+
+          if (initResults.realTime) {
+            console.log("✅ Real-time notifications initialized");
+          } else {
+            console.warn("⚠️ Real-time notifications initialization failed");
+          }
+        } catch (error) {
+          console.error(
+            "❌ Real-time notifications initialization failed:",
+            error,
+          );
+          this.callbacks.onError?.(error);
+        }
+      }
+
+      // Setup app state listener
+      this.setupAppStateListener();
+
+      // Load cached notifications
+      await this.loadCachedNotifications();
+
+      this.isInitialized = true;
+
+      console.log("🚀 NotificationManager initialized successfully:", {
+        pushNotifications: initResults.push,
+        realTimeNotifications: initResults.realTime,
+        totalSuccess: initResults.push || initResults.realTime,
+      });
+
+      return initResults.push || initResults.realTime;
+    } catch (error) {
+      console.error("❌ NotificationManager initialization failed:", error);
+      this.callbacks.onError?.(error);
+      return false;
+    }
+  }
+
+  /**
+   * DISABLED: Setup push notification listeners
+   * Keeping code for future re-enabling
+   */
+  /*
+  private setupPushNotificationListeners(): void {
+    // Listen for notification responses (user tapped notification)
+    PushNotificationService.addResponseListener(
+      (response: Notifications.NotificationResponse) => {
+        console.log("👆 Push notification response received:", response);
+
+        const notificationData = response.notification.request.content.data;
+
+        // Handle navigation based on notification data
+        this.handleNotificationNavigation(notificationData);
+      },
+    );
+
+    // Listen for notifications received in foreground
+    PushNotificationService.addNotificationListener(
+      (notification: Notifications.Notification) => {
+        console.log(
+          "📨 Push notification received in foreground:",
+          notification,
+        );
+
+        // Convert to our notification format and process
+        const notificationData =
+          this.convertPushNotificationToData(notification);
+        if (notificationData) {
+          this.processNotification(notificationData, "push");
+        }
+      },
+    );
+  }
+  */
+
+  /**
+   * DISABLED: Convert push notification to our data format
+   * Keeping code for future re-enabling
+   */
+  /*
+  private convertPushNotificationToData(
+    notification: Notifications.Notification,
+  ): NotificationData | null {
+    try {
+      const content = notification.request.content;
+      const data = content.data || {};
+
+      return {
+        id: parseInt(data.id) || Date.now(),
+        recipient_id:
+          parseInt(data.recipient_id) || parseInt(this.userId || "0"),
+        title: content.title || "Notification",
+        message: content.body || "",
+        priority: (data.priority as any) || "normal",
+        priority_label: data.priority_label,
+        priority_color: data.priority_color,
+        type: data.type || "general",
+        type_name: data.type_name,
+        action_url: data.action_url,
+        action_text: data.action_text,
+        image_url: data.image_url,
+        is_read: false,
+        is_delivered: true,
+        created_at: new Date().toISOString(),
+        time_ago: "Just now",
+      };
+    } catch (error) {
+      console.error("❌ Error converting push notification:", error);
+      return null;
+    }
+  }
+  */
+
+  /**
+   * Handle real-time notification
+   */
+  private handleRealTimeNotification(notification: RealTimeNotification): void {
+    console.log("⚡ Real-time notification received:", notification);
+
+    const notificationData: NotificationData = {
+      ...notification,
+      time_ago:
+        notification.time_ago || this.formatTimeAgo(notification.created_at),
+    };
+
+    this.processNotification(notificationData, "realtime");
+  }
+
+  /**
+   * Handle real-time notification read event
+   */
+  private handleRealTimeNotificationRead(data: {
+    id: number;
+    recipient_id: number;
+    is_read: boolean;
+    read_at: string;
+  }): void {
+    console.log("✅ Real-time notification read event:", data);
+
+    const notification = this.notifications.get(data.id);
+    if (notification) {
+      notification.is_read = data.is_read;
+      notification.read_at = data.read_at;
+
+      if (data.is_read) {
+        this.unreadCount = Math.max(0, this.unreadCount - 1);
+        this.callbacks.onUnreadCountChange?.(this.unreadCount);
+        this.callbacks.onNotificationRead?.(data.id);
+      }
+
+      // Update cache
+      this.cacheNotifications();
+    }
+  }
+
+  /**
+   * Handle stats update
+   */
+  private handleStatsUpdate(stats: NotificationStats): void {
+    console.log("📊 Notification stats updated:", stats);
+
+    if (stats.unread_count !== this.unreadCount) {
+      this.unreadCount = stats.unread_count;
+      this.callbacks.onUnreadCountChange?.(this.unreadCount);
+    }
+  }
+
+  /**
+   * Handle connection state change
+   */
+  private handleConnectionStateChange(connected: boolean): void {
+    console.log("🔗 Connection state changed:", connected);
+
+    this._isConnected = connected;
+    this.callbacks.onConnectionStateChange?.(connected);
+  }
+
+  /**
+   * Process a notification (with deduplication)
+   */
+  private processNotification(
+    notification: NotificationData,
+    source: "push" | "realtime",
+  ): void {
+    console.log(`📝 NotificationManager - Processing ${source} notification:`, {
+      id: notification.id,
+      title: notification.title,
+      is_read: notification.is_read,
+      source,
+    });
+
+    // Check for duplicates
+    if (this.recentNotificationIds.has(notification.id)) {
+      console.log(
+        "🔄 NotificationManager - Duplicate notification detected, skipping:",
+        notification.id,
+      );
       return;
     }
 
-    try {
-      console.log("📋 Initializing notification manager...");
+    // Add to deduplication set
+    this.recentNotificationIds.add(notification.id);
 
-      // Set up listeners for different notification sources
-      this.setupPushNotificationListeners();
-      this.setupWebSocketListeners();
+    // Remove from deduplication set after the window expires
+    setTimeout(() => {
+      this.recentNotificationIds.delete(notification.id);
+    }, this.config.deduplicationWindowMs);
 
-      this.isInitialized = true;
-      console.log("✅ Notification manager initialized successfully");
-    } catch (error) {
-      console.error("❌ Failed to initialize notification manager:", error);
-      throw error;
-    }
-  }
-
-  private setupPushNotificationListeners(): void {
-    // Listen for push notifications
-    PushNotificationService.addNotificationListener((pushNotification) => {
-      const unifiedNotification = this.convertPushToUnified(pushNotification);
-      this.addNotification(unifiedNotification);
-    });
-
-    // Listen for notification responses
-    PushNotificationService.addResponseListener((response) => {
-      const notificationData = response.notification.request.content.data;
-      if (notificationData?.id) {
-        this.handleNotificationAction(
-          notificationData.id,
-          "tapped",
-          notificationData,
-        );
-      }
-    });
-  }
-
-  private setupWebSocketListeners(): void {
-    // Listen for WebSocket notifications
-    WebSocketService.addNotificationListener((wsNotification) => {
-      const unifiedNotification =
-        this.convertWebSocketToUnified(wsNotification);
-      this.addNotification(unifiedNotification);
-
-      // Also trigger push notification for immediate visibility
-      this.triggerPushNotification(unifiedNotification);
-    });
-
-    // Listen for real-time updates
-    WebSocketService.addUpdateListener((update) => {
-      this.handleRealTimeUpdate(update);
-    });
-  }
-
-  // Convert different notification types to unified format
-  private convertPushToUnified(pushNotification: any): UnifiedNotification {
-    return {
-      id: `push-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: pushNotification.request.content.title,
-      body: pushNotification.request.content.body,
-      type: pushNotification.request.content.data?.type || "general",
-      category: pushNotification.request.content.categoryIdentifier,
-      priority: this.mapPushPriority(pushNotification.request.content.priority),
-      source: "push",
-      read: false,
-      timestamp: new Date().toISOString(),
-      data: pushNotification.request.content.data,
-    };
-  }
-
-  private convertWebSocketToUnified(
-    wsNotification: NotificationMessage,
-  ): UnifiedNotification {
-    return {
-      id: wsNotification.id,
-      title: wsNotification.title,
-      body: wsNotification.body,
-      type: wsNotification.category as any,
-      priority: wsNotification.priority,
-      source: "websocket",
-      read: wsNotification.read || false,
-      timestamp: wsNotification.timestamp,
-      userId: wsNotification.userId,
-      userCategory: wsNotification.userCategory,
-      data: wsNotification.data,
-    };
-  }
-
-  private convertApiToUnified(
-    apiNotification: Notification,
-  ): UnifiedNotification {
-    return {
-      id: apiNotification.id,
-      title: apiNotification.title,
-      body: apiNotification.body,
-      type: apiNotification.type,
-      category: apiNotification.category,
-      priority: apiNotification.priority,
-      source: "api",
-      read: apiNotification.read,
-      timestamp: apiNotification.createdAt,
-      userId: apiNotification.userId,
-      userCategory: apiNotification.userCategory,
-      studentId: apiNotification.studentId,
-      data: apiNotification.data,
-      actions: apiNotification.actions?.map((action) => ({
-        ...action,
-        type: action.type as any,
-      })),
-    };
-  }
-
-  private mapPushPriority(priority: any): UnifiedNotification["priority"] {
-    switch (priority) {
-      case "low":
-        return "low";
-      case "high":
-        return "high";
-      case "max":
-        return "urgent";
-      default:
-        return "normal";
-    }
-  }
-
-  // Add notification to local store
-  private addNotification(notification: UnifiedNotification): void {
+    // Store notification
     this.notifications.set(notification.id, notification);
 
-    console.log("📋 Added notification:", {
-      id: notification.id,
-      title: notification.title,
-      type: notification.type,
-      source: notification.source,
-    });
+    // Update unread count
+    if (!notification.is_read) {
+      this.unreadCount++;
+      console.log(
+        "📊 NotificationManager - Unread count updated:",
+        this.unreadCount,
+      );
+      this.callbacks.onUnreadCountChange?.(this.unreadCount);
+    }
 
-    // Notify listeners
-    this.notifyListeners(notification);
-    this.updateStats();
-  }
+    // Cache notifications
+    this.cacheNotifications();
 
-  // Trigger push notification for WebSocket messages
-  private async triggerPushNotification(
-    notification: UnifiedNotification,
-  ): Promise<void> {
-    try {
-      await PushNotificationService.sendLocalNotification({
+    // Notify callback - this is crucial for UI updates
+    console.log(
+      "📤 NotificationManager - Triggering onNewNotification callback",
+    );
+    this.callbacks.onNewNotification?.(notification);
+
+    console.log(
+      "✅ NotificationManager - Notification processed successfully:",
+      {
         id: notification.id,
-        title: notification.title,
-        body: notification.body,
-        priority: notification.priority,
-        data: {
-          ...notification.data,
-          source: "websocket",
-          originalId: notification.id,
-        },
-      });
-    } catch (error) {
-      console.error("❌ Failed to trigger push notification:", error);
-    }
-  }
-
-  // Handle real-time updates
-  private handleRealTimeUpdate(update: RealTimeUpdate): void {
-    console.log("🔄 Processing real-time update:", update.type);
-
-    // Create notification for certain update types
-    switch (update.type) {
-      case "attendance":
-        this.addNotification({
-          id: `update-attendance-${Date.now()}`,
-          title: "Attendance Updated",
-          body: "Student attendance has been updated",
-          type: "academic",
-          priority: "normal",
-          source: "websocket",
-          read: false,
-          timestamp: update.timestamp,
-          data: update.data,
-        });
-        break;
-
-      case "grade":
-        this.addNotification({
-          id: `update-grade-${Date.now()}`,
-          title: "New Grade Available",
-          body: "A new grade has been posted",
-          type: "academic",
-          priority: "high",
-          source: "websocket",
-          read: false,
-          timestamp: update.timestamp,
-          data: update.data,
-        });
-        break;
-
-      case "announcement":
-        this.addNotification({
-          id: `update-announcement-${Date.now()}`,
-          title: "New Announcement",
-          body: update.data?.title || "A new announcement has been posted",
-          type: "general",
-          priority: "normal",
-          source: "websocket",
-          read: false,
-          timestamp: update.timestamp,
-          data: update.data,
-        });
-        break;
-    }
-  }
-
-  // Public methods
-  async sendNotification(
-    notification: Omit<UnifiedNotification, "id" | "timestamp" | "source">,
-  ): Promise<string> {
-    const fullNotification: UnifiedNotification = {
-      ...notification,
-      id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date().toISOString(),
-      source: "local",
-    };
-
-    this.addNotification(fullNotification);
-
-    // Also send via push notifications
-    await PushNotificationService.sendLocalNotification({
-      id: fullNotification.id,
-      title: fullNotification.title,
-      body: fullNotification.body,
-      priority: fullNotification.priority,
-      data: fullNotification.data,
-    });
-
-    return fullNotification.id;
-  }
-
-  getNotifications(filters?: NotificationFilters): UnifiedNotification[] {
-    let notifications = Array.from(this.notifications.values());
-
-    if (filters) {
-      if (filters.type?.length) {
-        notifications = notifications.filter((n) =>
-          filters.type!.includes(n.type),
-        );
-      }
-
-      if (filters.priority?.length) {
-        notifications = notifications.filter((n) =>
-          filters.priority!.includes(n.priority),
-        );
-      }
-
-      if (filters.source?.length) {
-        notifications = notifications.filter((n) =>
-          filters.source!.includes(n.source),
-        );
-      }
-
-      if (typeof filters.read === "boolean") {
-        notifications = notifications.filter((n) => n.read === filters.read);
-      }
-
-      if (filters.studentId) {
-        notifications = notifications.filter(
-          (n) => n.studentId === filters.studentId,
-        );
-      }
-
-      if (filters.dateRange) {
-        const { start, end } = filters.dateRange;
-        notifications = notifications.filter((n) => {
-          const notificationDate = new Date(n.timestamp);
-          return notificationDate >= start && notificationDate <= end;
-        });
-      }
-    }
-
-    // Sort by timestamp (newest first)
-    return notifications.sort(
-      (a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+        source,
+        unreadCount: this.unreadCount,
+        totalNotifications: this.notifications.size,
+        hasCallbacks: !!this.callbacks.onNewNotification,
+      },
     );
   }
 
-  getNotification(id: string): UnifiedNotification | null {
-    return this.notifications.get(id) || null;
-  }
+  /**
+   * Handle notification navigation
+   */
+  private handleNotificationNavigation(data: any): void {
+    console.log("🧭 Handling notification navigation:", data);
 
-  async markAsRead(id: string): Promise<boolean> {
-    const notification = this.notifications.get(id);
-    if (!notification) return false;
-
-    notification.read = true;
-    this.notifications.set(id, notification);
-
-    // If from API, also mark as read on backend
-    if (notification.source === "api") {
-      try {
-        // You would call the API here
-        // await markNotificationReadMutation({ id });
-      } catch (error) {
-        console.error(
-          "❌ Failed to mark notification as read on backend:",
-          error,
-        );
-      }
+    // This can be enhanced based on your app's routing needs
+    // For now, just log the navigation data
+    if (data.action_url) {
+      console.log("🔗 Should navigate to:", data.action_url);
+      // TODO: Implement navigation logic based on your app's router
     }
-
-    this.updateStats();
-    return true;
   }
 
-  async markAllAsRead(filters?: NotificationFilters): Promise<number> {
-    const notifications = this.getNotifications(filters);
-    let updated = 0;
+  /**
+   * Setup app state listener
+   */
+  private setupAppStateListener(): void {
+    AppState.addEventListener("change", (nextAppState) => {
+      console.log("📱 App state changed:", nextAppState);
 
-    for (const notification of notifications) {
-      if (!notification.read) {
-        await this.markAsRead(notification.id);
-        updated++;
+      if (nextAppState === "active") {
+        // App came to foreground - sync with backend if needed
+        this.syncWithBackend();
       }
-    }
-
-    return updated;
-  }
-
-  async deleteNotification(id: string): Promise<boolean> {
-    const notification = this.notifications.get(id);
-    if (!notification) return false;
-
-    this.notifications.delete(id);
-
-    // If from API, also delete on backend
-    if (notification.source === "api") {
-      try {
-        // You would call the API here
-        // await deleteNotificationMutation({ id });
-      } catch (error) {
-        console.error("❌ Failed to delete notification on backend:", error);
-      }
-    }
-
-    this.updateStats();
-    return true;
-  }
-
-  getStats(filters?: NotificationFilters): NotificationStats {
-    const notifications = this.getNotifications(filters);
-
-    const stats: NotificationStats = {
-      total: notifications.length,
-      unread: notifications.filter((n) => !n.read).length,
-      byType: {},
-      byPriority: {},
-      bySource: {},
-    };
-
-    notifications.forEach((notification) => {
-      // By type
-      stats.byType[notification.type] =
-        (stats.byType[notification.type] || 0) + 1;
-
-      // By priority
-      stats.byPriority[notification.priority] =
-        (stats.byPriority[notification.priority] || 0) + 1;
-
-      // By source
-      stats.bySource[notification.source] =
-        (stats.bySource[notification.source] || 0) + 1;
     });
-
-    return stats;
   }
 
-  async handleNotificationAction(
-    notificationId: string,
-    actionId: string,
-    data?: any,
-  ): Promise<void> {
-    const notification = this.getNotification(notificationId);
-    if (!notification) return;
+  /**
+   * Sync with backend (refresh notifications)
+   */
+  private async syncWithBackend(): Promise<void> {
+    console.log("🔄 Syncing with backend...");
+    // This can be enhanced to fetch latest notifications from the API
+    // For now, we rely on real-time updates
+  }
 
-    console.log("🎯 Handling notification action:", {
-      notificationId,
-      actionId,
-      data,
-    });
+  /**
+   * Format time ago string
+   */
+  private formatTimeAgo(timestamp: string): string {
+    try {
+      return formatDistanceToNow(parseISO(timestamp), { addSuffix: true });
+    } catch (error) {
+      console.error("❌ Error formatting time ago:", error);
+      return "Unknown time";
+    }
+  }
 
-    // Mark as read when action is taken
-    await this.markAsRead(notificationId);
+  /**
+   * Cache notifications to local storage
+   */
+  private async cacheNotifications(): Promise<void> {
+    try {
+      const notificationArray = Array.from(this.notifications.values());
+      const cacheData = {
+        notifications: notificationArray.slice(0, 50), // Keep last 50 notifications
+        unreadCount: this.unreadCount,
+        lastUpdated: Date.now(),
+      };
 
-    // Handle built-in actions
-    switch (actionId) {
-      case "tapped":
-        // Default tap action - could navigate to relevant screen
-        this.handleDefaultTapAction(notification);
-        break;
+      await AsyncStorage.setItem(
+        `notifications_cache_${this.userId}`,
+        JSON.stringify(cacheData),
+      );
+    } catch (error) {
+      console.error("❌ Error caching notifications:", error);
+    }
+  }
 
-      case "dismiss":
-        await this.deleteNotification(notificationId);
-        break;
+  /**
+   * Load cached notifications
+   */
+  private async loadCachedNotifications(): Promise<void> {
+    try {
+      const cachedData = await AsyncStorage.getItem(
+        `notifications_cache_${this.userId}`,
+      );
 
-      default:
-        // Handle custom actions
-        const action = notification.actions?.find((a) => a.id === actionId);
-        if (action?.handler) {
-          try {
-            await action.handler(data);
-          } catch (error) {
-            console.error("❌ Action handler error:", error);
-          }
+      if (cachedData) {
+        const { notifications, unreadCount, lastUpdated } =
+          JSON.parse(cachedData);
+
+        // Only load cache if it's less than 1 hour old
+        const oneHour = 60 * 60 * 1000;
+        if (Date.now() - lastUpdated < oneHour) {
+          console.log("📦 Loading cached notifications:", notifications.length);
+
+          this.notifications.clear();
+          notifications.forEach((notification: NotificationData) => {
+            this.notifications.set(notification.id, notification);
+          });
+
+          this.unreadCount = unreadCount || 0;
         }
+      }
+    } catch (error) {
+      console.error("❌ Error loading cached notifications:", error);
     }
   }
 
-  private handleDefaultTapAction(notification: UnifiedNotification): void {
-    // Default navigation logic based on notification type
-    switch (notification.type) {
-      case "academic":
-        console.log("📚 Navigate to academic section");
-        break;
-      case "payment":
-        console.log("💰 Navigate to payment section");
-        break;
-      case "event":
-        console.log("📅 Navigate to events");
-        break;
-      default:
-        console.log("🔔 Navigate to notifications");
+  // Public API Methods
+
+  /**
+   * Get all notifications
+   */
+  getNotifications(): NotificationData[] {
+    return Array.from(this.notifications.values()).sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }
+
+  /**
+   * Get unread notifications
+   */
+  getUnreadNotifications(): NotificationData[] {
+    return this.getNotifications().filter((n) => !n.is_read);
+  }
+
+  /**
+   * Get unread count
+   */
+  getUnreadCount(): number {
+    return this.unreadCount;
+  }
+
+  /**
+   * Mark notification as read
+   */
+  async markAsRead(notificationId: number): Promise<boolean> {
+    try {
+      const notification = this.notifications.get(notificationId);
+
+      if (!notification) {
+        console.warn("⚠️ Notification not found:", notificationId);
+        return false;
+      }
+
+      if (notification.is_read) {
+        console.log("✅ Notification already read:", notificationId);
+        return true;
+      }
+
+      // Update local state optimistically
+      notification.is_read = true;
+      notification.read_at = new Date().toISOString();
+      this.unreadCount = Math.max(0, this.unreadCount - 1);
+
+      // DISABLED: Update badge count via push notifications
+      // await PushNotificationService.setBadgeCount(this.unreadCount);
+
+      // Cache and notify
+      this.cacheNotifications();
+      this.callbacks.onUnreadCountChange?.(this.unreadCount);
+      this.callbacks.onNotificationRead?.(notificationId);
+
+      console.log("✅ Notification marked as read locally:", notificationId);
+      return true;
+    } catch (error) {
+      console.error("❌ Error marking notification as read:", error);
+      return false;
     }
   }
 
-  // Listener management
-  addListener(listener: NotificationListener): void {
-    this.listeners.push(listener);
+  /**
+   * Mark all notifications as read
+   */
+  async markAllAsRead(): Promise<boolean> {
+    try {
+      console.log("✅ Marking all notifications as read...");
+
+      let markedCount = 0;
+      this.notifications.forEach((notification) => {
+        if (!notification.is_read) {
+          notification.is_read = true;
+          notification.read_at = new Date().toISOString();
+          markedCount++;
+        }
+      });
+
+      this.unreadCount = 0;
+
+      // DISABLED: Update badge count via push notifications
+      // await PushNotificationService.setBadgeCount(0);
+
+      // Cache and notify
+      this.cacheNotifications();
+      this.callbacks.onUnreadCountChange?.(0);
+
+      console.log(`✅ Marked ${markedCount} notifications as read`);
+      return true;
+    } catch (error) {
+      console.error("❌ Error marking all notifications as read:", error);
+      return false;
+    }
   }
 
-  removeListener(listener: NotificationListener): void {
-    this.listeners = this.listeners.filter((l) => l !== listener);
+  /**
+   * Get connection status
+   */
+  isConnected(): boolean {
+    return this._isConnected;
   }
 
-  addStatsListener(listener: StatsUpdateListener): void {
-    this.statsListeners.push(listener);
-  }
+  /**
+   * Update callbacks
+   */
+  updateCallbacks(callbacks: Partial<NotificationManagerCallbacks>): void {
+    console.log("🔄 NotificationManager - Updating callbacks:", {
+      newCallbacks: Object.keys(callbacks),
+      hasOnNewNotification: !!callbacks.onNewNotification,
+      hasOnUnreadCountChange: !!callbacks.onUnreadCountChange,
+      hasOnConnectionStateChange: !!callbacks.onConnectionStateChange,
+    });
 
-  removeStatsListener(listener: StatsUpdateListener): void {
-    this.statsListeners = this.statsListeners.filter((l) => l !== listener);
-  }
+    this.callbacks = { ...this.callbacks, ...callbacks };
 
-  private notifyListeners(notification: UnifiedNotification): void {
-    this.listeners.forEach((listener) => {
-      try {
-        listener(notification);
-      } catch (error) {
-        console.error("❌ Notification listener error:", error);
-      }
+    console.log("✅ NotificationManager - Callbacks updated:", {
+      totalCallbacks: Object.keys(this.callbacks).length,
+      activeCallbacks: Object.keys(this.callbacks).filter(
+        (key) => !!this.callbacks[key as keyof NotificationManagerCallbacks],
+      ),
     });
   }
 
-  private updateStats(): void {
-    const stats = this.getStats();
-    this.statsListeners.forEach((listener) => {
-      try {
-        listener(stats);
-      } catch (error) {
-        console.error("❌ Stats listener error:", error);
-      }
-    });
+  /**
+   * Update auth token
+   */
+  async updateAuthToken(authToken: string, userId: string): Promise<void> {
+    console.log("🔄 Updating auth token in NotificationManager");
+
+    this.authToken = authToken;
+    this.userId = userId;
+
+    // Update services
+    await PushNotificationService.updateAuthToken(authToken, userId);
+
+    // Reinitialize real-time service if it was enabled
+    if (this.config.enableRealTime) {
+      await RealTimeNotificationService.disconnect();
+      await RealTimeNotificationService.initialize(authToken, userId, {
+        onNotificationCreated: this.handleRealTimeNotification.bind(this),
+        onNotificationRead: this.handleRealTimeNotificationRead.bind(this),
+        onStatsUpdated: this.handleStatsUpdate.bind(this),
+        onConnectionStateChange: this.handleConnectionStateChange.bind(this),
+        onError: this.callbacks.onError,
+      });
+    }
   }
 
-  // Clear all notifications
-  clearAll(): void {
+  /**
+   * Get service status for debugging
+   */
+  getStatus() {
+    return {
+      isInitialized: this.isInitialized,
+      isConnected: this._isConnected,
+      notificationCount: this.notifications.size,
+      unreadCount: this.unreadCount,
+      userId: this.userId,
+      hasAuthToken: !!this.authToken,
+      config: this.config,
+      pushServiceStatus: PushNotificationService.getServiceStatus(),
+      realTimeServiceStatus: RealTimeNotificationService.getStatus(),
+    };
+  }
+
+  /**
+   * Cleanup and disconnect
+   */
+  async disconnect(): Promise<void> {
+    console.log("🔌 Disconnecting NotificationManager...");
+
+    // Clear notifications
     this.notifications.clear();
-    this.updateStats();
-    console.log("🗑️ All notifications cleared");
-  }
+    this.recentNotificationIds.clear();
+    this.unreadCount = 0;
 
-  // School-specific convenience methods
-  async sendAcademicNotification(
-    title: string,
-    body: string,
-    studentId?: string,
-  ): Promise<string> {
-    return this.sendNotification({
-      title,
-      body,
-      type: "academic",
-      priority: "high",
-      read: false,
-      studentId,
-    });
-  }
+    // Disconnect services
+    if (this.config.enableRealTime) {
+      RealTimeNotificationService.disconnect();
+    }
 
-  async sendPaymentReminder(
-    title: string,
-    body: string,
-    amount?: number,
-  ): Promise<string> {
-    return this.sendNotification({
-      title,
-      body,
-      type: "payment",
-      priority: "high",
-      read: false,
-      data: { amount },
-    });
-  }
+    // Clear auth data
+    this.authToken = null;
+    this.userId = null;
+    this.isInitialized = false;
+    this._isConnected = false;
+    this.callbacks = {};
 
-  async sendEventNotification(
-    title: string,
-    body: string,
-    eventId?: string,
-  ): Promise<string> {
-    return this.sendNotification({
-      title,
-      body,
-      type: "event",
-      priority: "normal",
-      read: false,
-      data: { eventId },
-    });
+    console.log("✅ NotificationManager disconnected");
   }
 }
 

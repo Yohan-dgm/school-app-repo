@@ -219,6 +219,55 @@ export const studentManagementApi = apiServer1.injectEndpoints({
         { type: "StudentAttachment", id: arg.student_id },
       ],
     }),
+
+    getStudentList: builder.query<
+      {
+        status: string;
+        data: {
+          data: DetailedStudentData[];
+          total: number;
+          current_page: number;
+          last_page: number;
+        };
+      },
+      {
+        page?: number;
+        page_size?: number;
+        search?: string;
+        grade_level_id?: number;
+        grade_level_class_id?: number;
+      }
+    >({
+      query: (params) => {
+        const requestBody: any = {
+          page: params.page || 1,
+          page_size: params.page_size || 50,
+          search_phrase: params.search || "",
+          search_filter_list: {},
+        };
+
+        if (params.grade_level_id) {
+          requestBody.search_filter_list.grade_level_id = params.grade_level_id;
+        }
+
+        if (params.grade_level_class_id) {
+          requestBody.search_filter_list.grade_level_class_id = params.grade_level_class_id;
+        }
+
+        console.log("🔗 Get Student List API Request:", {
+          url: "api/student-management/student/get-student-list-data",
+          method: "POST",
+          body: requestBody,
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+        });
+        return {
+          url: "api/student-management/student/get-student-list-data",
+          method: "POST",
+          body: requestBody,
+        };
+      },
+      providesTags: ["StudentList"],
+    }),
   }),
   overrideExisting: false,
 });
@@ -232,6 +281,8 @@ export const {
   useLazyGetStudentAchievementByIdQuery,
   useGetStudentAttachmentsByStudentIdQuery,
   useLazyGetStudentAttachmentsByStudentIdQuery,
+  useGetStudentListQuery,
+  useLazyGetStudentListQuery,
 } = studentManagementApi;
 
 // ===== UTILITY FUNCTIONS =====

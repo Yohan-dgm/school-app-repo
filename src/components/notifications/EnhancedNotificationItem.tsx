@@ -14,6 +14,7 @@ import {
   PRIORITY_COLORS,
 } from "../../types/communication-management";
 import { BaseNotification } from "../../types/notifications";
+import MediaPreviewModal from "../common/MediaPreviewModal";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -36,14 +37,14 @@ export default function EnhancedNotificationItem({
   showActions = true,
   compact = false,
 }: EnhancedNotificationItemProps) {
+  const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
   const handlePress = () => {
-    const isRead =
-      "is_read" in notification ? notification.is_read : notification.isRead;
+    const isRead = notification.is_read;
     if (!isRead && onRead) {
       onRead(
         typeof notification.id === "string"
           ? parseInt(notification.id)
-          : notification.id,
+          : notification.id
       );
     }
   };
@@ -52,14 +53,14 @@ export default function EnhancedNotificationItem({
     onDelete?.(
       typeof notification.id === "string"
         ? parseInt(notification.id)
-        : notification.id,
+        : notification.id
     );
   const handleSelect = () =>
     onSelect?.(
       typeof notification.id === "string"
         ? parseInt(notification.id)
         : notification.id,
-      !selected,
+      !selected
     );
 
   const priorityColor =
@@ -142,9 +143,7 @@ export default function EnhancedNotificationItem({
         <Text
           style={[
             styles.title,
-            !("is_read" in notification
-              ? notification.is_read
-              : notification.isRead) && styles.unreadTitle,
+            !(notification.is_read) && styles.unreadTitle,
             compact && styles.compactTitle,
           ]}
           numberOfLines={compact ? 1 : 2}
@@ -154,17 +153,9 @@ export default function EnhancedNotificationItem({
 
         <View style={styles.headerRight}>
           <Text style={styles.timeAgo}>
-            {"time_ago" in notification
-              ? notification.time_ago
-              : "timestamp" in notification
-                ? notification.timestamp
-                : "created_at" in notification
-                  ? notification.created_at
-                  : ""}
+            {notification.time_ago}
           </Text>
-          {!("is_read" in notification
-            ? notification.is_read
-            : notification.isRead) && <View style={styles.unreadIndicator} />}
+          {!(notification.is_read) && <View style={styles.unreadIndicator} />}
         </View>
       </View>
 
@@ -174,7 +165,7 @@ export default function EnhancedNotificationItem({
       >
         {"message" in notification
           ? notification.message
-          : notification.description}
+          : (notification as any).description}
       </Text>
 
       {/* Notification metadata */}
@@ -190,10 +181,8 @@ export default function EnhancedNotificationItem({
             ]}
           >
             <Text style={[styles.priorityText, { color: priorityColor }]}>
-              {"priority_label" in notification
-                ? notification.priority_label
-                : notification.priority.charAt(0).toUpperCase() +
-                  notification.priority.slice(1)}
+              {notification.priority_label || 
+                (notification.priority.charAt(0).toUpperCase() + notification.priority.slice(1))}
             </Text>
           </View>
 
@@ -226,11 +215,8 @@ export default function EnhancedNotificationItem({
               ]}
             >
               {("notification_type" in notification
-                ? typeof notification.notification_type === "object" &&
-                  notification.notification_type
-                  ? notification.notification_type.name
-                  : "Unknown"
-                : notification.type) || "Notification"}
+                ? (notification.notification_type as any).name
+                : (notification as any).type) || "Notification"}
             </Text>
           </View>
         </View>
@@ -244,18 +230,23 @@ export default function EnhancedNotificationItem({
 
       {/* Image attachment */}
       {notification.image_url && !compact && (
-        <Image
-          source={{ uri: notification.image_url }}
-          style={styles.attachmentImage}
-          resizeMode="cover"
-        />
+        <TouchableOpacity 
+          onPress={() => setIsPreviewVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Image
+            source={{ uri: notification.image_url }}
+            style={styles.attachmentImage}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
       )}
 
       {/* Action button */}
       {notification.action_url &&
         ("action_text" in notification
           ? notification.action_text
-          : notification.actionUrl) && (
+          : (notification as any).actionUrl) && (
           <TouchableOpacity style={styles.actionButton} activeOpacity={0.7}>
             <Text style={styles.actionButtonText}>
               {("action_text" in notification
@@ -283,16 +274,14 @@ export default function EnhancedNotificationItem({
 
     return (
       <View style={styles.actionsContainer}>
-        {!("is_read" in notification
-          ? notification.is_read
-          : notification.isRead) && (
+        {!notification.is_read && (
           <TouchableOpacity
             style={styles.actionIconButton}
             onPress={() =>
               onRead?.(
                 typeof notification.id === "string"
                   ? parseInt(notification.id)
-                  : notification.id,
+                  : notification.id
               )
             }
             activeOpacity={0.7}
@@ -316,9 +305,7 @@ export default function EnhancedNotificationItem({
     <TouchableOpacity
       style={[
         styles.container,
-        !("is_read" in notification
-          ? notification.is_read
-          : notification.isRead) && styles.unreadContainer,
+        !notification.is_read && styles.unreadContainer,
         selected && styles.selectedContainer,
         compact && styles.compactContainer,
         isUrgent && styles.urgentContainer,
@@ -334,6 +321,13 @@ export default function EnhancedNotificationItem({
       </View>
 
       {renderActions()}
+
+      <MediaPreviewModal
+        visible={isPreviewVisible}
+        onClose={() => setIsPreviewVisible(false)}
+        mediaUrl={notification.image_url || null}
+        mediaType="image"
+      />
     </TouchableOpacity>
   );
 }

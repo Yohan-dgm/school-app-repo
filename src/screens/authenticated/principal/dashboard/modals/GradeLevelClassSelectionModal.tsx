@@ -17,147 +17,172 @@ import {
 } from "../../../../../api/grade-level-api";
 
 interface GradeLevelClassSelectionModalProps {
-  onSelectClass: (classData: GradeLevelClass & { gradeLevelName: string }) => void;
+  onSelectClass: (
+    classData: GradeLevelClass & { gradeLevelName: string },
+  ) => void;
 }
 
-const GradeLevelClassSelectionModal = forwardRef<Modalize, GradeLevelClassSelectionModalProps>(
-  ({ onSelectClass }, ref) => {
-    const [searchQuery, setSearchQuery] = useState("");
+const GradeLevelClassSelectionModal = forwardRef<
+  Modalize,
+  GradeLevelClassSelectionModalProps
+>(({ onSelectClass }, ref) => {
+  const [searchQuery, setSearchQuery] = useState("");
 
-    // Fetch grade levels with classes
-    const {
-      data: gradeLevelsData,
-      isLoading,
-      error,
-    } = useGetGradeLevelsWithClassesQuery({
-      page_size: 50,
-      page: 1,
-    });
+  // Fetch grade levels with classes
+  const {
+    data: gradeLevelsData,
+    isLoading,
+    error,
+  } = useGetGradeLevelsWithClassesQuery({
+    page_size: 50,
+    page: 1,
+  });
 
-    // Flatten and filter classes based on search
-    const filteredClasses = useMemo(() => {
-      if (!gradeLevelsData?.data?.data) return [];
+  // Flatten and filter classes based on search
+  const filteredClasses = useMemo(() => {
+    if (!gradeLevelsData?.data?.data) return [];
 
-      const allClasses: (GradeLevelClass & { gradeLevelName: string })[] = [];
-      
-      gradeLevelsData.data.data.forEach((gradeLevel: GradeLevelWithClasses) => {
-        gradeLevel.grade_level_class_list.forEach((classItem: GradeLevelClass) => {
+    const allClasses: (GradeLevelClass & { gradeLevelName: string })[] = [];
+
+    gradeLevelsData.data.data.forEach((gradeLevel: GradeLevelWithClasses) => {
+      gradeLevel.grade_level_class_list.forEach(
+        (classItem: GradeLevelClass) => {
           allClasses.push({
             ...classItem,
             gradeLevelName: gradeLevel.name,
           });
-        });
-      });
-
-      if (!searchQuery.trim()) return allClasses;
-
-      return allClasses.filter((classItem) =>
-        classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        classItem.gradeLevelName.toLowerCase().includes(searchQuery.toLowerCase())
+        },
       );
-    }, [gradeLevelsData, searchQuery]);
+    });
 
-    const handleSelectClass = (classData: GradeLevelClass & { gradeLevelName: string }) => {
-      console.log("🎯 Class selected:", classData);
-      onSelectClass(classData);
-      if (ref && typeof ref !== 'function' && ref.current) {
-        ref.current.close();
-      }
-    };
+    if (!searchQuery.trim()) return allClasses;
 
-    const renderClassItem = ({ item }: { item: GradeLevelClass & { gradeLevelName: string } }) => (
-      <TouchableOpacity
-        style={styles.classItem}
-        onPress={() => handleSelectClass(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.classInfo}>
-          <View style={styles.classHeader}>
-            <MaterialIcons name="class" size={20} color="#920734" />
-            <Text style={styles.className}>{item.name}</Text>
-          </View>
-          <Text style={styles.gradeLevelName}>{item.gradeLevelName}</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={24} color="#666" />
-      </TouchableOpacity>
+    return allClasses.filter(
+      (classItem) =>
+        classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        classItem.gradeLevelName
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()),
     );
+  }, [gradeLevelsData, searchQuery]);
 
-    return (
-      <Modalize
-        ref={ref}
-        modalTopOffset={0}
-        modalHeight={999999}
-        adjustToContentHeight={false}
-        modalStyle={styles.modal}
-        rootStyle={styles.modalRoot}
-        HeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.headerContent}>
-              <MaterialIcons name="class" size={24} color="#920734" />
-              <Text style={styles.headerTitle}>Select Class</Text>
-            </View>
-          </View>
-        }
-      >
-        <View style={styles.container}>
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <MaterialIcons name="search" size={20} color="#666" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search classes or grade levels..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#999"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearButton}>
-                <MaterialIcons name="clear" size={20} color="#666" />
-              </TouchableOpacity>
-            )}
-          </View>
+  const handleSelectClass = (
+    classData: GradeLevelClass & { gradeLevelName: string },
+  ) => {
+    console.log("🎯 Class selected:", classData);
+    onSelectClass(classData);
+    if (ref && typeof ref !== "function" && ref.current) {
+      ref.current.close();
+    }
+  };
 
-          {/* Content */}
-          {isLoading ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#920734" />
-              <Text style={styles.loadingText}>Loading classes...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.centerContainer}>
-              <MaterialIcons name="error-outline" size={48} color="#F44336" />
-              <Text style={styles.errorText}>Failed to load classes</Text>
-              <Text style={styles.errorSubtext}>Please try again later</Text>
-            </View>
-          ) : filteredClasses.length === 0 ? (
-            <View style={styles.centerContainer}>
-              <MaterialIcons name="search-off" size={48} color="#999" />
-              <Text style={styles.emptyText}>
-                {searchQuery ? "No classes found" : "No classes available"}
-              </Text>
-              <Text style={styles.emptySubtext}>
-                {searchQuery ? "Try a different search term" : "Contact administrator"}
-              </Text>
-            </View>
-          ) : (
-            <>
-              <Text style={styles.resultsCount}>
-                {filteredClasses.length} class{filteredClasses.length !== 1 ? "es" : ""} found
-              </Text>
-              <FlatList
-                data={filteredClasses}
-                renderItem={renderClassItem}
-                keyExtractor={(item) => `${item.id}-${item.grade_level_id}`}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.listContainer}
-              />
-            </>
+  const renderClassItem = ({
+    item,
+  }: {
+    item: GradeLevelClass & { gradeLevelName: string };
+  }) => (
+    <TouchableOpacity
+      style={styles.classItem}
+      onPress={() => handleSelectClass(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.classInfo}>
+        <View style={styles.classHeader}>
+          <MaterialIcons name="class" size={20} color="#920734" />
+          <Text style={styles.className}>{item.name}</Text>
+        </View>
+        <Text style={styles.gradeLevelName}>{item.gradeLevelName}</Text>
+      </View>
+      <MaterialIcons name="chevron-right" size={24} color="#666" />
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modalize
+      ref={ref}
+      modalTopOffset={0}
+      modalHeight={999999}
+      adjustToContentHeight={false}
+      modalStyle={styles.modal}
+      rootStyle={styles.modalRoot}
+      HeaderComponent={
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <MaterialIcons name="class" size={24} color="#920734" />
+            <Text style={styles.headerTitle}>Select Class</Text>
+          </View>
+        </View>
+      }
+    >
+      <View style={styles.container}>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <MaterialIcons
+            name="search"
+            size={20}
+            color="#666"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search classes or grade levels..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#999"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery("")}
+              style={styles.clearButton}
+            >
+              <MaterialIcons name="clear" size={20} color="#666" />
+            </TouchableOpacity>
           )}
         </View>
-      </Modalize>
-    );
-  }
-);
+
+        {/* Content */}
+        {isLoading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#920734" />
+            <Text style={styles.loadingText}>Loading classes...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerContainer}>
+            <MaterialIcons name="error-outline" size={48} color="#F44336" />
+            <Text style={styles.errorText}>Failed to load classes</Text>
+            <Text style={styles.errorSubtext}>Please try again later</Text>
+          </View>
+        ) : filteredClasses.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <MaterialIcons name="search-off" size={48} color="#999" />
+            <Text style={styles.emptyText}>
+              {searchQuery ? "No classes found" : "No classes available"}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {searchQuery
+                ? "Try a different search term"
+                : "Contact administrator"}
+            </Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.resultsCount}>
+              {filteredClasses.length} class
+              {filteredClasses.length !== 1 ? "es" : ""} found
+            </Text>
+            <FlatList
+              data={filteredClasses}
+              renderItem={renderClassItem}
+              keyExtractor={(item) => `${item.id}-${item.grade_level_id}`}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
+        )}
+      </View>
+    </Modalize>
+  );
+});
 
 const styles = StyleSheet.create({
   modalRoot: {

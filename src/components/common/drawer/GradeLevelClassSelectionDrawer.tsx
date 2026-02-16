@@ -32,7 +32,7 @@ import {
 interface GradeLevelClassSelectionDrawerProps {
   onClose: () => void;
   onSelectClass: (
-    classData: GradeLevelClass & { gradeLevelName: string }
+    classData: GradeLevelClass & { gradeLevelName: string },
   ) => void;
 }
 
@@ -68,7 +68,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
       page: 1,
       page_size: 100,
     },
-    { skip: !showStudentDetails || !selectedClassData?.id }
+    { skip: !showStudentDetails || !selectedClassData?.id },
   );
 
   // Flatten and filter classes based on search
@@ -84,7 +84,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
             ...classItem,
             gradeLevelName: gradeLevel.name,
           });
-        }
+        },
       );
     });
 
@@ -95,7 +95,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
         classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         classItem.gradeLevelName
           .toLowerCase()
-          .includes(searchQuery.toLowerCase())
+          .includes(searchQuery.toLowerCase()),
     );
   }, [gradeLevelsData, searchQuery]);
 
@@ -118,12 +118,12 @@ const GradeLevelClassSelectionDrawer: React.FC<
           .includes(studentSearchQuery.toLowerCase()) ||
         student.mother_full_name
           ?.toLowerCase()
-          .includes(studentSearchQuery.toLowerCase())
+          .includes(studentSearchQuery.toLowerCase()),
     );
   }, [studentsData, studentSearchQuery]);
 
   const handleSelectClass = (
-    classData: GradeLevelClass & { gradeLevelName: string }
+    classData: GradeLevelClass & { gradeLevelName: string },
   ) => {
     console.log("🎯 Class selected from drawer:", classData);
     setSelectedClassData(classData);
@@ -142,7 +142,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
     if (!phoneNumber || phoneNumber === "N/A") {
       Alert.alert(
         "No Phone Number",
-        "Phone number not available for this contact."
+        "Phone number not available for this contact.",
       );
       return;
     }
@@ -157,7 +157,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
           Linking.openURL(`tel:${cleanedNumber}`).catch((err) => {
             Alert.alert(
               "Error",
-              "Unable to make phone call. Please check if your device supports calling."
+              "Unable to make phone call. Please check if your device supports calling.",
             );
             console.error("Error making phone call:", err);
           });
@@ -317,7 +317,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.father_phone || "",
-                                  `${student.father_full_name || "Father"} (Father)`
+                                  `${student.father_full_name || "Father"} (Father)`,
                                 )
                               }
                             >
@@ -338,7 +338,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.father_whatsapp || "",
-                                  `${student.father_full_name || "Father"} (WhatsApp)`
+                                  `${student.father_full_name || "Father"} (WhatsApp)`,
                                 )
                               }
                             >
@@ -378,7 +378,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.mother_phone || "",
-                                  `${student.mother_full_name || "Mother"} (Mother)`
+                                  `${student.mother_full_name || "Mother"} (Mother)`,
                                 )
                               }
                             >
@@ -399,7 +399,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.mother_whatsapp || "",
-                                  `${student.mother_full_name || "Mother"} (WhatsApp)`
+                                  `${student.mother_full_name || "Mother"} (WhatsApp)`,
                                 )
                               }
                             >
@@ -439,7 +439,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.guardian_phone || "",
-                                  `${student.guardian_full_name || "Guardian"} (Guardian)`
+                                  `${student.guardian_full_name || "Guardian"} (Guardian)`,
                                 )
                               }
                             >
@@ -460,7 +460,7 @@ const GradeLevelClassSelectionDrawer: React.FC<
                               onPress={() =>
                                 handlePhoneCall(
                                   student.guardian_whatsapp || "",
-                                  `${student.guardian_full_name || "Guardian"} (WhatsApp)`
+                                  `${student.guardian_full_name || "Guardian"} (WhatsApp)`,
                                 )
                               }
                             >

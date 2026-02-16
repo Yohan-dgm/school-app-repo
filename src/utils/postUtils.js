@@ -1,8 +1,10 @@
 /**
  * Utility functions for post creation and media handling
+ * Android-specific: Handles content:// URIs in FormData
  */
 
 import { sanitizeFilename } from "./imageUtils.js";
+import { Platform } from "react-native";
 
 /**
  * Extracts original user filename from backend temp filename pattern
@@ -669,12 +671,36 @@ export const createMediaUploadFormData = (
   console.log("📎 Creating FormData for media upload:", mediaFiles.length);
   console.log("📎 Raw media files:", mediaFiles);
   console.log("📎 Post type:", postType);
+  console.log("📱 Platform:", Platform.OS);
 
   const formData = new FormData();
 
   // Add post_type field as required by backend
   formData.append("post_type", postType);
   console.log("📎 Added post_type to FormData:", postType);
+
+  // Log detailed analysis of incoming media files
+  console.log("📎 ===== DETAILED MEDIA FILES ANALYSIS =====");
+  console.log(`📎 Total files to process: ${mediaFiles.length}`);
+  mediaFiles.forEach((media, index) => {
+    const isAndroidContentUri = Platform.OS === "android" && media.uri?.startsWith("content://");
+    const isFileUri = media.uri?.startsWith("file://");
+
+    console.log(`📎 Media ${index} input analysis:`, {
+      hasUri: !!media.uri,
+      uriType: isAndroidContentUri ? "content://" : isFileUri ? "file://" : "other",
+      hasName: !!media.name,
+      hasFileName: !!media.fileName,
+      hasOriginalFilename: !!media.original_user_filename,
+      type: media.type,
+      size: media.size,
+      sizeInMB: media.size
+        ? (media.size / (1024 * 1024)).toFixed(2)
+        : "unknown",
+      platform: Platform.OS,
+      needsConversion: isAndroidContentUri,
+    });
+  });
 
   mediaFiles.forEach((media, index) => {
     // Determine proper MIME type and filename from URI
@@ -830,6 +856,36 @@ export const createMediaUploadFormData = (
       }
     }
 
+    // Validate URI before creating file object
+    if (!media.uri || media.uri.length === 0) {
+      console.error(`❌ Media ${index} has invalid URI, skipping`);
+      return; // Skip this file
+    }
+
+    // Android-specific: CRITICAL VALIDATION - Ensure file:// URIs for FormData
+    // Content URIs MUST be converted to file URIs before reaching FormData
+    if (Platform.OS === "android" && media.uri.startsWith("content://")) {
+      console.error(
+        `❌ CRITICAL ERROR: Content URI detected at FormData stage!`,
+      );
+      console.error(`   This indicates the Android content URI conversion failed earlier.`);
+      console.error(`   URI: ${media.uri.substring(0, 80)}`);
+      console.error(`   File: ${fileName}`);
+      console.error(`   This file CANNOT be uploaded with a content:// URI.`);
+      console.error(`   Skipping this file to prevent upload failure.`);
+
+      // Skip this file entirely - it will cause upload to fail
+      console.error(`⚠️ Skipping file ${index} due to unconverted content URI`);
+      return; // Skip this file
+    }
+
+    // Additional URI validation for file:// URIs
+    if (media.uri.startsWith("file://")) {
+      console.log(`✅ Valid file:// URI for media ${index}`);
+    } else if (!media.uri.startsWith("http://") && !media.uri.startsWith("https://")) {
+      console.warn(`⚠️ Unusual URI format for media ${index}: ${media.uri.substring(0, 50)}`);
+    }
+
     // Create enhanced file object with user intent preservation
     const fileObject = {
       uri: media.uri,
@@ -846,7 +902,9 @@ export const createMediaUploadFormData = (
       filename_source: fileObject.filename_source,
       type: fileObject.type,
       uri: fileObject.uri?.substring(0, 50) + "...",
+      uriType: fileObject.uri?.startsWith("content://") ? "content://" : fileObject.uri?.startsWith("file://") ? "file://" : "other",
       size: media.size || media.fileSize || "unknown",
+      platform: Platform.OS,
       userIntentPreserved:
         fileObject.name === fileObject.original_user_filename
           ? "✅ YES"
@@ -855,11 +913,59 @@ export const createMediaUploadFormData = (
 
     // Append each file with indexed field name (backend expects file_0, file_1, etc.)
     formData.append(`file_${index}`, fileObject);
+    console.log(`📎 ✅ Appended file_${index} to FormData:`, {
+      name: fileObject.name,
+      type: fileObject.type,
+      hasUri: !!fileObject.uri,
+      uriValid: fileObject.uri && fileObject.uri.length > 0,
+      originalUserFilename: fileObject.original_user_filename,
+      filenameSource: fileObject.filename_source,
+      platform: Platform.OS,
+    });
   });
 
+  // Validate FormData contents before sending
+  console.log("📎 ===== FORMDATA VALIDATION =====");
   console.log(
     `📦 FormData created with post_type: ${postType} and ${mediaFiles.length} files`,
   );
+
+  // Count expected vs actual FormData entries
+  let formDataEntryCount = 0;
+  const formDataKeys = [];
+
+  // FormData iteration to verify all files are present
+  for (let pair of formData.entries()) {
+    formDataEntryCount++;
+    formDataKeys.push(pair[0]);
+    if (pair[0] !== "post_type") {
+      console.log(
+        `📎 FormData entry: ${pair[0]} = ${pair[1].name || pair[1]} (${pair[1].type || "unknown type"})`,
+      );
+    }
+  }
+
+  console.log(`📎 FormData validation results:`, {
+    expectedFileCount: mediaFiles.length,
+    actualFormDataEntries: formDataEntryCount - 1, // -1 for post_type
+    totalFormDataEntries: formDataEntryCount,
+    formDataKeys: formDataKeys,
+    allFilesPresent: formDataEntryCount - 1 === mediaFiles.length,
+  });
+
+  if (formDataEntryCount - 1 !== mediaFiles.length) {
+    console.error(
+      "❌ FORMDATA MISMATCH: Expected vs actual file count doesn't match!",
+    );
+    console.error(
+      `Expected: ${mediaFiles.length}, Got: ${formDataEntryCount - 1}`,
+    );
+  } else {
+    console.log(
+      "✅ FORMDATA VALIDATION PASSED: All files properly added to FormData",
+    );
+  }
+
   return formData;
 };
 

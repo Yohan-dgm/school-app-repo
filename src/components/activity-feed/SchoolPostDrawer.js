@@ -9,11 +9,14 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useSelector, useDispatch } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { theme } from "../../styles/theme";
 import {
   useCreateSchoolPostMutation,
@@ -38,6 +41,8 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const [selectedTags, setSelectedTags] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadStep, setUploadStep] = useState("");
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [cachedFileUris, setCachedFileUris] = useState([]); // Track cached files for cleanup
 
   // API hooks
   const [createSchoolPost] = useCreateSchoolPostMutation();
@@ -85,6 +90,30 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
     { id: "upcoming", label: "#Upcoming", color: theme.colors.darkGray },
   ];
 
+  // Clean up cached files (Android only)
+  const cleanupCachedFiles = async () => {
+    if (Platform.OS === "android" && cachedFileUris.length > 0) {
+      console.log(`🗑️ Cleaning up ${cachedFileUris.length} cached files...`);
+
+      for (const uri of cachedFileUris) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (fileInfo.exists) {
+            await FileSystem.deleteAsync(uri, { idempotent: true });
+            console.log(`✅ Deleted cached file: ${uri}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to delete cached file ${uri}:`, error.message);
+          // Continue with other files even if one fails
+        }
+      }
+
+      // Clear the tracked URIs
+      setCachedFileUris([]);
+      console.log(`✅ Cache cleanup completed`);
+    }
+  };
+
   const resetForm = () => {
     setPostTitle("");
     setPostContent("");
@@ -92,6 +121,9 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
     setSelectedMedia([]);
     setSelectedTags([]);
     setUploadStep("");
+    setUploadProgress({ current: 0, total: 0 });
+    // Clean up cached files when resetting
+    cleanupCachedFiles();
   };
 
   const handleClose = () => {
@@ -99,12 +131,15 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
     onClose();
   };
 
-  // Get progress message
+  // Get progress message with upload tracking
   const getProgressMessage = () => {
     switch (uploadStep) {
       case "validating":
         return "Validating post data...";
       case "uploading":
+        if (uploadProgress.total > 0) {
+          return `Uploading ${uploadProgress.current} of ${uploadProgress.total} files...`;
+        }
         return "Uploading media files...";
       case "posting":
         return "Creating post...";
@@ -122,25 +157,93 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
   };
 
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
+    try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission needed",
+          "Please grant camera roll permissions to add images.",
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("❌ Error requesting media permissions:", error);
       Alert.alert(
-        "Permission needed",
-        "Please grant camera roll permissions to add images.",
+        "Error",
+        "Unable to access media permissions. Please check your settings.",
       );
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      quality: 1,
-      allowsMultipleSelection: true,
-      exif: true, // Enable EXIF metadata to get better filename info
-      allowsEditing: false, // Disable editing to preserve original metadata
-    });
+    let result;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images", "videos"],
+        quality: 1,
+        allowsMultipleSelection: true,
+        exif: true, // Enable EXIF metadata to get better filename info
+        allowsEditing: false, // Disable editing to preserve original metadata
+      });
+    } catch (error) {
+      console.error("❌ Error launching image library:", error);
+      Alert.alert(
+        "Media Selection Error",
+        "Unable to open media library. Please try again or check your device settings.",
+      );
+      return;
+    }
 
-    if (!result.canceled) {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
       console.log("📷 Processing selected assets with compression...");
+      console.log(`📷 Selected ${result.assets.length} assets`);
+
+      // Pre-validate all assets before processing
+      const preValidationErrors = [];
+      result.assets.forEach((asset, index) => {
+        const fileName = asset.fileName || asset.name || `file_${index}`;
+        const fileSize = asset.fileSize || asset.size || 0;
+        const assetType = asset.type || "unknown";
+
+        console.log(`📷 Pre-validating asset ${index}:`, {
+          fileName,
+          fileSize,
+          sizeInMB: fileSize
+            ? (fileSize / (1024 * 1024)).toFixed(2)
+            : "unknown",
+          type: assetType,
+        });
+
+        // Pre-check video files for size limit
+        if (assetType === "video" && fileSize > 5 * 1024 * 1024) {
+          const sizeInMB = (fileSize / (1024 * 1024)).toFixed(1);
+          preValidationErrors.push(
+            `"${fileName}" is ${sizeInMB}MB (over 5MB limit)`,
+          );
+        }
+
+        // Check for corrupted or invalid files
+        if (!asset.uri || asset.uri.length === 0) {
+          preValidationErrors.push(
+            `"${fileName}" appears to be corrupted or invalid`,
+          );
+        }
+      });
+
+      // Show pre-validation errors if any
+      if (preValidationErrors.length > 0) {
+        console.warn(
+          "❌ Pre-validation failed for some assets:",
+          preValidationErrors,
+        );
+        Alert.alert(
+          "File Validation Error",
+          `Some files cannot be processed:\n\n${preValidationErrors.join("\n")}\n\nPlease select different files or compress large videos.`,
+        );
+        return;
+      }
+
+      console.log("✅ Pre-validation passed for all assets");
 
       // Process each asset with compression if needed
       const processedMedia = [];
@@ -149,57 +252,197 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
         console.log(`📷 Processing asset ${i}:`, asset);
 
         try {
+          // Android-specific: Copy content:// URI to file:// URI for proper access
+          let processableUri = asset.uri;
+          let fileSize = asset.fileSize || asset.size || 0;
+
+          if (Platform.OS === "android" && asset.uri.startsWith("content://")) {
+            console.log(`🤖 Android detected - Converting content:// URI to file://`);
+            console.log(`🤖 Original content URI: ${asset.uri.substring(0, 80)}`);
+
+            try {
+              // Validate content URI is accessible before attempting copy
+              let contentUriInfo = null;
+              try {
+                contentUriInfo = await FileSystem.getInfoAsync(asset.uri, { size: true });
+                console.log(`📊 Android - Content URI info:`, {
+                  exists: contentUriInfo.exists,
+                  size: contentUriInfo.size,
+                  uri: asset.uri.substring(0, 80)
+                });
+              } catch (infoError) {
+                console.warn(`⚠️ Android - Could not get content URI info, will attempt copy anyway:`, infoError.message);
+              }
+
+              // Get file size with multiple fallback strategies
+              if (!fileSize || fileSize === 0) {
+                if (contentUriInfo && contentUriInfo.exists && contentUriInfo.size) {
+                  fileSize = contentUriInfo.size;
+                  console.log(`📊 Android - Got file size from content URI: ${fileSize} bytes (${(fileSize / (1024 * 1024)).toFixed(2)}MB)`);
+                } else if (asset.fileSize) {
+                  fileSize = asset.fileSize;
+                  console.log(`📊 Android - Using asset.fileSize: ${fileSize} bytes`);
+                } else if (asset.size) {
+                  fileSize = asset.size;
+                  console.log(`📊 Android - Using asset.size: ${fileSize} bytes`);
+                } else {
+                  console.warn(`⚠️ Android - File size unavailable, upload may fail validation`);
+                }
+              }
+
+              // Generate safe filename for cache
+              const timestamp = Date.now();
+              const randomId = Math.random().toString(36).substring(7);
+              const extension = asset.type === 'video' ? 'mp4' : 'jpg';
+              const safeFileName = asset.fileName || asset.name || `media_${timestamp}_${randomId}.${extension}`;
+              // Remove any problematic characters from filename
+              const sanitizedFileName = safeFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const cacheUri = `${FileSystem.cacheDirectory}${sanitizedFileName}`;
+
+              console.log(`📁 Android - Attempting to copy file to cache...`);
+              console.log(`📁 From: ${asset.uri.substring(0, 80)}`);
+              console.log(`📁 To: ${cacheUri}`);
+
+              // Attempt file copy with retry logic
+              let copySuccess = false;
+              let copyAttempts = 0;
+              const maxCopyAttempts = 2;
+
+              while (!copySuccess && copyAttempts < maxCopyAttempts) {
+                copyAttempts++;
+                try {
+                  console.log(`🔄 Android - Copy attempt ${copyAttempts}/${maxCopyAttempts}`);
+
+                  // Check if file already exists in cache and delete it
+                  const cacheFileInfo = await FileSystem.getInfoAsync(cacheUri);
+                  if (cacheFileInfo.exists) {
+                    console.log(`🗑️ Android - Removing existing cache file`);
+                    await FileSystem.deleteAsync(cacheUri, { idempotent: true });
+                  }
+
+                  // Copy file to cache
+                  await FileSystem.copyAsync({
+                    from: asset.uri,
+                    to: cacheUri,
+                  });
+
+                  // Verify the copied file exists and has content
+                  const verifyInfo = await FileSystem.getInfoAsync(cacheUri, { size: true });
+                  if (verifyInfo.exists) {
+                    const copiedSize = verifyInfo.size || 0;
+                    console.log(`✅ Android - File copied successfully`);
+                    console.log(`✅ Copied file size: ${copiedSize} bytes (${(copiedSize / (1024 * 1024)).toFixed(2)}MB)`);
+
+                    // Update file size if we got it from verification
+                    if (copiedSize > 0 && (!fileSize || fileSize === 0)) {
+                      fileSize = copiedSize;
+                      console.log(`📊 Android - Updated file size from copied file: ${fileSize} bytes`);
+                    }
+
+                    processableUri = cacheUri;
+                    copySuccess = true;
+
+                    // Track cached file for cleanup later
+                    setCachedFileUris(prev => [...prev, cacheUri]);
+                  } else {
+                    throw new Error('Copied file does not exist after copy operation');
+                  }
+                } catch (copyError) {
+                  console.error(`❌ Android - Copy attempt ${copyAttempts} failed:`, copyError.message);
+                  if (copyAttempts >= maxCopyAttempts) {
+                    throw copyError; // Re-throw on final attempt
+                  }
+                  // Wait briefly before retry
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                }
+              }
+
+              if (!copySuccess) {
+                throw new Error('Failed to copy file after multiple attempts');
+              }
+
+              console.log(`✅ Android - File successfully prepared: ${processableUri}`);
+              console.log(`✅ Final file size: ${fileSize} bytes`);
+            } catch (androidError) {
+              console.error(`❌ Android file preparation failed for asset ${i}:`, {
+                error: androidError.message,
+                stack: androidError.stack,
+                uri: asset.uri.substring(0, 80),
+                fileName: asset.fileName || asset.name,
+                type: asset.type
+              });
+
+              Alert.alert(
+                "File Access Error",
+                `Unable to process the selected ${asset.type || 'file'}. This may be due to:\n\n` +
+                `• File permissions\n` +
+                `• Corrupted file\n` +
+                `• Storage access restrictions\n\n` +
+                `Please try:\n` +
+                `• Selecting a different file\n` +
+                `• Checking app permissions in Settings\n` +
+                `• Restarting the app`
+              );
+              continue; // Skip this file and continue with others
+            }
+          }
+
+          // Update asset with processable URI and file size
+          const processableAsset = {
+            ...asset,
+            uri: processableUri,
+            fileSize: fileSize,
+            size: fileSize,
+          };
+
+          console.log(`📷 Processable asset ${i}:`, {
+            uri: processableAsset.uri.substring(0, 60),
+            fileSize: processableAsset.fileSize,
+            type: processableAsset.type,
+            platform: Platform.OS,
+          });
+
           // Enhanced filename capture with multiple strategies
           let originalUserFilename = null;
           let filenameSource = "unknown";
 
           console.log(`📁 🔍 Asset ${i} analysis:`, {
-            fileName: asset.fileName,
-            filename: asset.filename,
-            name: asset.name,
-            uri: asset.uri,
-            type: asset.type,
-            hasExif: !!asset.exif,
-            exifKeys: asset.exif ? Object.keys(asset.exif) : [],
+            fileName: processableAsset.fileName,
+            name: processableAsset.name,
+            uri: processableAsset.uri.substring(0, 60),
+            type: processableAsset.type,
+            hasExif: !!processableAsset.exif,
+            exifKeys: processableAsset.exif ? Object.keys(processableAsset.exif) : [],
           });
 
           // Strategy 1: Direct filename properties
           if (
-            asset.fileName &&
-            asset.fileName.trim() &&
-            asset.fileName !== "undefined" &&
-            asset.fileName !== "null"
+            processableAsset.fileName &&
+            processableAsset.fileName.trim() &&
+            processableAsset.fileName !== "undefined" &&
+            processableAsset.fileName !== "null"
           ) {
-            originalUserFilename = asset.fileName.trim();
+            originalUserFilename = processableAsset.fileName.trim();
             filenameSource = "asset.fileName";
             console.log(`📁 ✅ Using asset.fileName: ${originalUserFilename}`);
           } else if (
-            asset.filename &&
-            asset.filename.trim() &&
-            asset.filename !== "undefined" &&
-            asset.filename !== "null"
+            processableAsset.name &&
+            processableAsset.name.trim() &&
+            processableAsset.name !== "undefined" &&
+            processableAsset.name !== "null"
           ) {
-            originalUserFilename = asset.filename.trim();
-            filenameSource = "asset.filename";
-            console.log(`📁 ✅ Using asset.filename: ${originalUserFilename}`);
-          } else if (
-            asset.name &&
-            asset.name.trim() &&
-            asset.name !== "undefined" &&
-            asset.name !== "null"
-          ) {
-            originalUserFilename = asset.name.trim();
+            originalUserFilename = processableAsset.name.trim();
             filenameSource = "asset.name";
             console.log(`📁 ✅ Using asset.name: ${originalUserFilename}`);
           }
 
           // Strategy 2: EXIF metadata extraction
-          if (!originalUserFilename && asset.exif) {
+          if (!originalUserFilename && processableAsset.exif) {
             // Try to extract filename from EXIF data
             const exifFilename =
-              asset.exif.FileName ||
-              asset.exif.ImageDescription ||
-              asset.exif.Software;
+              processableAsset.exif.FileName ||
+              processableAsset.exif.ImageDescription ||
+              processableAsset.exif.Software;
             if (
               exifFilename &&
               typeof exifFilename === "string" &&
@@ -213,7 +456,7 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
           // Strategy 3: Enhanced URI parsing
           if (!originalUserFilename) {
-            const uriParts = asset.uri?.split("/");
+            const uriParts = processableAsset.uri?.split("/");
             const uriFilename = uriParts?.pop();
 
             if (uriFilename && uriFilename.length > 0) {
@@ -255,8 +498,8 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
             const minute = String(now.getMinutes()).padStart(2, "0");
             const second = String(now.getSeconds()).padStart(2, "0");
 
-            const extension = asset.type === "video" ? "mp4" : "jpg";
-            const mediaPrefix = asset.type === "video" ? "Video" : "Photo";
+            const extension = processableAsset.type === "video" ? "mp4" : "jpg";
+            const mediaPrefix = processableAsset.type === "video" ? "Video" : "Photo";
 
             originalUserFilename = `${mediaPrefix}_${year}_${month}_${day}_${hour}_${minute}_${second}.${extension}`;
             filenameSource = "smart_timestamp";
@@ -276,16 +519,16 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
           const processResult = await processMediaForUpload(
             {
               id: Date.now() + Math.random() + i,
-              type: asset.type || "image",
-              uri: asset.uri,
+              type: processableAsset.type || "image",
+              uri: processableAsset.uri,
               name: originalUserFilename, // Use enhanced filename capture
               fileName: originalUserFilename, // Also set fileName for compatibility
               original_user_filename: originalUserFilename, // Explicit user intent field
               filenameSource: filenameSource, // Add filename source for debugging
-              size: asset.fileSize || asset.size || 0,
+              size: processableAsset.fileSize || processableAsset.size || 0,
               mimeType:
-                asset.mimeType ||
-                (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+                processableAsset.mimeType ||
+                (processableAsset.type === "video" ? "video/mp4" : "image/jpeg"),
             },
             i,
           );
@@ -297,13 +540,34 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
               processResult.data.wasCompressed ? "compressed" : "original",
             );
           } else {
-            // Show alert for validation errors (like video size limit)
-            Alert.alert("Upload Error", processResult.error);
+            // Enhanced error handling with specific error details
             console.warn(
               `❌ Asset ${i} validation failed:`,
               processResult.error,
             );
-            // Don't add this asset to the processed media
+
+            // Show specific error with filename if available
+            const fileName =
+              processResult.fileName || originalUserFilename || `File ${i + 1}`;
+            const errorMessage = processResult.error || "Processing failed";
+
+            Alert.alert(
+              "File Processing Error",
+              `${fileName}:\n\n${errorMessage}`,
+              [
+                { text: "Skip This File", style: "default" },
+                {
+                  text: "Cancel All",
+                  style: "cancel",
+                  onPress: () => {
+                    // Clear any processed media and return
+                    return;
+                  },
+                },
+              ],
+            );
+            console.warn(`❌ Skipping asset ${i} due to processing failure`);
+            // Continue processing other files, don't add this one
           }
         } catch (error) {
           console.error(`❌ Failed to process asset ${i}:`, error);
@@ -311,12 +575,10 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
           let fallbackFilename = null;
 
           // Try to get meaningful filename even in error case
-          if (asset.fileName && asset.fileName.trim()) {
-            fallbackFilename = asset.fileName.trim();
-          } else if (asset.filename && asset.filename.trim()) {
-            fallbackFilename = asset.filename.trim();
-          } else if (asset.name && asset.name.trim()) {
-            fallbackFilename = asset.name.trim();
+          if (processableAsset.fileName && processableAsset.fileName.trim()) {
+            fallbackFilename = processableAsset.fileName.trim();
+          } else if (processableAsset.name && processableAsset.name.trim()) {
+            fallbackFilename = processableAsset.name.trim();
           } else {
             // Create smart readable fallback
             const now = new Date();
@@ -327,8 +589,8 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
             const minute = String(now.getMinutes()).padStart(2, "0");
             const second = String(now.getSeconds()).padStart(2, "0");
 
-            const extension = asset.type === "video" ? "mp4" : "jpg";
-            const mediaPrefix = asset.type === "video" ? "Video" : "Photo";
+            const extension = processableAsset.type === "video" ? "mp4" : "jpg";
+            const mediaPrefix = processableAsset.type === "video" ? "Video" : "Photo";
 
             fallbackFilename = `${mediaPrefix}_${year}_${month}_${day}_${hour}_${minute}_${second}.${extension}`;
           }
@@ -337,22 +599,53 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
           processedMedia.push({
             id: Date.now() + Math.random() + i,
-            type: asset.type || "image",
-            uri: asset.uri,
+            type: processableAsset.type || "image",
+            uri: processableAsset.uri,
             name: fallbackFilename,
             fileName: fallbackFilename, // Compatibility
             original_user_filename: fallbackFilename, // Explicit user intent
             filenameSource: "error_fallback", // Add filename source for debugging
-            size: asset.fileSize || asset.size || 0,
+            size: processableAsset.fileSize || processableAsset.size || 0,
             mimeType:
-              asset.mimeType ||
-              (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+              processableAsset.mimeType ||
+              (processableAsset.type === "video" ? "video/mp4" : "image/jpeg"),
           });
         }
       }
 
       console.log("📷 All assets processed:", processedMedia.length);
+
+      // Final validation and summary
+      if (processedMedia.length === 0) {
+        console.warn("⚠️ No assets were successfully processed");
+        Alert.alert(
+          "No Files Processed",
+          "None of the selected files could be processed. Please try selecting different files.",
+        );
+        return;
+      }
+
+      if (processedMedia.length < result.assets.length) {
+        const skippedCount = result.assets.length - processedMedia.length;
+        console.warn(
+          `⚠️ ${skippedCount} assets were skipped due to processing errors`,
+        );
+        Alert.alert(
+          "Some Files Skipped",
+          `${processedMedia.length} of ${result.assets.length} files were successfully processed. ${skippedCount} files were skipped due to errors.`,
+          [{ text: "Continue", style: "default" }],
+        );
+      } else {
+        console.log(
+          `✅ All ${processedMedia.length} assets processed successfully`,
+        );
+      }
+
       setSelectedMedia((prev) => [...prev, ...processedMedia]);
+    } else if (result.canceled) {
+      console.log("📷 Media selection was canceled by user");
+    } else {
+      console.warn("⚠️ No assets were selected or result was invalid");
     }
   };
 
@@ -444,20 +737,26 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
   };
 
   const handleSubmitPost = async () => {
+    // Set submitting immediately to disable button on first click
+    setIsSubmitting(true);
+    setUploadStep("validating");
+
     // Validate required fields
     if (!postTitle.trim()) {
+      setIsSubmitting(false);
+      setUploadStep("");
       Alert.alert("Warning!", "Please enter a title for your school post");
       return;
     }
 
     if (!selectedCategory) {
+      setIsSubmitting(false);
+      setUploadStep("");
       Alert.alert("Warning!", "Please select a category for your post");
       return;
     }
 
     try {
-      setIsSubmitting(true);
-      setUploadStep("validating");
 
       console.log("🚀 Starting school post creation with two-step process");
 
@@ -467,6 +766,9 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
       if (selectedMedia && selectedMedia.length > 0) {
         const validation = validateMediaFiles(selectedMedia);
         if (!validation.isValid) {
+          setIsSubmitting(false);
+          setUploadStep("");
+          setUploadProgress({ current: 0, total: 0 });
           Alert.alert("Media Validation Failed", validation.error);
           return;
         }
@@ -477,6 +779,7 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
         );
 
         setUploadStep("uploading");
+        setUploadProgress({ current: 0, total: selectedMedia.length });
 
         // Create FormData with post_type field
         const formData = createMediaUploadFormData(
@@ -486,12 +789,76 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
         console.log("📎 Uploading media files with FormData for school-posts");
 
         try {
+          console.log(
+            `📎 🚀 UPLOADING: Sending ${selectedMedia.length} files to backend...`,
+          );
           const uploadResponse = await uploadMedia(formData).unwrap();
           console.log("📎 ✅ Media upload successful:", uploadResponse);
+
+          // Update progress to show all files uploaded
+          setUploadProgress({ current: selectedMedia.length, total: selectedMedia.length });
 
           if (uploadResponse.success && uploadResponse.data) {
             uploadedMedia = uploadResponse.data;
             console.log("📎 Uploaded media URLs:", uploadedMedia);
+
+            // ===== CRITICAL UPLOAD COMPLETION VALIDATION =====
+            console.log("📎 🔍 ===== UPLOAD COMPLETION VALIDATION =====");
+            console.log(`📎 📊 File Count Tracking:`);
+            console.log(`  - Selected by user: ${selectedMedia.length} files`);
+            console.log(
+              `  - Returned by backend: ${uploadedMedia.length} files`,
+            );
+
+            // Validate all files uploaded successfully
+            const uploadComplete = uploadedMedia.length === selectedMedia.length;
+            const allHaveUrls = uploadedMedia.every(m => m.url && m.url.trim() !== '');
+
+            console.log(
+              `  - Count match: ${uploadComplete ? "✅ SUCCESS" : "❌ MISMATCH"}`,
+            );
+            console.log(
+              `  - All have URLs: ${allHaveUrls ? "✅ SUCCESS" : "❌ INCOMPLETE"}`,
+            );
+
+            if (!uploadComplete) {
+              console.error(
+                "📎 ❌ CRITICAL ISSUE: File count mismatch detected!",
+              );
+              console.error(
+                `📎 Expected: ${selectedMedia.length}, Got: ${uploadedMedia.length}`,
+              );
+
+              setIsSubmitting(false);
+              setUploadStep("");
+              setUploadProgress({ current: 0, total: 0 });
+
+              Alert.alert(
+                "Upload Incomplete",
+                `Only ${uploadedMedia.length} of ${selectedMedia.length} files were uploaded. Please try again.`,
+                [{ text: "OK", style: "default" }],
+              );
+              return;
+            }
+
+            if (!allHaveUrls) {
+              console.error("📎 ❌ CRITICAL ISSUE: Some files missing URLs!");
+
+              setIsSubmitting(false);
+              setUploadStep("");
+              setUploadProgress({ current: 0, total: 0 });
+
+              Alert.alert(
+                "Upload Incomplete",
+                "Some files failed to upload completely. Please try again.",
+                [{ text: "OK", style: "default" }],
+              );
+              return;
+            }
+
+            console.log(
+              "📎 🎉 SUCCESS: All selected files were uploaded successfully with valid URLs!",
+            );
 
             // ===== COMPREHENSIVE UPLOAD RESPONSE DEBUG =====
             console.log("📎 ===== UPLOAD RESPONSE DEBUG ANALYSIS =====");
@@ -785,6 +1152,9 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
       const response = await createSchoolPost(jsonPayload).unwrap();
       console.log("✅ School post created successfully:", response);
 
+      // Clean up cached files after successful upload
+      await cleanupCachedFiles();
+
       Alert.alert("Success!", "Your school post has been published");
 
       // Reset and close
@@ -797,6 +1167,9 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
       }
     } catch (error) {
       console.error("❌ School post creation failed:", error);
+
+      // Clean up cached files on error too
+      await cleanupCachedFiles();
 
       let errorMessage = "Failed to create school post. Please try again.";
 
@@ -1022,9 +1395,12 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <Text style={styles.submitButtonText}>
-                {getProgressMessage()}
-              </Text>
+              <>
+                <ActivityIndicator size="small" color="white" />
+                <Text style={styles.submitButtonText}>
+                  {getProgressMessage()}
+                </Text>
+              </>
             ) : (
               <>
                 <Icon name="send" size={20} color="white" />

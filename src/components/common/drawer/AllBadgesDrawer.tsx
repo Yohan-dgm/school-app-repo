@@ -88,6 +88,11 @@ const AllBadgesDrawer: React.FC<AllBadgesDrawerProps> = ({ onClose }) => {
       title: "Athletic Star",
       image: require("../../../assets/Badges/athletic star.png"),
     },
+    {
+      id: 15,
+      title: "High Flyer in Sport",
+      image: require("../../../assets/Badges/High flyer in sport.png"),
+    },
   ];
 
   return (

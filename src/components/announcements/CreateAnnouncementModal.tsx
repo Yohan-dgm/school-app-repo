@@ -12,6 +12,11 @@ import {
   Platform,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import {
+  RichEditor,
+  RichToolbar,
+  actions,
+} from "react-native-pell-rich-editor";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   useCreateAnnouncementMutation,
@@ -30,6 +35,8 @@ import {
   USER_CATEGORIES,
   getUserCategoryDisplayName,
 } from "../../constants/userCategories";
+import GradeLevelSelector from "./GradeLevelSelector";
+import StudentSelector from "./StudentSelector";
 
 interface CreateAnnouncementModalProps {
   visible: boolean;
@@ -61,8 +68,8 @@ export default function CreateAnnouncementModal({
     category_id: 1,
     priority_level: 1,
     status: "published",
-    target_type: "broadcast",
-    target_data: {},
+    target_type: "All",
+    target_data: { group_filter: "All" },
     image_url: "",
     attachment_urls: [],
     is_featured: false,
@@ -75,8 +82,15 @@ export default function CreateAnnouncementModal({
 
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
+
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  
+  // New state for dynamic selection
+  const [selectedGradeLevelId, setSelectedGradeLevelId] = useState<number | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+
+  const richText = React.useRef<RichEditor>(null);
 
   useEffect(() => {
     if (categories.length > 0 && formData.category_id === 0) {
@@ -95,8 +109,8 @@ export default function CreateAnnouncementModal({
       category_id: categories.length > 0 ? categories[0].id : 1,
       priority_level: 1,
       status: "published",
-      target_type: "broadcast",
-      target_data: {},
+      target_type: "All",
+      target_data: { group_filter: "All" },
       image_url: "",
       attachment_urls: [],
       is_featured: false,
@@ -108,6 +122,9 @@ export default function CreateAnnouncementModal({
     });
     setSelectedRoles([]);
     setSelectedUsers([]);
+    // Reset new state
+    setSelectedGradeLevelId(null);
+    setSelectedClassId(null);
   };
 
   const handleClose = () => {
@@ -135,10 +152,20 @@ export default function CreateAnnouncementModal({
     try {
       const targetData: any = {};
 
-      if (formData.target_type === "role" && selectedRoles.length > 0) {
-        targetData.roles = selectedRoles;
-      } else if (formData.target_type === "user" && selectedUsers.length > 0) {
-        targetData.user_ids = selectedUsers;
+      if (formData.target_type === "Student" && selectedUsers.length > 0) {
+        targetData.student_id = selectedUsers[0];
+      } else {
+        // For All, Educator, Management, Grade_Level, Grade_Level_class, Primary, Secondary, Early_Years
+        targetData.group_filter = formData.target_type;
+
+        if (formData.target_type === "Grade_Level" && selectedGradeLevelId) {
+          targetData.grade_level_id = selectedGradeLevelId;
+        } else if (
+          formData.target_type === "Grade_Level_class" &&
+          selectedClassId
+        ) {
+          targetData.grade_level_class_id = selectedClassId;
+        }
       }
 
       const announcementData: CreateAnnouncementRequest = {
@@ -188,7 +215,7 @@ export default function CreateAnnouncementModal({
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={styles.categoryContainer}>
-          {categories.map((category) => (
+          {categories.map((category: any) => (
             <TouchableOpacity
               key={category.id}
               style={[
@@ -197,7 +224,7 @@ export default function CreateAnnouncementModal({
                   borderColor: category.color,
                   backgroundColor:
                     formData.category_id === category.id
-                      ? category.color + "20"
+                      ? category.color
                       : "#f9fafb",
                 },
               ]}
@@ -208,7 +235,11 @@ export default function CreateAnnouncementModal({
               <MaterialIcons
                 name={category.icon as any}
                 size={16}
-                color={category.color}
+                color={
+                  formData.category_id === category.id
+                    ? "#ffffff"
+                    : category.color
+                }
               />
               <Text
                 style={[
@@ -216,7 +247,7 @@ export default function CreateAnnouncementModal({
                   {
                     color:
                       formData.category_id === category.id
-                        ? category.color
+                        ? "#ffffff"
                         : "#6b7280",
                   },
                 ]}
@@ -249,22 +280,51 @@ export default function CreateAnnouncementModal({
         <Text style={styles.charCount}>{formData.title.length}/500</Text>
       </View>
 
-      <View style={styles.section}>
+      <View style={[styles.section, { zIndex: 1000 }]}>
         <View style={styles.sectionHeader}>
           <MaterialIcons name="description" size={18} color="#7c2d3e" />
           <Text style={styles.sectionTitle}>Content *</Text>
         </View>
-        <TextInput
-          style={[styles.textInput, styles.multilineInput]}
-          placeholder="Enter announcement content (HTML supported)"
-          value={formData.content}
-          onChangeText={(text) =>
-            setFormData((prev) => ({ ...prev, content: text }))
-          }
-          multiline
-          numberOfLines={6}
-          textAlignVertical="top"
-        />
+        <View style={styles.richTextContainer}>
+          <RichToolbar
+            editor={richText}
+            actions={[
+              actions.setBold,
+              actions.setItalic,
+              actions.setUnderline,
+              actions.insertBulletsList,
+              actions.insertOrderedList,
+              actions.insertLink,
+              actions.heading1,
+            ]}
+            iconTint="#5c1f2e"
+            selectedIconTint="#7c2d3e"
+            selectedButtonStyle={{ backgroundColor: "#f8f4f5" }}
+            style={styles.richToolbar}
+          />
+          <ScrollView
+            style={styles.richEditorScroll}
+            nestedScrollEnabled={true}
+            keyboardDismissMode="none"
+          >
+            <RichEditor
+              ref={richText}
+              initialContentHTML={formData.content}
+              placeholder="Enter announcement content..."
+              onChange={(html) =>
+                setFormData((prev) => ({ ...prev, content: html }))
+              }
+              editorStyle={{
+                backgroundColor: "#fefefd",
+                color: "#2c1810",
+                placeholderColor: "#9ca3af",
+                contentCSSText: "font-size: 16px; min-height: 200px;",
+              }}
+              style={styles.richEditor}
+              initialHeight={200}
+            />
+          </ScrollView>
+        </View>
       </View>
 
       {/* <View style={styles.section}>
@@ -401,200 +461,77 @@ export default function CreateAnnouncementModal({
         <MaterialIcons name="group" size={18} color="#7c2d3e" />
         <Text style={styles.sectionTitle}>Target Audience</Text>
       </View>
-      <View style={styles.targetContainer}>
+      
+      {/* Target Type Chips */}
+      <View style={styles.targetChipsContainer}>
         {TARGET_TYPES.map((target) => (
           <TouchableOpacity
             key={target.value}
             style={[
-              styles.targetButton,
-              formData.target_type === target.value &&
-                styles.selectedTargetButton,
+              styles.targetChip,
+              formData.target_type === target.value && styles.selectedTargetChip,
             ]}
-            onPress={() =>
-              setFormData((prev) => ({ ...prev, target_type: target.value }))
-            }
+            onPress={() => {
+              setFormData((prev) => ({
+                ...prev,
+                target_type: target.value,
+                target_data: target.value === "All" ? { group_filter: "All" } : {},
+              }));
+              // Reset sub-selections
+              setSelectedRoles([]);
+              setSelectedUsers([]);
+            }}
           >
-            <View style={styles.targetTextContainer}>
-              <Text
-                style={[
-                  styles.targetText,
-                  formData.target_type === target.value &&
-                    styles.selectedTargetText,
-                ]}
-              >
-                {target.label}
-              </Text>
-              <Text
-                style={[
-                  styles.targetDescription,
-                  formData.target_type === target.value &&
-                    styles.selectedTargetDescription,
-                ]}
-              >
-                {target.description}
-              </Text>
-            </View>
+            <Text
+              style={[
+                styles.targetChipText,
+                formData.target_type === target.value && styles.selectedTargetChipText,
+              ]}
+            >
+              {target.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* Dynamic Sub-selection Logic */}
+      {formData.target_type !== "All" && formData.target_type !== "broadcast" && (
+        <View style={styles.subSelectionContainer}>
+          <Text style={styles.subSectionTitle}>
+            Select {formData.target_type.replace(/_/g, " ")}
+          </Text>
+          
+          {/* Dummy Selectors for demonstration */}
+      {/* Dynamic Sub-selection Logic */}
+      {(formData.target_type === "Grade_Level" || formData.target_type === "Grade_Level_class") && (
+        <GradeLevelSelector
+          targetType={formData.target_type}
+          selectedGradeLevelId={selectedGradeLevelId}
+          selectedClassId={selectedClassId}
+          onGradeLevelChange={(gradeId, classId) => {
+            setSelectedGradeLevelId(gradeId);
+            setSelectedClassId(classId); 
+          }}
+          onClassChange={(classId) => setSelectedClassId(classId)}
+        />
+      )}
+
+      {formData.target_type === "Student" && (
+        <StudentSelector
+          selectedStudentIds={selectedUsers}
+          onSelectionChange={setSelectedUsers}
+        />
+      )}
+
+      {/* Legacy Role Selector (if keeping) */}
       {formData.target_type === "role" && (
-        <View style={styles.roleSelection}>
-          <Text style={styles.subSectionTitle}>Select Roles</Text>
-          <View style={styles.roleContainer}>
-            {Object.entries(USER_CATEGORIES).map(([key, value]) => {
-              const roleName = getUserCategoryDisplayName(value);
-              const isSelected = selectedRoles.includes(key.toLowerCase());
-
-              return (
-                <TouchableOpacity
-                  key={value}
-                  style={[
-                    styles.roleButton,
-                    isSelected && styles.selectedRoleButton,
-                  ]}
-                  onPress={() => {
-                    if (isSelected) {
-                      setSelectedRoles((prev) =>
-                        prev.filter((r) => r !== key.toLowerCase()),
-                      );
-                    } else {
-                      setSelectedRoles((prev) => [...prev, key.toLowerCase()]);
-                    }
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.roleText,
-                      isSelected && styles.selectedRoleText,
-                    ]}
-                  >
-                    {roleName}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+         <View style={styles.roleSelection}>
+             {/* ... existing role selector Logic if any ... */}
+             <Text>Role selection not fully implemented for dynamic backend yet.</Text>
+         </View>
+      )}
         </View>
       )}
-    </View>
-  );
-
-  const renderFeatureOptions = () => (
-    <View style={styles.section}>
-      {/* <Text style={styles.sectionTitle}>Feature Options</Text> */}
-
-      <View style={styles.featureContainer}>
-        <TouchableOpacity
-          style={styles.checkboxContainer}
-          onPress={() =>
-            setFormData((prev) => ({ ...prev, is_featured: !prev.is_featured }))
-          }
-        >
-          {/* <View
-            style={[
-              styles.checkbox,
-              formData.is_featured && styles.checkedCheckbox,
-            ]}
-          >
-            {formData.is_featured && (
-              <MaterialIcons name="star" size={16} color="#ffffff" />
-            )}
-          </View>
-          <View style={styles.checkboxLabelContainer}>
-            <Text style={styles.checkboxLabel}>Featured Announcement</Text>
-            <Text style={styles.checkboxDescription}>
-              Show prominently in feed
-            </Text>
-          </View> */}
-        </TouchableOpacity>
-
-        {/* <TouchableOpacity
-          style={styles.checkboxContainer}
-          onPress={() =>
-            setFormData((prev) => ({ ...prev, is_pinned: !prev.is_pinned }))
-          }
-        > */}
-        {/* <View
-            style={[
-              styles.checkbox,
-              formData.is_pinned && styles.checkedCheckbox,
-            ]}
-          >
-            {formData.is_pinned && (
-              <MaterialIcons name="push-pin" size={16} color="#ffffff" />
-            )}
-          </View> */}
-        {/* <View style={styles.checkboxLabelContainer}>
-            <Text style={styles.checkboxLabel}>Pin to Top</Text>
-            <Text style={styles.checkboxDescription}>
-              Keep at top of announcements
-            </Text>
-          </View> */}
-        {/* </TouchableOpacity> */}
-      </View>
-    </View>
-  );
-
-  const renderMediaAndTags = () => (
-    <View style={styles.section}>
-      {/* <Text style={styles.sectionTitle}>Media & Tags</Text> */}
-
-      {/* <View style={styles.mediaContainer}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Featured Image URL</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="https://example.com/image.jpg"
-            value={formData.image_url}
-            onChangeText={(text) => setFormData(prev => ({ ...prev, image_url: text }))}
-            keyboardType="url"
-            autoCapitalize="none"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Tags (comma-separated)</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="e.g., important, academic, urgent"
-            value={formData.tags}
-            onChangeText={(text) => setFormData(prev => ({ ...prev, tags: text }))}
-          />
-        </View>
-      </View> */}
-    </View>
-  );
-
-  const renderSchedulingSettings = () => (
-    <View style={styles.section}>
-      {/* <Text style={styles.sectionTitle}>Scheduling</Text> */}
-
-      {formData.status === "scheduled" && (
-        <TouchableOpacity
-          style={styles.dateButton}
-          onPress={() => setShowSchedulePicker(true)}
-        >
-          {/* <MaterialIcons name="schedule" size={20} color="#3b82f6" />
-          <Text style={styles.dateButtonText}>
-            {formData.scheduled_at
-              ? new Date(formData.scheduled_at).toLocaleString()
-              : "Select schedule time"}
-          </Text> */}
-        </TouchableOpacity>
-      )}
-
-      {/* <TouchableOpacity
-        style={styles.dateButton}
-        onPress={() => setShowExpiryPicker(true)}
-      > */}
-      {/* <MaterialIcons name="event-busy" size={20} color="#6b7280" />
-        <Text style={styles.dateButtonText}>
-          {formData.expires_at
-            ? `Expires: ${new Date(formData.expires_at).toLocaleString()}`
-            : "Set expiration (optional)"}
-        </Text> */}
-      {/* </TouchableOpacity> */}
     </View>
   );
 
@@ -647,12 +584,8 @@ export default function CreateAnnouncementModal({
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {renderCategorySelection()}
           {renderBasicInfo()}
-          {renderPriorityAndStatus()}
+          {/* Priority and Status are removed from UI but kept in state */}
           {renderTargetSelection()}
-          {/* Hidden sections for now */}
-          {/* {renderFeatureOptions()} */}
-          {/* {renderMediaAndTags()} */}
-          {/* {renderSchedulingSettings()} */}
         </ScrollView>
 
         {renderActions()}
@@ -672,7 +605,7 @@ export default function CreateAnnouncementModal({
               if (selectedDate) {
                 setFormData((prev) => ({
                   ...prev,
-                  scheduled_at: selectedDate,
+                  scheduled_at: selectedDate.toISOString(),
                 }));
               }
             }}
@@ -689,7 +622,7 @@ export default function CreateAnnouncementModal({
             onChange={(event, selectedDate) => {
               setShowExpiryPicker(false);
               if (selectedDate) {
-                setFormData((prev) => ({ ...prev, expires_at: selectedDate }));
+                setFormData((prev) => ({ ...prev, expires_at: selectedDate.toISOString() }));
               }
             }}
           />
@@ -974,25 +907,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#fefefd",
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5d3d6",
-    marginBottom: 8,
-    gap: 8,
-  },
-  dateButtonText: {
-    fontSize: 13,
-    color: "#5c1f2e",
-    fontWeight: "500",
   },
   actionsContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    backgroundColor: "#ffffff",
+    padding: 16,
+    gap: 12,
     borderTopWidth: 1,
     borderTopColor: "#e5d3d6",
-    gap: 12,
+    backgroundColor: "#ffffff",
   },
   cancelButton: {
     flex: 1,
@@ -1006,29 +928,98 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#8d5a5e",
+    color: "#5c1f2e",
   },
   createButton: {
     flex: 2,
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
     paddingVertical: 14,
     borderRadius: 10,
     backgroundColor: "#7c2d3e",
-    gap: 8,
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#7c2d3e",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 4,
   },
   disabledButton: {
-    backgroundColor: "#a8888c",
+    backgroundColor: "#a17a82",
+    shadowOpacity: 0,
   },
   createButtonText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#ffffff",
+  },
+  // Rich Editor Styles
+  richTextContainer: {
+    borderWidth: 1,
+    borderColor: "#e5d3d6",
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#fefefd",
+    minHeight: 250,
+  },
+  richToolbar: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5d3d6",
+    backgroundColor: "#f8f4f5",
+  },
+  richEditorScroll: {
+    flex: 1,
+    backgroundColor: "#fefefd",
+  },
+  richEditor: {
+    minHeight: 200,
+    backgroundColor: "#fefefd",
+  },
+  // New Styles for Target Chips
+  targetChipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  targetChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "#fefefd",
+    borderWidth: 1,
+    borderColor: "#e5d3d6",
+  },
+  selectedTargetChip: {
+    backgroundColor: "#7c2d3e",
+    borderColor: "#7c2d3e",
+  },
+  targetChipText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#5c1f2e",
+  },
+  selectedTargetChipText: {
+    color: "#ffffff",
+    fontWeight: "600",
+  },
+  subSelectionContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: "#f9fafb",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5d3d6",
+  },
+  dummySelector: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
   },
 });

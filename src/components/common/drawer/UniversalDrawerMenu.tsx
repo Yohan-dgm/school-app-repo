@@ -76,14 +76,21 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
   // Filter students based on search
   const filteredStudents = React.useMemo(() => {
     if (!studentsData?.data?.data) return [];
-    
+
     if (!searchQuery.trim()) return studentsData.data.data;
-    
-    return studentsData.data.data.filter((student: StudentDetails) =>
-      student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.admission_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.father_full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.mother_full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+
+    return studentsData.data.data.filter(
+      (student: StudentDetails) =>
+        student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        student.admission_number
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        student.father_full_name
+          ?.toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        student.mother_full_name
+          ?.toLowerCase()
+          .includes(searchQuery.toLowerCase())
     );
   }, [studentsData, searchQuery]);
 
@@ -117,28 +124,30 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
   // Phone call handler
   const handlePhoneCall = (phoneNumber: string, contactName: string) => {
     if (!phoneNumber || phoneNumber === "N/A") {
-      Alert.alert("No Phone Number", "Phone number not available for this contact.");
+      Alert.alert(
+        "No Phone Number",
+        "Phone number not available for this contact."
+      );
       return;
     }
 
-    const cleanedNumber = phoneNumber.replace(/[^0-9+]/g, '');
-    
-    Alert.alert(
-      "Make Call",
-      `Call ${contactName} at ${phoneNumber}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Call", 
-          onPress: () => {
-            Linking.openURL(`tel:${cleanedNumber}`).catch((err) => {
-              Alert.alert("Error", "Unable to make phone call. Please check if your device supports calling.");
-              console.error('Error making phone call:', err);
-            });
-          }
-        }
-      ]
-    );
+    const cleanedNumber = phoneNumber.replace(/[^0-9+]/g, "");
+
+    Alert.alert("Make Call", `Call ${contactName} at ${phoneNumber}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Call",
+        onPress: () => {
+          Linking.openURL(`tel:${cleanedNumber}`).catch((err) => {
+            Alert.alert(
+              "Error",
+              "Unable to make phone call. Please check if your device supports calling."
+            );
+            console.error("Error making phone call:", err);
+          });
+        },
+      },
+    ]);
   };
 
   // Common menu items for all users
@@ -329,7 +338,9 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
             {searchQuery ? "No students found" : "No students in this class"}
           </Text>
           <Text style={styles.emptySubtext}>
-            {searchQuery ? "Try a different search term" : "Students will appear here when enrolled"}
+            {searchQuery
+              ? "Try a different search term"
+              : "Students will appear here when enrolled"}
           </Text>
         </View>
       );
@@ -339,7 +350,12 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
       <>
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <MaterialIcons name="search" size={20} color="#666" style={styles.searchIcon} />
+          <MaterialIcons
+            name="search"
+            size={20}
+            color="#666"
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
             placeholder="Search students or parents..."
@@ -348,7 +364,10 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
             placeholderTextColor="#999"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearButton}>
+            <TouchableOpacity
+              onPress={() => setSearchQuery("")}
+              style={styles.clearButton}
+            >
               <MaterialIcons name="clear" size={20} color="#666" />
             </TouchableOpacity>
           )}
@@ -356,11 +375,15 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
 
         {/* Results Count */}
         <Text style={styles.resultsCount}>
-          {filteredStudents.length} student{filteredStudents.length !== 1 ? "s" : ""} found
+          {filteredStudents.length} student
+          {filteredStudents.length !== 1 ? "s" : ""} found
         </Text>
 
         {/* Students List */}
-        <ScrollView showsVerticalScrollIndicator={false} style={styles.studentsList}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          style={styles.studentsList}
+        >
           {filteredStudents.map((student: StudentDetails) => (
             <View key={student.id} style={styles.studentCard}>
               {/* Student Header */}
@@ -368,7 +391,9 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                 <View style={styles.studentAvatar}>
                   {student.student_attachment_list?.length > 0 ? (
                     <Image
-                      source={{ uri: `${process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1}/storage/${student.student_attachment_list[0].file_name}` }}
+                      source={{
+                        uri: `${process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1}/storage/${student.student_attachment_list[0].file_name}`,
+                      }}
                       style={styles.studentAvatarImage}
                     />
                   ) : (
@@ -378,10 +403,12 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                 <View style={styles.studentInfo}>
                   <Text style={styles.studentName}>{student.full_name}</Text>
                   <Text style={styles.studentMeta}>
-                    {student.admission_number} • {student.grade_level_class?.name || 'No Class'}
+                    {student.admission_number} •{" "}
+                    {student.grade_level_class?.name || "No Class"}
                   </Text>
                   <Text style={styles.studentMeta}>
-                    {student.school_house?.name || 'No House'} • {student.gender}
+                    {student.school_house?.name || "No House"} •{" "}
+                    {student.gender}
                   </Text>
                 </View>
               </View>
@@ -395,26 +422,52 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                       <MaterialIcons name="person" size={16} color="#920734" />
                       <Text style={styles.contactRole}>Father</Text>
                     </View>
-                    <Text style={styles.contactName}>{student.father_full_name}</Text>
+                    <Text style={styles.contactName}>
+                      {student.father_full_name}
+                    </Text>
                     <View style={styles.contactActions}>
-                      {student.father_phone && student.father_phone !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.phoneButton}
-                          onPress={() => handlePhoneCall(student.father_phone || "", `${student.father_full_name || 'Father'} (Father)`)}
-                        >
-                          <MaterialIcons name="phone" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.father_phone}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {student.father_whatsapp && student.father_whatsapp !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.whatsappButton}
-                          onPress={() => handlePhoneCall(student.father_whatsapp || "", `${student.father_full_name || 'Father'} (WhatsApp)`)}
-                        >
-                          <MaterialIcons name="chat" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.father_whatsapp}</Text>
-                        </TouchableOpacity>
-                      )}
+                      {student.father_phone &&
+                        student.father_phone !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.phoneButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.father_phone || "",
+                                `${student.father_full_name || "Father"} (Father)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="phone"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.father_phone}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      {student.father_whatsapp &&
+                        student.father_whatsapp !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.whatsappButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.father_whatsapp || "",
+                                `${student.father_full_name || "Father"} (WhatsApp)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="chat"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.father_whatsapp}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                     </View>
                   </View>
                 )}
@@ -426,26 +479,52 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                       <MaterialIcons name="person" size={16} color="#920734" />
                       <Text style={styles.contactRole}>Mother</Text>
                     </View>
-                    <Text style={styles.contactName}>{student.mother_full_name}</Text>
+                    <Text style={styles.contactName}>
+                      {student.mother_full_name}
+                    </Text>
                     <View style={styles.contactActions}>
-                      {student.mother_phone && student.mother_phone !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.phoneButton}
-                          onPress={() => handlePhoneCall(student.mother_phone || "", `${student.mother_full_name || 'Mother'} (Mother)`)}
-                        >
-                          <MaterialIcons name="phone" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.mother_phone}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {student.mother_whatsapp && student.mother_whatsapp !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.whatsappButton}
-                          onPress={() => handlePhoneCall(student.mother_whatsapp || "", `${student.mother_full_name || 'Mother'} (WhatsApp)`)}
-                        >
-                          <MaterialIcons name="chat" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.mother_whatsapp}</Text>
-                        </TouchableOpacity>
-                      )}
+                      {student.mother_phone &&
+                        student.mother_phone !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.phoneButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.mother_phone || "",
+                                `${student.mother_full_name || "Mother"} (Mother)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="phone"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.mother_phone}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      {student.mother_whatsapp &&
+                        student.mother_whatsapp !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.whatsappButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.mother_whatsapp || "",
+                                `${student.mother_full_name || "Mother"} (WhatsApp)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="chat"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.mother_whatsapp}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                     </View>
                   </View>
                 )}
@@ -457,26 +536,52 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                       <MaterialIcons name="person" size={16} color="#920734" />
                       <Text style={styles.contactRole}>Guardian</Text>
                     </View>
-                    <Text style={styles.contactName}>{student.guardian_full_name}</Text>
+                    <Text style={styles.contactName}>
+                      {student.guardian_full_name}
+                    </Text>
                     <View style={styles.contactActions}>
-                      {student.guardian_phone && student.guardian_phone !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.phoneButton}
-                          onPress={() => handlePhoneCall(student.guardian_phone || "", `${student.guardian_full_name || 'Guardian'} (Guardian)`)}
-                        >
-                          <MaterialIcons name="phone" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.guardian_phone}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {student.guardian_whatsapp && student.guardian_whatsapp !== "N/A" && (
-                        <TouchableOpacity 
-                          style={styles.whatsappButton}
-                          onPress={() => handlePhoneCall(student.guardian_whatsapp || "", `${student.guardian_full_name || 'Guardian'} (WhatsApp)`)}
-                        >
-                          <MaterialIcons name="chat" size={16} color="#FFFFFF" />
-                          <Text style={styles.phoneButtonText}>{student.guardian_whatsapp}</Text>
-                        </TouchableOpacity>
-                      )}
+                      {student.guardian_phone &&
+                        student.guardian_phone !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.phoneButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.guardian_phone || "",
+                                `${student.guardian_full_name || "Guardian"} (Guardian)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="phone"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.guardian_phone}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      {student.guardian_whatsapp &&
+                        student.guardian_whatsapp !== "N/A" && (
+                          <TouchableOpacity
+                            style={styles.whatsappButton}
+                            onPress={() =>
+                              handlePhoneCall(
+                                student.guardian_whatsapp || "",
+                                `${student.guardian_full_name || "Guardian"} (WhatsApp)`
+                              )
+                            }
+                          >
+                            <MaterialIcons
+                              name="chat"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.phoneButtonText}>
+                              {student.guardian_whatsapp}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                     </View>
                   </View>
                 )}
@@ -487,7 +592,9 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                 <View style={styles.detailRow}>
                   <MaterialIcons name="cake" size={16} color="#666" />
                   <Text style={styles.detailLabel}>DOB:</Text>
-                  <Text style={styles.detailValue}>{new Date(student.date_of_birth).toLocaleDateString()}</Text>
+                  <Text style={styles.detailValue}>
+                    {new Date(student.date_of_birth).toLocaleDateString()}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <MaterialIcons name="local-hospital" size={16} color="#666" />
@@ -497,7 +604,9 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
                 <View style={styles.detailRow}>
                   <MaterialIcons name="home" size={16} color="#666" />
                   <Text style={styles.detailLabel}>House:</Text>
-                  <Text style={styles.detailValue}>{student.school_house?.name || 'Not assigned'}</Text>
+                  <Text style={styles.detailValue}>
+                    {student.school_house?.name || "Not assigned"}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -542,7 +651,10 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
             <View style={styles.profileSection}>
               <View style={styles.profileAvatar}>
                 {userInfo.profileImage ? (
-                  <Image source={userInfo.profileImage} style={styles.profileImage} />
+                  <Image
+                    source={userInfo.profileImage}
+                    style={styles.profileImage}
+                  />
                 ) : (
                   <MaterialIcons name="person" size={40} color="#CCCCCC" />
                 )}
@@ -578,7 +690,7 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
 
             {/* Footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>School App v1.0.0</Text>
+              <Text style={styles.footerText}>School App v1.0.8</Text>
               <Text style={styles.footerSubtext}>Toyar Technologies</Text>
             </View>
           </ScrollView>

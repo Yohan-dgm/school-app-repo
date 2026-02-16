@@ -11,9 +11,11 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { feedbackCardTheme } from "../../data/studentGrowthData";
 import AnimatedStarRating from "./AnimatedStarRating";
 import EvaluationsListModal from "./EvaluationsListModal";
+import ParentCommentSection from "./ParentCommentSection";
 
 interface FeedbackItemData {
   id: number;
+  edu_fb_id?: string; // Added for parent comments
   student_id: number;
   category: {
     id: number;
@@ -296,6 +298,14 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
             </View>
           </TouchableOpacity>
         )}
+
+        {/* Parent Comments Section */}
+        {feedback.id && (
+          <ParentCommentSection
+            feedbackId={String(feedback.id)}
+            compact={true}
+          />
+        )}
       </TouchableOpacity>
 
       {/* Evaluations List Modal */}
@@ -311,19 +321,19 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
 
 const styles = StyleSheet.create({
   cardContainer: {
-    marginHorizontal: 16,
-    marginVertical: 8,
+    marginHorizontal: 12, // Reduced from 16
+    marginVertical: 6, // Reduced from 8
   },
   card: {
     backgroundColor: feedbackCardTheme.surface,
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 12, // Reduced from 16
+    padding: 14, // Reduced from 20
     shadowColor: feedbackCardTheme.shadow.medium,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 }, // Reduced from 4
     shadowOpacity: 1,
-    shadowRadius: 12,
-    elevation: 8,
-    borderLeftWidth: 4,
+    shadowRadius: 10, // Reduced from 12
+    elevation: 6, // Reduced from 8
+    borderLeftWidth: 3, // Reduced from 4
     borderLeftColor: feedbackCardTheme.primary,
   },
   inactiveCard: {
@@ -334,34 +344,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   categorySection: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    marginRight: 16,
+    marginRight: 12, // Reduced from 16
   },
   categoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34, // Reduced from 40
+    height: 34, // Reduced from 40
+    borderRadius: 17, // Reduced from 20
     backgroundColor: feedbackCardTheme.primary + "15",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: 10, // Reduced from 12
   },
   categoryInfo: {
     flex: 1,
   },
   categoryTitle: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16
     fontWeight: "700",
     color: feedbackCardTheme.black,
     marginBottom: 2,
   },
   categorySubtitle: {
-    fontSize: 13,
+    fontSize: 12, // Reduced from 13
     color: feedbackCardTheme.grayMedium,
     fontWeight: "500",
   },
@@ -378,38 +388,38 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   ratingBadgeContainer: {
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   ratingBadge: {
     alignItems: "center",
     alignSelf: "flex-start",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: 16, // Reduced from 20
+    paddingHorizontal: 10, // Reduced from 12
+    paddingVertical: 5, // Reduced from 6
   },
   ratingBadgeText: {
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12
     fontWeight: "600",
   },
   commentSection: {
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   commentLabel: {
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12
     fontWeight: "600",
     color: feedbackCardTheme.grayMedium,
-    marginBottom: 6,
+    marginBottom: 5, // Reduced from 6
   },
   commentText: {
-    fontSize: 14,
+    fontSize: 13, // Reduced from 14
     color: feedbackCardTheme.grayDark,
-    lineHeight: 20,
+    lineHeight: 18, // Reduced from 20
   },
   metaSection: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10, // Reduced from 12
   },
   creatorInfo: {
     flexDirection: "row",
@@ -417,30 +427,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   creatorText: {
-    fontSize: 13,
+    fontSize: 12, // Reduced from 13
     color: feedbackCardTheme.grayMedium,
     fontWeight: "500",
-    marginLeft: 6,
+    marginLeft: 5, // Reduced from 6
   },
   dateText: {
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12
     color: feedbackCardTheme.grayMedium,
     fontWeight: "500",
   },
   evaluationsButton: {
-    marginTop: 12,
+    marginTop: 10, // Reduced from 12
     borderTopWidth: 1,
     borderTopColor: feedbackCardTheme.grayLight,
-    paddingTop: 12,
+    paddingTop: 10, // Reduced from 12
   },
   evaluationsButtonContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: feedbackCardTheme.primary,
-    borderRadius: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    borderRadius: 20, // Reduced from 24
+    paddingVertical: 10, // Reduced from 12
+    paddingHorizontal: 16, // Reduced from 20
     shadowColor: feedbackCardTheme.shadow.small,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
@@ -448,10 +458,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   evaluationsButtonText: {
-    fontSize: 14,
+    fontSize: 13, // Reduced from 14
     fontWeight: "600",
     color: feedbackCardTheme.white,
-    marginHorizontal: 8,
+    marginHorizontal: 6, // Reduced from 8
     flex: 1,
     textAlign: "center",
   },

@@ -57,7 +57,7 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
     {
       skip: !visible || !studentId || studentId === 0,
       refetchOnMountOrArgChange: true,
-    },
+    }
   );
 
   console.log("📋 EducatorFeedbackDrawer - API Response:", apiResponse);
@@ -67,7 +67,7 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
   console.log("📋 EducatorFeedbackDrawer - Visible:", visible);
   console.log(
     "📋 EducatorFeedbackDrawer - API Query Skip:",
-    !visible || !studentId || studentId === 0,
+    !visible || !studentId || studentId === 0
   );
   console.log("📋 EducatorFeedbackDrawer - API Error:", error);
 
@@ -114,7 +114,7 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
 
   const handleNextPage = () => {
     const totalPages = Math.ceil(
-      (apiResponse?.data?.pagination?.total || 0) / pageSize,
+      (apiResponse?.data?.pagination?.total || 0) / pageSize
     );
     if (currentPage < totalPages) {
       setCurrentPage(currentPage + 1);

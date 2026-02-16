@@ -4,6 +4,7 @@ import {
   setShowPaymentOverlay,
   logout,
   clearAuth,
+  logoutWithPostsCleanup,
 } from "../slices/app-slice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_CATEGORIES } from "../../constants/userCategories";
@@ -243,8 +244,9 @@ export const authResponseLogger: Middleware = (store) => (next) => (action) => {
       timestamp: new Date().toISOString(),
     });
 
-    // Handle 400, 401, and 422 errors with automatic session cleanup
-    if (status === 400 || status === 401 || status === 422) {
+    // Handle 401 errors with automatic session cleanup
+    // NOTE: Removed 422/400 to prevent logout on validation errors
+    if (status === 401) {
       console.warn(
         `🚨 Authentication Error - Status ${status} - Clearing all app data and logging out`,
       );
@@ -281,8 +283,8 @@ export const authResponseLogger: Middleware = (store) => (next) => (action) => {
         );
       };
 
-      // Dispatch logout to clear Redux state immediately
-      store.dispatch(logout());
+      // Dispatch logout with thorough cleanup to clear Redux state and tokens
+      store.dispatch(logoutWithPostsCleanup());
 
       // Hide payment overlay since user is being logged out
       store.dispatch(setShowPaymentOverlay(false));

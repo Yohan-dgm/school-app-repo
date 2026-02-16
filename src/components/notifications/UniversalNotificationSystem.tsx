@@ -11,29 +11,45 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+// Remove useFocusEffect to avoid navigation context errors
+// import { useFocusEffect } from "@react-navigation/native";
 
 // Working Notifications API (correct endpoints)
 import {
   useGetNotificationsQuery,
   useGetNotificationStatsQuery,
   useMarkNotificationAsReadMutation,
-  useDeleteNotificationMutation,
+  // useDeleteNotificationMutation, // Commented out - not currently used
 } from "../../api/notifications";
+import { useGetAnnouncementsQuery } from "../../api/announcements-api";
+import {
+  useGetChatThreadsQuery,
+  useMarkChatAsReadMutation as useMarkChatAsReadMutationChat,
+  useCreateNewChatGroupMutation
+} from "../../api/chat-api";
+import { apiServer1 } from "../../api/api-server-1";
+import { useDispatch } from "react-redux";
+// DISABLED: Push notifications
+// import PushNotificationService from "../../services/notifications/PushNotificationService";
 
 // Import types
-import {
-  BaseNotification,
-  NotificationFilters,
-} from "../../types/notifications";
+import { BaseNotification } from "../../types/notifications";
 
 import {
   getUserCategoryDisplayName,
   getUserCategoryId,
-  USER_CATEGORIES,
 } from "../../constants/userCategories";
 import NotificationDetailsModal from "./NotificationDetailsModal";
 import CreateAnnouncementModal from "../announcements/CreateAnnouncementModal";
+import NotificationTestPanel from "../debug/NotificationTestPanel";
+import RealTimeNotificationService from "../../services/notifications/RealTimeNotificationService";
+
+// Chat Components
+import ChatListView from "./chat/ChatListView";
+import ChatView from "./chat/ChatView";
+import CreateGroupModal from "./chat/CreateGroupModal";
+import GroupInfoScreen from "./chat/GroupInfoScreen";
+import { ChatGroup } from "./chat/ChatTypes";
 
 interface UniversalNotificationSystemProps {
   userCategory: string;
@@ -47,13 +63,23 @@ export default function UniversalNotificationSystem({
   token,
 }: UniversalNotificationSystemProps) {
   const [refreshing, setRefreshing] = React.useState(false);
-  const [showDebugPanel, setShowDebugPanel] = React.useState(false);
-  const [filter, setFilter] = React.useState<"all" | "unread" | "read">("all");
+  const [showDebugPanel] = React.useState(false);
+  const [filter, setFilter] = React.useState<
+    "all" | "unread" | "read" | "school" | "class" | "student" | "chats"
+  >("all");
   const [selectedNotification, setSelectedNotification] =
     React.useState<BaseNotification | null>(null);
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [showAnnouncementModal, setShowAnnouncementModal] =
     React.useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = React.useState(false);
+  const [selectedChat, setSelectedChat] = React.useState<ChatGroup | null>(null);
+  const [currentView, setCurrentView] = React.useState<"list" | "chat" | "info">("list");
+  // DISABLED: Push notification test panel
+  // const [showTestPanel, setShowTestPanel] = React.useState(false);
+
+  // Redux dispatch for cache invalidation
+  const dispatch = useDispatch();
 
   // Enhanced logging utility
   const apiLogger = {
@@ -67,7 +93,7 @@ export default function UniversalNotificationSystem({
               userCategory,
               userId,
             }
-          : "",
+          : ""
       );
     },
     success: (message: string, data?: any) => {
@@ -78,7 +104,7 @@ export default function UniversalNotificationSystem({
               ...data,
               timestamp: new Date().toISOString(),
             }
-          : "",
+          : ""
       );
     },
     error: (message: string, data?: any) => {
@@ -89,7 +115,7 @@ export default function UniversalNotificationSystem({
               ...data,
               timestamp: new Date().toISOString(),
             }
-          : "",
+          : ""
       );
     },
     warn: (message: string, data?: any) => {
@@ -100,7 +126,7 @@ export default function UniversalNotificationSystem({
               ...data,
               timestamp: new Date().toISOString(),
             }
-          : "",
+          : ""
       );
     },
   };
@@ -123,18 +149,18 @@ export default function UniversalNotificationSystem({
   } = useGetNotificationsQuery(
     {
       page: 1,
-      limit: 20,
+      limit: 50, // Standardized: match Header component for shared cache
       filters: {
         filter: "all",
         search: "",
-        type_id: null,
-        priority: "",
+        type_id: undefined,
+        priority: undefined,
         unread_only: false,
       },
     },
     {
       skip: !userId || !token,
-    },
+    }
   );
 
   // Stats API - disabled temporarily but hook must be called to maintain hook order
@@ -155,17 +181,69 @@ export default function UniversalNotificationSystem({
     },
     {
       skip: true, // Always skip to prevent API calls until backend is ready
-    },
+    }
+  );
+
+  const {
+    data: realAnnouncementsData,
+    isLoading: announcementsLoading,
+    refetch: refetchRealAnnouncements,
+  } = useGetAnnouncementsQuery(
+    { status: "published" },
+    { skip: !userId || !token }
+  );
+
+  const {
+    data: chatThreadsData,
+    isLoading: chatThreadsLoading,
+    refetch: refetchChatThreads,
+  } = useGetChatThreadsQuery(
+    { type: "all" },
+    { 
+      skip: !userId || !token,
+      pollingInterval: 5000, // Poll every 5 seconds for new messages/groups
+    }
   );
 
   const [markAsRead] = useMarkNotificationAsReadMutation();
-  const [deleteNotification] = useDeleteNotificationMutation();
+  const [markChatAsRead] = useMarkChatAsReadMutationChat();
+  const [createChatGroup, { isLoading: isCreatingGroup }] = useCreateNewChatGroupMutation();
+
+  const handleCreateGroup = async (data: { name: string; description: string; category: string, selectionData?: any }) => {
+    try {
+      apiLogger.info("Attempting to create chat group", data);
+      
+      const payload: any = {
+        name: data.name,
+        type: "group",
+        category: data.category,
+        ...data.selectionData,
+      };
+
+      const result = await createChatGroup(payload).unwrap();
+      
+      apiLogger.success("Chat group created", result);
+      setShowCreateGroupModal(false);
+      
+      // If result contains the new group, we could potentially open it directly
+      if (result?.data?.id) {
+        setSelectedChat(result.data);
+        setCurrentView("chat");
+      } else {
+        Alert.alert("Success", `Group "${data.name}" created successfully!`);
+      }
+    } catch (err: any) {
+      apiLogger.error("Failed to create chat group", err);
+      Alert.alert("Error", err?.data?.message || "Failed to create group. Please try again.");
+    }
+  };
+  // const [deleteNotification] = useDeleteNotificationMutation(); // Commented out - not currently used
 
   // Log API responses when data changes
   React.useEffect(() => {
     if (notificationsData) {
       apiLogger.success("Notifications data received", {
-        endpoint: `/api/communication-management/notifications/list`,
+        endpoint: `api/communication-management/notifications/list`,
         method: "POST",
         responseStructure: {
           hasData: !!notificationsData.data,
@@ -176,6 +254,7 @@ export default function UniversalNotificationSystem({
       });
     }
   }, [notificationsData, userId]);
+
 
   // Stats success logging - disabled until API is working
   React.useEffect(() => {
@@ -196,7 +275,7 @@ export default function UniversalNotificationSystem({
   React.useEffect(() => {
     if (notificationsError) {
       apiLogger.error("Notifications API failed", {
-        endpoint: `/api/communication-management/notifications/list`,
+        endpoint: `api/communication-management/notifications/list`,
         error: notificationsError,
         status: (notificationsError as any)?.status,
         data: (notificationsError as any)?.data,
@@ -243,7 +322,7 @@ export default function UniversalNotificationSystem({
 
     // Make API test functions available globally for debugging
     if (__DEV__ && typeof window !== "undefined") {
-      window.testNotificationAPI = {
+      (window as any).testNotificationAPI = {
         async testInComponent() {
           console.log("🧪 Testing APIs from component context...");
 
@@ -280,43 +359,98 @@ export default function UniversalNotificationSystem({
       };
 
       console.log(
-        "🧪 Component test functions available at window.testNotificationAPI",
+        "🧪 Component test functions available at window.testNotificationAPI"
       );
     }
   }, [userCategory, userId, token, refetchNotifications, refetchStats]);
 
-  // Auto-refresh notifications on screen focus and navigation
-  useFocusEffect(
-    React.useCallback(() => {
-      apiLogger.info("Screen focused - auto-refreshing notifications");
+  // Auto-refresh notifications with standard useEffect (removed useFocusEffect dependency)
+  React.useEffect(() => {
+    // Initial refresh when component mounts
+    const initialRefresh = async () => {
+      try {
+        await refetchNotifications();
+        apiLogger.success("Auto-refresh completed");
+      } catch (error) {
+        apiLogger.error("Auto-refresh failed", { error });
+      }
+    };
 
-      // Refresh notifications when screen comes into focus
-      const refreshOnFocus = async () => {
-        try {
-          await refetchNotifications();
-          apiLogger.success("Auto-refresh on focus completed");
-        } catch (error) {
-          apiLogger.error("Auto-refresh on focus failed", { error });
-        }
-      };
+    initialRefresh();
 
-      refreshOnFocus();
+    // Set up periodic refresh every 30 seconds
+    const refreshInterval = setInterval(() => {
+      apiLogger.info("Periodic auto-refresh triggered");
+      refetchNotifications().catch((error) => {
+        apiLogger.warn("Periodic refresh failed", { error });
+      });
+    }, 30000); // Refresh every 30 seconds
 
-      // Optional: Set up interval for periodic refresh while screen is active
-      const refreshInterval = setInterval(() => {
-        apiLogger.info("Periodic auto-refresh triggered");
-        refetchNotifications().catch((error) => {
-          apiLogger.warn("Periodic refresh failed", { error });
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(refreshInterval);
+      apiLogger.info("Auto-refresh cleanup completed");
+    };
+  }, [refetchNotifications]);
+
+  // Real-time notification listeners
+  React.useEffect(() => {
+    if (!token || !userId) {
+      apiLogger.warn("Real-time setup skipped - missing auth credentials");
+      return;
+    }
+
+    apiLogger.info("Setting up real-time notification listeners");
+
+    // DISABLED: Push notification service initialization
+    // Keeping code for future re-enabling
+    /*
+    const initializePushService = async () => {
+      try {
+        console.log(
+          "🔧 [DEBUG] Starting PushNotificationService initialization..."
+        );
+        await PushNotificationService.initialize(token, userId.toString());
+
+        const status = PushNotificationService.getServiceStatus();
+        console.log(
+          "🔧 [DEBUG] PushNotificationService initialized successfully:",
+          status
+        );
+        apiLogger.info("Push notification service initialized");
+
+        // Test if service can send notifications
+        console.log("🧪 [DEBUG] Testing push notification availability...");
+        const isAvailable =
+          PushNotificationService.isLocalNotificationAvailable();
+        console.log("🧪 [DEBUG] Local notifications available:", isAvailable);
+      } catch (error) {
+        console.error(
+          "❌ [DEBUG] PushNotificationService initialization failed:",
+          error
+        );
+        apiLogger.warn("Push notification service initialization failed", {
+          error,
         });
-      }, 30000); // Refresh every 30 seconds
+      }
+    };
+    */
 
-      // Cleanup interval on screen blur
-      return () => {
-        clearInterval(refreshInterval);
-        apiLogger.info("Auto-refresh cleanup completed");
-      };
-    }, [refetchNotifications]),
-  );
+    const initializeRealTime = async () => {
+      apiLogger.info("Real-time notification listeners are handled by BackgroundNotificationService");
+    };
+
+    // Initialize services
+    // DISABLED: Push notification service
+    // initializePushService();
+    initializeRealTime();
+
+    // Cleanup on unmount
+    return () => {
+      apiLogger.info("Cleaning up real-time notification listeners");
+      RealTimeNotificationService.disconnect();
+    };
+  }, [token, userId, dispatch]);
 
   const handleRefresh = React.useCallback(async () => {
     apiLogger.info("Manual refresh triggered");
@@ -324,7 +458,11 @@ export default function UniversalNotificationSystem({
 
     try {
       // Only refetch queries that are actually running
-      await refetchNotifications();
+      await Promise.all([
+        refetchNotifications(),
+        refetchRealAnnouncements(),
+        refetchChatThreads(),
+      ]);
       // Note: Stats query is skipped, so we don't refetch it to avoid errors
       apiLogger.success("Manual refresh completed");
     } catch (error) {
@@ -332,7 +470,7 @@ export default function UniversalNotificationSystem({
     } finally {
       setRefreshing(false);
     }
-  }, [refetchNotifications]);
+  }, [refetchNotifications, refetchRealAnnouncements]);
 
   const handleMarkAsRead = async (notificationId: number) => {
     apiLogger.info("Marking notification as read", { notificationId });
@@ -357,41 +495,41 @@ export default function UniversalNotificationSystem({
     }
   };
 
-  const handleDeleteNotification = async (notificationId: number) => {
-    apiLogger.info("Deleting notification", { notificationId });
+  // const handleDeleteNotification = async (notificationId: number) => {
+  //   apiLogger.info("Deleting notification", { notificationId });
 
-    Alert.alert(
-      "Confirm Delete",
-      "Are you sure you want to delete this notification?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const result = await deleteNotification({
-                notificationId: notificationId.toString(),
-              }).unwrap();
+  //   Alert.alert(
+  //     "Confirm Delete",
+  //     "Are you sure you want to delete this notification?",
+  //     [
+  //       { text: "Cancel", style: "cancel" },
+  //       {
+  //         text: "Delete",
+  //         style: "destructive",
+  //         onPress: async () => {
+  //           try {
+  //             const result = await deleteNotification({
+  //               notificationId: notificationId.toString(),
+  //             }).unwrap();
 
-              apiLogger.success("Notification deleted", {
-                notificationId,
-                response: result,
-              });
+  //             apiLogger.success("Notification deleted", {
+  //               notificationId,
+  //               response: result,
+  //             });
 
-              Alert.alert("Success", "Notification deleted");
-            } catch (error) {
-              apiLogger.error("Failed to delete notification", {
-                notificationId,
-                error,
-              });
-              Alert.alert("Error", "Failed to delete notification");
-            }
-          },
-        },
-      ],
-    );
-  };
+  //             Alert.alert("Success", "Notification deleted");
+  //           } catch (error) {
+  //             apiLogger.error("Failed to delete notification", {
+  //               notificationId,
+  //               error,
+  //             });
+  //             Alert.alert("Error", "Failed to delete notification");
+  //           }
+  //         },
+  //       },
+  //     ]
+  //   );
+  // };
 
   const handleNotificationPress = (notification: BaseNotification) => {
     // Open details modal
@@ -410,13 +548,13 @@ export default function UniversalNotificationSystem({
     setSelectedNotification(null);
   };
 
-  const handleOpenAnnouncementModal = () => {
-    setShowAnnouncementModal(true);
-  };
+  // const handleOpenAnnouncementModal = () => {
+  //   setShowAnnouncementModal(true);
+  // };
 
-  const handleCloseAnnouncementModal = () => {
-    setShowAnnouncementModal(false);
-  };
+  // const handleCloseAnnouncementModal = () => {
+  //   setShowAnnouncementModal(false);
+  // };
 
   const renderNotification = ({ item }: { item: BaseNotification }) => {
     // Safety check to ensure we have valid item data
@@ -477,7 +615,7 @@ export default function UniversalNotificationSystem({
                 {String(
                   item.time_ago ||
                     formatTimeAgo(item.timestamp || item.created_at) ||
-                    "Unknown time",
+                    "Unknown time"
                 )}
               </Text>
             </View>
@@ -674,25 +812,25 @@ export default function UniversalNotificationSystem({
     };
   };
 
-  const getNotificationIcon = (type?: string) => {
-    // Legacy function kept for backwards compatibility
-    const typeMapping: Record<string, { icon: string; color: string }> = {
-      assignment: { icon: "assignment", color: "#3b82f6" },
-      announcement: { icon: "campaign", color: "#10b981" },
-      reminder: { icon: "schedule", color: "#f59e0b" },
-      alert: { icon: "warning", color: "#ef4444" },
-      message: { icon: "message", color: "#8b5cf6" },
-      announcements: { icon: "campaign", color: "#10b981" },
-      messages: { icon: "message", color: "#8b5cf6" },
-      alerts: { icon: "warning", color: "#ef4444" },
-      important: { icon: "priority-high", color: "#f59e0b" },
-      birthday: { icon: "cake", color: "#ec4899" },
-    };
+  // const getNotificationIcon = (type?: string) => {
+  //   // Legacy function kept for backwards compatibility
+  //   const typeMapping: Record<string, { icon: string; color: string }> = {
+  //     assignment: { icon: "assignment", color: "#3b82f6" },
+  //     announcement: { icon: "campaign", color: "#10b981" },
+  //     reminder: { icon: "schedule", color: "#f59e0b" },
+  //     alert: { icon: "warning", color: "#ef4444" },
+  //     message: { icon: "message", color: "#8b5cf6" },
+  //     announcements: { icon: "campaign", color: "#10b981" },
+  //     messages: { icon: "message", color: "#8b5cf6" },
+  //     alerts: { icon: "warning", color: "#ef4444" },
+  //     important: { icon: "priority-high", color: "#f59e0b" },
+  //     birthday: { icon: "cake", color: "#ec4899" },
+  //   };
 
-    return (
-      typeMapping[type || ""] || { icon: "notifications", color: "#3b82f6" }
-    );
-  };
+  //   return (
+  //     typeMapping[type || ""] || { icon: "notifications", color: "#3b82f6" }
+  //   );
+  // };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -711,25 +849,123 @@ export default function UniversalNotificationSystem({
   // This ensures consistent hook order on every render to prevent React hooks violations
   const allNotifications = notificationsData?.data || [];
 
-  // Filter notifications based on selected filter
+  // Filter notifications based on unified filter
   const notifications = React.useMemo(() => {
     // First ensure we have valid notifications
-    const validNotifications = allNotifications.filter(
-      (n) => n && typeof n === "object" && n.id && (n.title || n.message),
+    let validNotifications = allNotifications.filter(
+      (n) => n && typeof n === "object" && n.id && (n.title || n.message)
     );
 
+    // Apply unified filter
     switch (filter) {
+      case "all":
+        // Show all notifications
+        return validNotifications;
+
       case "unread":
+        // Show only unread notifications
         return validNotifications.filter((n) => !(n.is_read ?? n.isRead));
+
       case "read":
+        // Show only read notifications
         return validNotifications.filter((n) => n.is_read ?? n.isRead);
+
+      case "school":
+        // Show school/broadcast notifications (all read statuses)
+        return validNotifications.filter((n) => {
+          const targetType = (n.target_type || "").toLowerCase();
+          return targetType.includes("school") || targetType === "broadcast";
+        });
+
+      case "class":
+        // Show class/grade notifications (all read statuses)
+        return validNotifications.filter((n) => {
+          const targetType = (n.target_type || "").toLowerCase();
+          return targetType.includes("class") || targetType.includes("grade");
+        });
+
+      case "student":
+        // Show student/user notifications (all read statuses)
+        return validNotifications.filter((n) => {
+          const targetType = (n.target_type || "").toLowerCase();
+          return targetType.includes("user") || targetType.includes("student");
+        });
+
       default:
         return validNotifications;
     }
   }, [allNotifications, filter]);
 
+  // Map real announcements and notifications to ChatGroup format
+  const combinedChats = React.useMemo(() => {
+    // 1. Map filtered notifications
+    const mappedNotifications: ChatGroup[] = (notifications || []).map(item => ({
+      id: `notification-${item.id}`,
+      name: item.title,
+      description: item.message,
+      avatar_url: "https://ui-avatars.com/api/?name=N&background=3b82f6&color=fff",
+      unread_count: (item.is_read ?? item.isRead) ? 0 : 1,
+      type: "system",
+      created_at: item.created_at || (item as any).timestamp || new Date().toISOString(),
+      updated_at: (item as any).updated_at || item.created_at || new Date().toISOString(),
+      last_message: {
+        id: `msg-not-${item.id}`,
+        sender_name: "System",
+        type: "text",
+        content: item.message,
+        timestamp: item.timestamp || item.created_at || new Date().toISOString(),
+        created_at: item.created_at || new Date().toISOString(),
+      },
+    }));
+
+    // 2. Map real announcements
+    // Only show announcements if filter is 'all' or 'school' or 'unread' (if unread)
+    const showAnnouncements = ["all", "school"].includes(filter) || (filter === "unread");
+    const mappedAnnouncements: ChatGroup[] = showAnnouncements 
+      ? (realAnnouncementsData?.announcements || []).map(item => ({
+          id: `announcement-${item.id}`,
+          name: item.title,
+          description: item.excerpt || item.content,
+          avatar_url: item.image_url || "https://ui-avatars.com/api/?name=A&background=f59e0b&color=fff",
+          unread_count: 0,
+          type: "system",
+          created_at: item.published_at || item.created_at || new Date().toISOString(),
+          updated_at: item.updated_at || item.created_at || new Date().toISOString(),
+          last_message: {
+            id: `msg-ann-${item.id}`,
+            sender_name: "School Admin",
+            type: "text",
+            content: item.excerpt || item.content,
+            timestamp: item.published_at || item.created_at || new Date().toISOString(),
+            created_at: item.created_at || new Date().toISOString(),
+          },
+        }))
+      : [];
+
+    // 3. Real chat threads
+    // Only show if filter is 'all' or 'chats'
+    const showChats = ["all", "chats"].includes(filter);
+    const realChatThreads: ChatGroup[] = showChats
+      ? (chatThreadsData?.data?.threads || []).map(chat => ({
+          ...chat,
+          // Ensure they have root dates for sorting if missing
+          created_at: chat.created_at || (chat.last_message?.timestamp) || new Date().toISOString(),
+        }))
+      : [];
+
+    console.log("📊 UniversalNotificationSystem - Data Summary:", {
+      filter,
+      notificationsCount: mappedNotifications.length,
+      announcementsCount: mappedAnnouncements.length,
+      chatThreadsCount: realChatThreads.length,
+      totalCombined: mappedNotifications.length + mappedAnnouncements.length + realChatThreads.length,
+    });
+
+    return [...mappedAnnouncements, ...mappedNotifications, ...realChatThreads];
+  }, [notifications, realAnnouncementsData, chatThreadsData, filter]);
+
   // Show loading state (after all hooks are called)
-  if (notificationsLoading) {
+  if (notificationsLoading || announcementsLoading || chatThreadsLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -738,253 +974,150 @@ export default function UniversalNotificationSystem({
             {getUserCategoryDisplayName(
               typeof userCategory === "string"
                 ? parseInt(userCategory)
-                : userCategory,
+                : userCategory
             )}
           </Text>
         </View>
         <View style={styles.loadingContainer}>
           <MaterialIcons name="hourglass-empty" size={48} color="#6b7280" />
-          <Text style={styles.loadingText}>Loading notifications...</Text>
-          <Text style={styles.loadingSubtext}>Check terminal for API logs</Text>
+          <Text style={styles.loadingText}>Loading data for User #{userId}...</Text>
+          <Text style={styles.loadingSubtext}>
+            N: {notificationsData?.data?.length || 0} | 
+            A: {realAnnouncementsData?.announcements?.length || 0} | 
+            C: {chatThreadsData?.data?.threads?.length || 0}
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Render logic for different views
+  if (currentView === "chat" && selectedChat) {
+    return (
+      <ChatView
+        group={selectedChat}
+        onBack={() => {
+          setCurrentView("list");
+          setSelectedChat(null);
+        }}
+        onInfoPress={() => setCurrentView("info")}
+      />
+    );
+  }
+
+  if (currentView === "info" && selectedChat) {
+    return (
+      <GroupInfoScreen
+        chat={selectedChat}
+        onBack={() => setCurrentView("chat")}
+        onUpdateGroup={(updatedChat) => {
+          setSelectedChat(updatedChat);
+          // In a real app, update the global state or refetch
+        }}
+        onDeleteGroup={(id) => {
+          setCurrentView("list");
+          setSelectedChat(null);
+          Alert.alert("Deleted", "Group has been deleted.");
+        }}
+        currentUserId={userId}
+      />
+    );
+  }
+
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.headerTitle}>Notifications</Text>
-            {/* <Text style={styles.userCategory}>
-              {getUserCategoryDisplayName(
-                typeof userCategory === "string"
-                  ? parseInt(userCategory)
-                  : userCategory
-              )}
-            </Text> */}
-          </View>
-          <View style={styles.notificationBadge}>
-            <Text style={styles.badgeText}>
-              {allNotifications.filter((n) => !(n.is_read ?? n.isRead)).length}
-            </Text>
-          </View>
+    <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: 'white' }}>
+      <ChatListView
+        chats={combinedChats}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onChatPress={(chat) => {
+          if (chat.type === 'system') {
+            const chatIdStr = chat.id.toString();
+            // Find corresponding announcement if it's an announcement
+            const announcementMatch = chatIdStr.match(/^announcement-(\d+)$/);
+            if (announcementMatch) {
+              const realId = parseInt(announcementMatch[1]);
+              const original = (realAnnouncementsData?.announcements || []).find(a => a.id === realId);
+              
+              if (original) {
+                const mappedNotification: any = {
+                  id: original.id,
+                  title: original.title,
+                  message: original.content,
+                  timestamp: original.published_at || original.created_at,
+                  isRead: true,
+                  priority: original.priority_level === 3 ? 'urgent' : (original.priority_level === 2 ? 'high' : 'normal'),
+                  type: 'announcement',
+                  image_url: original.image_url
+                };
+                setSelectedNotification(mappedNotification);
+                setShowDetailsModal(true);
+                return;
+              }
+            }
 
-          <View style={styles.headerRight}>
-            {/* Announcement Create Button - for authorized users only */}
-            {canCreateAnnouncements(userCategoryNumber) && (
-              <TouchableOpacity
-                style={styles.createAnnouncementButton}
-                onPress={() => setShowAnnouncementModal(true)}
-              >
-                <MaterialIcons name="campaign" size={18} color="#ffffff" />
-                <Text style={styles.createButtonText}>Announcement</Text>
-              </TouchableOpacity>
-            )}
+            // Find corresponding notification if it's a notification
+            const notificationMatch = chatIdStr.match(/^notification-(\d+)$/);
+            if (notificationMatch) {
+              const realId = parseInt(notificationMatch[1]);
+              const original = (notificationsData?.data || []).find(n => n.id === realId);
+              
+              if (original) {
+                handleNotificationPress(original);
+                return;
+              }
+            }
 
-            {/* Developer tools button hidden per user request */}
-            {/* <TouchableOpacity 
-              style={styles.debugToggle}
-              onPress={() => setShowDebugPanel(!showDebugPanel)}
-            >
-              <MaterialIcons 
-                name={showDebugPanel ? "bug-report" : "settings"} 
-                size={20} 
-                color="#6b7280" 
-              />
-            </TouchableOpacity> */}
-          </View>
-        </View>
-      </View>
-      {/* <SafeAreaView style={styles.container}> */}
-      <View style={styles.header}>
-        {/* Filter Tabs */}
-        <View style={styles.filterContainer}>
-          {["all", "unread", "read"].map((filterType) => (
-            <TouchableOpacity
-              key={filterType}
-              style={[
-                styles.filterTab,
-                filter === filterType && styles.activeFilterTab,
-              ]}
-              onPress={() => setFilter(filterType as any)}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  filter === filterType && styles.activeFilterText,
-                ]}
-              >
-                {filterType.charAt(0).toUpperCase() + filterType.slice(1)}
-                {filterType === "unread" && (
-                  <Text style={styles.filterCount}>
-                    {" "}
-                    (
-                    {
-                      allNotifications.filter((n) => !(n.is_read ?? n.isRead))
-                        .length
-                    }
-                    )
-                  </Text>
-                )}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+            // Fallback for other system messages
+            const mockNotification: any = {
+              id: chat.id,
+              title: chat.name,
+              message: chat.last_message?.content || "No content",
+              timestamp: chat.last_message?.timestamp || new Date().toISOString(),
+              isRead: true,
+              priority: 'normal',
+              type: 'announcement'
+            };
+            setSelectedNotification(mockNotification);
+            setShowDetailsModal(true);
+          } else {
+            setSelectedChat(chat);
+            setCurrentView("chat");
+          }
+        }}
+        onCreateGroup={() => setShowCreateGroupModal(true)}
+        onCreateAnnouncement={() => setShowAnnouncementModal(true)}
+      />
+      
+      {/* Group Creation Flow */}
+      <CreateGroupModal
+        visible={showCreateGroupModal}
+        onClose={() => setShowCreateGroupModal(false)}
+        onSuccess={handleCreateGroup}
+      />
 
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        {/* Collapsible Debug Panel */}
-        {showDebugPanel && (
-          <View style={styles.debugPanel}>
-            <View style={styles.debugHeader}>
-              <MaterialIcons name="bug-report" size={18} color="#6b7280" />
-              <Text style={styles.debugTitle}>Developer Tools</Text>
-            </View>
-
-            <View style={styles.debugContent}>
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={() => {
-                  const error = notificationsError as any;
-                  Alert.alert(
-                    "API Status",
-                    notificationsError
-                      ? `❌ Error: ${error?.status || "Unknown"}\n${error?.data?.message || error?.message || "API failed"}`
-                      : "✅ Notifications API working correctly",
-                  );
-                }}
-              >
-                <MaterialIcons
-                  name={notificationsError ? "error" : "check-circle"}
-                  size={16}
-                  color={notificationsError ? "#ef4444" : "#10b981"}
-                />
-                <Text style={styles.debugButtonText}>
-                  API Status: {notificationsError ? "Error" : "OK"}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={handleRefresh}
-              >
-                <MaterialIcons name="refresh" size={16} color="#3b82f6" />
-                <Text style={styles.debugButtonText}>
-                  Refresh Notifications
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={() => {
-                  Alert.alert(
-                    "Stats API Status",
-                    "Stats API is temporarily disabled to prevent 500 errors.\n\nWill be re-enabled when backend is ready.",
-                  );
-                }}
-              >
-                <MaterialIcons name="analytics" size={16} color="#f59e0b" />
-                <Text style={styles.debugButtonText}>Stats API: Disabled</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={() => {
-                  Alert.alert(
-                    "Console Commands",
-                    "Open browser console and run:\n\n" +
-                      "• testNotificationAPI.testAll()\n" +
-                      "• testNotificationAPI.interactive()\n" +
-                      "• window.testNotificationAPI.testInComponent()",
-                    [{ text: "Got it" }],
-                  );
-                }}
-              >
-                <MaterialIcons name="terminal" size={16} color="#8b5cf6" />
-                <Text style={styles.debugButtonText}>Console Tests</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Notifications List */}
-        {notifications.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconContainer}>
-              <MaterialIcons
-                name={
-                  filter === "unread" ? "mark-email-read" : "notifications-none"
-                }
-                size={56}
-                color="#d1d5db"
-              />
-            </View>
-            <Text style={styles.emptyText}>
-              {filter === "unread"
-                ? "All caught up!"
-                : filter === "read"
-                  ? "No read notifications"
-                  : "No notifications yet"}
-            </Text>
-            <Text style={styles.emptySubtext}>
-              {filter === "unread"
-                ? "You've read all your notifications"
-                : filter === "read"
-                  ? "Read notifications will appear here"
-                  : "New notifications will appear here"}
-            </Text>
-            {allNotifications.length > 0 && filter !== "all" && (
-              <TouchableOpacity
-                style={styles.showAllButton}
-                onPress={() => setFilter("all")}
-              >
-                <Text style={styles.showAllText}>Show All Notifications</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <View style={styles.notificationsList}>
-            <FlatList
-              data={notifications}
-              renderItem={renderNotification}
-              keyExtractor={(item) => item.id.toString()}
-              scrollEnabled={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              showsVerticalScrollIndicator={false}
-            />
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Notification Details Modal */}
+      {/* Notification Details Modal for read-only viewing */}
       <NotificationDetailsModal
         visible={showDetailsModal}
         notification={selectedNotification}
-        onClose={handleCloseModal}
-        onMarkAsRead={handleMarkAsRead}
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedNotification(null);
+        }}
+        onMarkAsRead={(id) => console.log("Marking as read:", id)}
       />
 
-      {/* Create Announcement Modal */}
+      {/* Create Announcement Modal kept for admin utility */}
       <CreateAnnouncementModal
         visible={showAnnouncementModal}
         onClose={() => setShowAnnouncementModal(false)}
         onSuccess={() => {
           setShowAnnouncementModal(false);
-          // Optionally refresh notifications to show the new announcement if it creates notifications
           refetchNotifications();
         }}
       />
-      {/* </SafeAreaView> */}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -995,28 +1128,28 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "white",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 4,
+    paddingBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
   },
-  headerTop: {
+  headerTitleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  headerLeft: {
-    flex: 1,
+    alignItems: "center",
+    marginBottom: 12,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "700",
     color: "#111827",
+    flex: 1,
   },
   userCategory: {
     fontSize: 14,
@@ -1024,10 +1157,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: "500",
   },
-  headerRight: {
+  headerActionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    justifyContent: "flex-end",
+    gap: 8,
+    marginBottom: 12,
   },
   // createAnnouncementButton: {
   //   flexDirection: "row",
@@ -1050,19 +1185,21 @@ const styles = StyleSheet.create({
   },
   notificationBadge: {
     backgroundColor: "#ef4444",
-    borderRadius: 12,
-    minWidth: 24,
-    height: 24,
+    borderRadius: 14,
+    minWidth: 28,
+    height: 28,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 6,
-    position: "relative",
-    right: 15,
-    top: 5,
+    paddingHorizontal: 8,
+    shadowColor: "#ef4444",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   badgeText: {
     color: "white",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "700",
   },
   debugToggle: {
@@ -1074,13 +1211,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#7c2d3e",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
     gap: 6,
     shadowColor: "#7c2d3e",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -1089,21 +1226,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  filterContainer: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  filterTab: {
+  filterScrollContent: {
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+  },
+  filterTab: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
     backgroundColor: "#f3f4f6",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   activeFilterTab: {
     backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
   },
   filterText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: "#6b7280",
   },
@@ -1111,8 +1255,9 @@ const styles = StyleSheet.create({
     color: "white",
   },
   filterCount: {
-    fontSize: 12,
-    opacity: 0.8,
+    fontSize: 11,
+    opacity: 0.9,
+    fontWeight: "500",
   },
   content: {
     flex: 1,
@@ -1243,16 +1388,16 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   unreadCard: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#0000ff0d",
     borderColor: "#3b82f6",
-    borderLeftWidth: 4,
-    shadowOpacity: 0.12,
-    elevation: 3,
+    borderLeftWidth: 1,
+    shadowOpacity: 0,
+    elevation: 0,
     opacity: 1.0,
     shadowRadius: 6,
   },
   unreadIndicator: {
-    width: 6,
+    width: 0,
     backgroundColor: "#3b82f6",
     borderTopRightRadius: 3,
     borderBottomRightRadius: 3,
@@ -1385,5 +1530,33 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 6,
     backgroundColor: "#fef2f2",
+  },
+  testButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#8b5cf6",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    gap: 6,
+    shadowColor: "#8b5cf6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  testButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  testPanelOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    zIndex: 1000,
   },
 });

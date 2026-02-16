@@ -505,7 +505,7 @@ const DrawerContent = (props) => {
         onPress={handleLogout}
       />
       <View style={styles.footer}>
-        <Text style={styles.appVersion}>App Version: 1.0.0</Text>
+        <Text style={styles.appVersion}>App Version: 1.0.7</Text>
       </View>
     </DrawerContentScrollView>
   );
@@ -1049,22 +1049,18 @@ export default function App() {
 ### **Implementation Steps**
 
 1. **Setup Folder Structure**:
-
    - Create the folder structure as outlined.
    - Place all provided code files in their respective locations.
 
 2. **Add Assets**:
-
    - Add `nexis-logo.png` and `sample-profile.png` to `src/assets/images/`.
    - Ensure the logo is 164x48px or scales correctly with `resizeMode="contain"`.
 
 3. **Install Dependencies**:
-
    - Run `npx expo install` with the listed dependencies.
    - Verify Inter font and vector icons are installed.
 
 4. **Configure API**:
-
    - Update `API_BASE_URL` in `src/api/userApi.js`.
    - Ensure the API returns `logo_url` (optional) and matches `sampleUserData` structure.
 
@@ -1089,18 +1085,15 @@ navigation.navigate("Authenticated");
 ```
 
 6. **Test Navigation**:
-
    - Run `npx expo start` and log in as a parent (user_type=3).
-   - Verify the burger menu opens the drawer with Profile, Privacy and Policy, Terms and Conditions, Settings, Logout, and App Version (1.0.0).
+   - Verify the burger menu opens the drawer with Profile, Privacy and Policy, Terms and Conditions, Settings, Logout, and App Version (1.0.7).
    - Test the bottom navbar (Home, School Life, Performance, Feedback, Academic) with #920734 active tint.
 
 7. **Test Dynamic Logo**:
-
    - Ensure the header displays `nexis-logo.png` with correct sizing (164x48px).
    - Test with a dynamic `logo_url` from the API if available.
 
 8. **Test Fallback Data**:
-
    - Simulate API failure to confirm `sampleUserData` renders groups and events.
 
 9. **Optimize**:
@@ -1112,7 +1105,7 @@ navigation.navigate("Authenticated");
 ### **Design Integration**
 
 - **Dynamic Logo**: The `Header.js` component uses `user.logo_url` from `AuthContext` or falls back to `nexis-logo.png`, styled as requested (`w-[164px] h-[48px]`, `resizeMode="contain"`).
-- **Drawer Menu**: Opens from the left with a burger icon, showing profile (with sample photo), Privacy and Policy, Terms and Conditions, Settings, Logout, and App Version (1.0.0).
+- **Drawer Menu**: Opens from the left with a burger icon, showing profile (with sample photo), Privacy and Policy, Terms and Conditions, Settings, Logout, and App Version (1.0.7).
 - **Bottom Navbar**: Matches the public navbar with 5 icons, pill-shaped design, and #920734 active state.
 - **Branding**: Uses #920734, Inter font, and neumorphic cards for consistency with the TeamReach-inspired design.
 - **User Types**: Redirects to `ParentHomeScreen`, `EmployeeHomeScreen`, or `StudentHomeScreen` based on `user_type` (1, 2, 3).

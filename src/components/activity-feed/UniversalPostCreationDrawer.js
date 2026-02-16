@@ -54,7 +54,7 @@ const UniversalPostCreationDrawer = ({
       icon: "person",
       color: "#FF9500",
       gradient: ["#FF9500", "#CC7700"],
-      available: false, // Disabled for now
+      available: true, // Enabled with grade/class/student selection
     },
   ];
 

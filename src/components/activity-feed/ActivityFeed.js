@@ -23,6 +23,7 @@ import FilterBar from "./FilterBar";
 // Import drawer components
 import SchoolPostDrawer from "./SchoolPostDrawer";
 import ClassPostDrawer from "./ClassPostDrawer";
+import EnhancedStudentPostDrawer from "./EnhancedStudentPostDrawer";
 import UniversalPostCreationDrawer from "./UniversalPostCreationDrawer";
 
 const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
@@ -40,6 +41,7 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
   const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
   const [showSchoolDrawer, setShowSchoolDrawer] = useState(false);
   const [showClassDrawer, setShowClassDrawer] = useState(false);
+  const [showStudentDrawer, setShowStudentDrawer] = useState(false);
 
   // Get posts data from Redux for dynamic filtering
   const { posts: schoolPosts, allPosts: schoolAllPosts } = useSelector(
@@ -122,6 +124,9 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
       case "class":
         setShowClassDrawer(true);
         break;
+      case "student":
+        setShowStudentDrawer(true);
+        break;
       default:
         Alert.alert("Error", "Unable to create post for this section");
     }
@@ -198,6 +203,12 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
       <ClassPostDrawer
         visible={showClassDrawer}
         onClose={() => setShowClassDrawer(false)}
+        onPostCreated={handlePostCreated}
+      />
+
+      <EnhancedStudentPostDrawer
+        visible={showStudentDrawer}
+        onClose={() => setShowStudentDrawer(false)}
         onPostCreated={handlePostCreated}
       />
     </View>

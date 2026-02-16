@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useSelector } from "react-redux";
 import { theme } from "../../styles/theme";
 import { USER_CATEGORIES } from "../../constants/userCategories";
 
@@ -172,6 +173,20 @@ const FilterBar = ({
   onAddPost,
   userCategory,
 }) => {
+  // Get user data from Redux store
+  const user = useSelector((state) => state.app.user);
+  const sessionData = useSelector((state) => state.app.sessionData);
+
+  // Get user's full name from either user or sessionData
+  const userFullName = user?.full_name || sessionData?.data?.full_name || "";
+
+  // Helper function to check if user's full name starts with "Grade" or "EY"
+  const isGradeOrEYUser = (fullName) => {
+    if (!fullName) return false;
+    const trimmedName = fullName.trim();
+    return trimmedName.startsWith("Grade") || trimmedName.startsWith("EY");
+  };
+
   // Simplified date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerMode, setDatePickerMode] = useState(null); // 'from' or 'to'
@@ -613,8 +628,8 @@ const FilterBar = ({
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Plus Button for Creating Posts - Hidden for Parent users */}
-        {userCategory !== USER_CATEGORIES.PARENT && (
+        {/* Plus Button for Creating Posts - Show for non-Parents OR Grade/EY users */}
+        {(userCategory !== USER_CATEGORIES.PARENT || isGradeOrEYUser(userFullName)) && (
           <TouchableOpacity
             style={styles.addPostButton}
             onPress={onAddPost}

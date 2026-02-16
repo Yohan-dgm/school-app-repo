@@ -17,6 +17,7 @@ import {
   setCurrentUserId as setStudentPostsUserId,
   clearData as clearStudentPostsData,
 } from "../slices/school-life/student-posts-slice";
+import PushNotificationService from "../../services/notifications/PushNotificationService";
 
 /**
  * Middleware to handle user-specific post state management
@@ -49,12 +50,17 @@ export const userPostsMiddleware: Middleware =
 
     // Handle logout with posts cleanup
     if (logoutWithPostsCleanup.match(action)) {
-      // First clear all post slices data
+      // 1. Clear push token from backend
+      PushNotificationService.removeTokenFromBackend().catch((err) => {
+        console.warn("⚠️ Push Notification Service - Failed to remove token from backend during logout:", err);
+      });
+
+      // 2. Clear all post slices data
       store.dispatch(clearSchoolPostsData());
       store.dispatch(clearClassPostsData());
       store.dispatch(clearStudentPostsData());
 
-      // Then perform the logout
+      // 3. Perform the logout
       store.dispatch(logout());
 
       return next(action);

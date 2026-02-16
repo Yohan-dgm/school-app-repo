@@ -12,11 +12,20 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSelector } from "react-redux";
 import NotificationList from "./NotificationList";
 import NotificationBadge from "./NotificationBadge";
-import NotificationManager, {
-  UnifiedNotification,
-} from "../../services/notifications/NotificationManager";
+import { useGetNotificationsQuery } from "../../api/notifications";
+
+// Define interfaces locally to match API data
+interface UnifiedNotification {
+  id: number; // API returns number, not string
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  [key: string]: any;
+}
 
 interface NotificationCenterProps {
   visible: boolean;
@@ -31,33 +40,49 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [slideAnim] = useState(
-    new Animated.Value(Dimensions.get("window").height),
+    new Animated.Value(Dimensions.get("window").height)
   );
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  const loadUnreadCount = useCallback(async () => {
-    try {
-      const manager = NotificationManager.getInstance();
-      const notifications = await manager.getAllNotifications();
-      const unread = notifications.filter((n) => !n.read).length;
-      setUnreadCount(unread);
-    } catch (error) {
-      console.error("Error loading unread count:", error);
-    }
-  }, []);
+  // Get auth data from Redux store following UniversalNotificationSystem pattern
+  const sessionData = useSelector((state: any) => state.app);
+  const userToken = sessionData?.token || sessionData?.data?.token;
+  const userId = sessionData?.data?.id || sessionData?.id;
+
+  // API integration following UniversalNotificationSystem pattern
+  const { data: notificationsData, refetch: refetchNotifications } =
+    useGetNotificationsQuery(
+      {
+        page: 1,
+        limit: 50,
+        filters: {
+          filter: "all",
+          search: "",
+          type_id: undefined, // Standardized: match other components for shared cache
+          priority: undefined, // Standardized: match other components for shared cache
+          unread_only: false,
+        },
+      },
+      {
+        skip: !userId || !userToken,
+      }
+    );
+
+  // Simple unread count calculation following UniversalNotificationSystem pattern
+  const allNotifications = notificationsData?.data || [];
+  const unreadCount = allNotifications.filter(
+    (notification) => !notification.is_read
+  ).length;
+
+  // Real-time updates are now handled by UniversalNotificationSystem via cache invalidation
+  // No need for component-specific real-time setup
 
   const handleNotificationPress = useCallback(
     (notification: UnifiedNotification) => {
       onNotificationPress?.(notification);
       onClose();
     },
-    [onNotificationPress, onClose],
+    [onNotificationPress, onClose]
   );
-
-  // Load unread count on mount and when visible changes
-  useEffect(() => {
-    loadUnreadCount();
-  }, [loadUnreadCount, visible]);
 
   // Animation effects
   useEffect(() => {
@@ -163,26 +188,38 @@ export const NotificationIcon: React.FC<NotificationIconProps> = ({
   showBadge = true,
   style,
 }) => {
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Get auth data from Redux store following UniversalNotificationSystem pattern
+  const sessionData = useSelector((state: any) => state.app);
+  const userToken = sessionData?.token || sessionData?.data?.token;
+  const userId = sessionData?.data?.id || sessionData?.id;
 
-  const loadUnreadCount = useCallback(async () => {
-    try {
-      const manager = NotificationManager.getInstance();
-      const notifications = await manager.getAllNotifications();
-      const unread = notifications.filter((n) => !n.read).length;
-      setUnreadCount(unread);
-    } catch (error) {
-      console.error("Error loading unread count:", error);
-    }
-  }, []);
+  // API integration following UniversalNotificationSystem pattern
+  const { data: notificationsData, refetch: refetchNotifications } =
+    useGetNotificationsQuery(
+      {
+        page: 1,
+        limit: 50, // Standardized: match other components for shared cache
+        filters: {
+          filter: "all",
+          search: "",
+          type_id: undefined, // Standardized: match other components for shared cache
+          priority: undefined, // Standardized: match other components for shared cache
+          unread_only: false,
+        },
+      },
+      {
+        skip: !userId || !userToken,
+      }
+    );
 
-  useEffect(() => {
-    loadUnreadCount();
+  // Simple unread count calculation following UniversalNotificationSystem pattern
+  const allNotifications = notificationsData?.data || [];
+  const unreadCount = allNotifications.filter(
+    (notification) => !notification.is_read
+  ).length;
 
-    // Refresh count every 30 seconds
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
-  }, [loadUnreadCount]);
+  // Real-time updates are now handled by UniversalNotificationSystem via cache invalidation
+  // No need for component-specific real-time setup
 
   return (
     <TouchableOpacity

@@ -45,10 +45,27 @@ export const gradeLevelApi = apiServer1.injectEndpoints({
       }),
       providesTags: ["GradeLevels"],
     }),
+
+    getGradeLevelList: build.query<
+      {
+        status: string;
+        data: {
+          data: { id: number; name: string }[];
+        };
+      },
+      GetGradeLevelsRequest
+    >({
+      query: (params) => ({
+        url: "api/program-management/grade-level/get-grade-level-list-data",
+        method: "POST",
+        body: params,
+      }),
+    }),
   }),
 });
 
 export const {
   useGetGradeLevelsWithClassesQuery,
   useLazyGetGradeLevelsWithClassesQuery,
+  useGetGradeLevelListQuery,
 } = gradeLevelApi;

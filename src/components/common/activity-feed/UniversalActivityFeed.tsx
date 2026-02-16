@@ -22,6 +22,7 @@ import PremiumTabNavigation from "../PremiumTabNavigation";
 // Import drawer components
 import SchoolPostDrawer from "../../activity-feed/SchoolPostDrawer";
 import ClassPostDrawer from "../../activity-feed/ClassPostDrawer";
+import EnhancedStudentPostDrawer from "../../activity-feed/EnhancedStudentPostDrawer";
 import UniversalPostCreationDrawer from "../../activity-feed/UniversalPostCreationDrawer";
 
 interface UniversalActivityFeedProps {
@@ -44,6 +45,7 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
   const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
   const [showSchoolDrawer, setShowSchoolDrawer] = useState(false);
   const [showClassDrawer, setShowClassDrawer] = useState(false);
+  const [showStudentDrawer, setShowStudentDrawer] = useState(false);
 
   // Get posts data from Redux for dynamic filtering
   const { posts: schoolPosts, allPosts: schoolAllPosts } = useSelector(
@@ -249,6 +251,9 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
       case "class":
         setShowClassDrawer(true);
         break;
+      case "student":
+        setShowStudentDrawer(true);
+        break;
       default:
         Alert.alert("Error", "Unable to create post for this section");
     }
@@ -333,6 +338,12 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
       <ClassPostDrawer
         visible={showClassDrawer}
         onClose={() => setShowClassDrawer(false)}
+        onPostCreated={handlePostCreated}
+      />
+
+      <EnhancedStudentPostDrawer
+        visible={showStudentDrawer}
+        onClose={() => setShowStudentDrawer(false)}
         onPostCreated={handlePostCreated}
       />
     </View>

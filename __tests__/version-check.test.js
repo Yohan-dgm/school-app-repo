@@ -23,8 +23,8 @@ const mockApiResponse = {
     user_id: 61,
     username: "parent",
     email: "unassigned@nexiscollege.lk",
-    iso_app_version: "1.0.1",
-    android_app_version: "1.0.1",
+    iso_app_version: "1.0.8",
+    android_app_version: "1.0.8",
     is_active: true,
     user_category: "1",
   },
@@ -49,7 +49,7 @@ console.log("Android version match:", androidMatch);
 const androidMismatch = mockVersionCheck(
   "1.0.0",
   mockApiResponse.data,
-  "android",
+  "android"
 );
 console.log("Android version mismatch:", androidMismatch);
 

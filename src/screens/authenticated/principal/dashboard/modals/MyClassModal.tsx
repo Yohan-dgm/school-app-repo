@@ -36,18 +36,21 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
         page: 1,
         page_size: 100,
       },
-      { skip: !selectedClassId }
+      { skip: !selectedClassId },
     );
 
     // Filter students based on search
     const filteredStudents = React.useMemo(() => {
       if (!studentsData?.data?.data) return [];
-      
+
       if (!searchQuery.trim()) return studentsData.data.data;
-      
-      return studentsData.data.data.filter((student: StudentDetails) =>
-        student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.admission_number.toLowerCase().includes(searchQuery.toLowerCase())
+
+      return studentsData.data.data.filter(
+        (student: StudentDetails) =>
+          student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          student.admission_number
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()),
       );
     }, [studentsData, searchQuery]);
 
@@ -58,9 +61,12 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
             <MaterialIcons name="person" size={20} color="#920734" />
             <Text style={styles.studentName}>{item.full_name}</Text>
           </View>
-          <Text style={styles.admissionNumber}>ID: {item.admission_number}</Text>
+          <Text style={styles.admissionNumber}>
+            ID: {item.admission_number}
+          </Text>
           <Text style={styles.studentDetails}>
-            Gender: {item.gender} • DOB: {new Date(item.date_of_birth).toLocaleDateString()}
+            Gender: {item.gender} • DOB:{" "}
+            {new Date(item.date_of_birth).toLocaleDateString()}
           </Text>
         </View>
         <MaterialIcons name="chevron-right" size={24} color="#666" />
@@ -115,7 +121,12 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
             <>
               {/* Search Bar */}
               <View style={styles.searchContainer}>
-                <MaterialIcons name="search" size={20} color="#666" style={styles.searchIcon} />
+                <MaterialIcons
+                  name="search"
+                  size={20}
+                  color="#666"
+                  style={styles.searchIcon}
+                />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search students..."
@@ -124,7 +135,10 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
                   placeholderTextColor="#999"
                 />
                 {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearButton}>
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery("")}
+                    style={styles.clearButton}
+                  >
                     <MaterialIcons name="clear" size={20} color="#666" />
                   </TouchableOpacity>
                 )}
@@ -135,16 +149,21 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
                 <View style={styles.emptyContainer}>
                   <MaterialIcons name="school" size={48} color="#999" />
                   <Text style={styles.emptyText}>
-                    {searchQuery ? "No students found" : "No students in this class"}
+                    {searchQuery
+                      ? "No students found"
+                      : "No students in this class"}
                   </Text>
                   <Text style={styles.emptySubtext}>
-                    {searchQuery ? "Try a different search term" : "Students will appear here when enrolled"}
+                    {searchQuery
+                      ? "Try a different search term"
+                      : "Students will appear here when enrolled"}
                   </Text>
                 </View>
               ) : (
                 <>
                   <Text style={styles.resultsCount}>
-                    {filteredStudents.length} student{filteredStudents.length !== 1 ? "s" : ""} found
+                    {filteredStudents.length} student
+                    {filteredStudents.length !== 1 ? "s" : ""} found
                   </Text>
                   <FlatList
                     data={filteredStudents}
@@ -160,7 +179,7 @@ const MyClassModal = forwardRef<Modalize, MyClassModalProps>(
         </View>
       </Modalize>
     );
-  }
+  },
 );
 
 const styles = StyleSheet.create({

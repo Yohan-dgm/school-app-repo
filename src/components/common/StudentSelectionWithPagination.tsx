@@ -47,6 +47,7 @@ interface StudentSelectionWithPaginationProps {
   gradeId: number | null; // Required - filter students by grade level
   onStudentSelect: (student: Student | null) => void;
   selectedStudent: Student | null;
+  selectedStudents?: Student[]; // Optional - for multi-select mode
   pageSize?: number;
   enableInfiniteScroll?: boolean;
   searchPhrase?: string;
@@ -55,6 +56,9 @@ interface StudentSelectionWithPaginationProps {
   enableSearch?: boolean;
   searchPlaceholder?: string;
   showSearchResults?: boolean;
+  onSelectAll?: (students: Student[]) => void; // Callback with all available students
+  onDeselectAll?: () => void; // Callback to clear selection
+  showSelectAllButton?: boolean; // Whether to show the Select All button
 }
 
 const StudentSelectionWithPagination: React.FC<
@@ -63,6 +67,7 @@ const StudentSelectionWithPagination: React.FC<
   gradeId,
   onStudentSelect,
   selectedStudent,
+  selectedStudents = [],
   pageSize = 10,
   enableInfiniteScroll = true,
   searchPhrase = "",
@@ -71,6 +76,9 @@ const StudentSelectionWithPagination: React.FC<
   enableSearch = true,
   searchPlaceholder = "Search students...",
   showSearchResults = true,
+  onSelectAll,
+  onDeselectAll,
+  showSelectAllButton = false,
 }) => {
   // Redux state for authentication status
   const { token, isAuthenticated, user } = useSelector(
@@ -663,7 +671,10 @@ const StudentSelectionWithPagination: React.FC<
   // Render student card
   const renderStudentCard = useCallback(
     (student: Student, index: number) => {
-      const isSelected = selectedStudent?.id === student.id;
+      // Check if selected in multi-select mode or single-select mode
+      const isSelected = selectedStudents.length > 0
+        ? selectedStudents.some(s => s.id === student.id)
+        : selectedStudent?.id === student.id;
       const profileImageSource = getStudentProfileImageSource(student);
 
       return (
@@ -736,6 +747,7 @@ const StudentSelectionWithPagination: React.FC<
     },
     [
       selectedStudent,
+      selectedStudents,
       getStudentProfileImageSource,
       handleStudentPress,
       disabled,
@@ -1014,6 +1026,37 @@ const StudentSelectionWithPagination: React.FC<
               />
             )}
           </View>
+        </View>
+      )}
+
+      {/* Select All / Deselect All Button */}
+      {showSelectAllButton && allLoadedStudents.length > 0 && (
+        <View style={styles.selectAllContainer}>
+          <TouchableOpacity
+            style={styles.selectAllButton}
+            onPress={() => {
+              if (selectedStudents.length === allLoadedStudents.length) {
+                // All are selected, deselect all
+                onDeselectAll?.();
+              } else {
+                // Not all selected, select all
+                onSelectAll?.(allLoadedStudents);
+              }
+            }}
+            disabled={disabled}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons
+              name={selectedStudents.length === allLoadedStudents.length ? "check-box" : "check-box-outline-blank"}
+              size={20}
+              color={disabled ? "#CCCCCC" : "#920734"}
+            />
+            <Text style={[styles.selectAllText, disabled && styles.selectAllTextDisabled]}>
+              {selectedStudents.length === allLoadedStudents.length
+                ? `Deselect All (${allLoadedStudents.length})`
+                : `Select All (${allLoadedStudents.length})`}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1360,6 +1403,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
+  },
+  selectAllContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  selectAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#FFF5F7",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#920734",
+    gap: 8,
+  },
+  selectAllText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#920734",
+  },
+  selectAllTextDisabled: {
+    color: "#CCCCCC",
   },
 });
 

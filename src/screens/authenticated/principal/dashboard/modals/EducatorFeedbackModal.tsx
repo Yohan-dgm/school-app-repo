@@ -27,6 +27,8 @@ import Animated, {
   SlideOutUp,
   SlideInUp,
   SlideOutDown,
+  FadeIn,
+  FadeOut,
 } from "react-native-reanimated";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
@@ -34,7 +36,9 @@ import FullScreenModal from "../components/FullScreenModal";
 
 // API imports (students and feedback submission)
 import {
-  useGetCategoryListQuery,
+  useGetCategoryEyListQuery,
+  useGetCategoryPrListQuery,
+  useGetCategoryScListQuery,
   useGetFeedbackCategoriesWithQuestionsQuery,
   useGetEducatorFeedbacksQuery,
   useSubmitEducatorFeedbackMutation,
@@ -51,6 +55,7 @@ import {
   GRADE_LEVELS,
   GradeLevel,
   getGradeNameById,
+  getCategoryApiForGrade,
 } from "../../../../../constants/gradeLevels";
 import {
   INTELLIGENCE_TYPES,
@@ -936,107 +941,6 @@ const EvaluationSection: React.FC<{
           )}
         </ScrollView>
       </View>
-
-      {/* Evaluation Timeline */}
-      <ScrollView
-        style={styles.evaluationTimeline}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
-      >
-        <Text style={styles.timelineTitle}>Evaluation Timeline</Text>
-
-        {evaluations.length > 0 ? (
-          evaluations.map((evaluation: any, index: number) => {
-            const colors = getEvaluationStatusColor(
-              evaluation.edu_fd_evaluation_type_id
-            );
-            const isLast = index === evaluations.length - 1;
-
-            return (
-              <View key={evaluation.id || index} style={styles.timelineItem}>
-                {/* Status Badge with Parent Visibility */}
-                <View style={styles.statusBadgeContainer}>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor: colors.background,
-                        borderColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.statusText, { color: colors.text }]}>
-                      {evaluation.evaluation_type?.name ||
-                        `Type ${evaluation.edu_fd_evaluation_type_id}`}
-                    </Text>
-                  </View>
-                  {evaluation.is_parent_visible === 1 && (
-                    <View style={styles.parentVisibleBadge}>
-                      <MaterialIcons
-                        name="visibility"
-                        size={12}
-                        color="#4CAF50"
-                      />
-                      <Text style={styles.parentVisibleText}>
-                        Parent Visible
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Evaluation Content */}
-                <View
-                  style={[
-                    styles.timelineContent,
-                    { borderLeftColor: colors.border },
-                  ]}
-                >
-                  <View style={styles.evaluationHeader}>
-                    <Text style={styles.evaluationFeedbackText}>
-                      {evaluation.reviewer_feedback || "No feedback provided"}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.deleteEvaluationButton}
-                      onPress={() => onDeleteEvaluation(evaluation.id)}
-                    >
-                      <MaterialIcons
-                        name="delete-outline"
-                        size={18}
-                        color="#F44336"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.evaluationDateText}>
-                    {evaluation.created_at
-                      ? new Date(evaluation.created_at).toLocaleDateString(
-                          "en-US",
-                          {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }
-                        )
-                      : "Date not available"}
-                  </Text>
-                </View>
-
-                {/* Timeline Connector */}
-                {!isLast && <View style={styles.timelineConnector} />}
-              </View>
-            );
-          })
-        ) : (
-          <View style={styles.noEvaluationsState}>
-            <MaterialIcons name="timeline" size={32} color="#DDD" />
-            <Text style={styles.noEvaluationsTitle}>No Evaluations Yet</Text>
-            <Text style={styles.noEvaluationsDesc}>
-              This feedback item hasn't been evaluated yet.
-            </Text>
-          </View>
-        )}
-      </ScrollView>
     </Animated.View>
   );
 };
@@ -1256,18 +1160,13 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const [selectedFilterGradeId, setSelectedFilterGradeId] = useState<
     number | null
   >(null); // null = "All Grades"
-  const [selectedEvaluationType, setSelectedEvaluationType] = useState<
-    number | null
-  >(null); // Default to show all
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
 
   // Debounced search text for API calls
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
 
   // Debounced filter values to reduce API calls
   const [debouncedFilterGradeId, setDebouncedFilterGradeId] = useState<
-    number | null
-  >(null);
-  const [debouncedEvaluationType, setDebouncedEvaluationType] = useState<
     number | null
   >(null);
 
@@ -1289,14 +1188,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     return () => clearTimeout(timer);
   }, [selectedFilterGradeId]);
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedEvaluationType(selectedEvaluationType);
-    }, 300); // 300ms delay for filters
-
-    return () => clearTimeout(timer);
-  }, [selectedEvaluationType]);
-
   // Expandable Card State
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
@@ -1312,7 +1203,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   // Add Feedback Modal States
   const [showAddFeedbackModal, setShowAddFeedbackModal] = useState(false);
   const [selectedGradeId, setSelectedGradeId] = useState<number | null>(null);
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [selectedStudents, setSelectedStudents] = useState<any[]>([]);
   const [feedbackDescription, setFeedbackDescription] = useState("");
   const [mainCategory, setMainCategory] = useState<string>("");
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(
@@ -1393,12 +1284,35 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
   // ===== API HOOKS =====
 
-  // Get categories with questions from new API
+  // Determine which category API to use based on selected grade
+  const categoryApiType = selectedGradeId
+    ? getCategoryApiForGrade(selectedGradeId)
+    : null;
+
+  // Section-specific category API calls (conditional)
   const {
-    data: categoriesData,
-    isLoading: categoriesLoading,
-    error: categoriesError,
-  } = useGetCategoryListQuery();
+    data: eyCategories,
+    isLoading: eyLoading,
+    error: eyError,
+  } = useGetCategoryEyListQuery(undefined, {
+    skip: categoryApiType !== "ey",
+  });
+
+  const {
+    data: prCategories,
+    isLoading: prLoading,
+    error: prError,
+  } = useGetCategoryPrListQuery(undefined, {
+    skip: categoryApiType !== "pr",
+  });
+
+  const {
+    data: scCategories,
+    isLoading: scLoading,
+    error: scError,
+  } = useGetCategoryScListQuery(undefined, {
+    skip: categoryApiType !== "sc",
+  });
 
   // Fallback to legacy API if new one fails
   const {
@@ -1407,9 +1321,61 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     error: legacyCategoriesError,
   } = useGetFeedbackCategoriesWithQuestionsQuery();
 
+  // Select the appropriate categories data based on grade
+  const categoriesData = React.useMemo(() => {
+    if (!categoryApiType) return null;
+
+    switch (categoryApiType) {
+      case "ey":
+        return eyCategories;
+      case "pr":
+        return prCategories;
+      case "sc":
+        return scCategories;
+      default:
+        return null;
+    }
+  }, [categoryApiType, eyCategories, prCategories, scCategories]);
+
+  // Select the appropriate loading state
+  const categoriesLoading = React.useMemo(() => {
+    if (!categoryApiType) return false;
+
+    switch (categoryApiType) {
+      case "ey":
+        return eyLoading;
+      case "pr":
+        return prLoading;
+      case "sc":
+        return scLoading;
+      default:
+        return false;
+    }
+  }, [categoryApiType, eyLoading, prLoading, scLoading]);
+
+  // Select the appropriate error state
+  const categoriesError = React.useMemo(() => {
+    if (!categoryApiType) return null;
+
+    switch (categoryApiType) {
+      case "ey":
+        return eyError;
+      case "pr":
+        return prError;
+      case "sc":
+        return scError;
+      default:
+        return null;
+    }
+  }, [categoryApiType, eyError, prError, scError]);
+
   // Use static grades instead of API
   const availableGrades = GRADE_LEVELS;
   console.log("🎓 Using static grades:", availableGrades);
+  console.log("🎯 Selected Grade ID:", selectedGradeId);
+  console.log("📋 Category API Type:", categoryApiType);
+  console.log("📤 Categories Data:", categoriesData);
+  console.log("🔄 Categories Loading:", categoriesLoading);
 
   // Early safety check for critical data
   const isInitialDataLoading = categoriesLoading;
@@ -1447,8 +1413,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       page_size: DEFAULT_PAGE_SIZE,
       filters: {
         search: debouncedSearchText,
-        grade_filter: debouncedFilterGradeId || "", // Send grade ID or empty string for "All"
-        evaluation_type_filter: debouncedEvaluationType,
+        grade_filter: debouncedFilterGradeId ?? null, // Send grade ID or null for "All Grades"
         search_filter_list: [],
       },
     };
@@ -1459,12 +1424,15 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       selectedFilterGradeName: debouncedFilterGradeId
         ? getGradeNameById(debouncedFilterGradeId)
         : "All Grades",
-      selectedEvaluationType,
-      debouncedEvaluationType,
       debouncedSearchText,
       currentPage,
       filterPayload: payload,
       timestamp: new Date().toISOString(),
+      apiWillReceive: {
+        grade_filter: payload.filters.grade_filter,
+        grade_filter_type: typeof payload.filters.grade_filter,
+        will_filter_grades: payload.filters.grade_filter !== null,
+      },
     });
 
     return payload;
@@ -1472,7 +1440,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     currentPage,
     debouncedSearchText,
     debouncedFilterGradeId,
-    debouncedEvaluationType,
   ]);
 
   // Get feedback list with filters
@@ -1488,7 +1455,18 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   // Reset to page 1 when search or filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearchText, debouncedFilterGradeId, debouncedEvaluationType]);
+  }, [debouncedSearchText, debouncedFilterGradeId]);
+
+  // Reset pagination loading state when data arrives
+  React.useEffect(() => {
+    if (!feedbacksLoading && isPaginationLoading) {
+      // Small delay for smooth transition
+      const timer = setTimeout(() => {
+        setIsPaginationLoading(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [feedbacksLoading, isPaginationLoading]);
 
   // Debug expanded card state changes
   React.useEffect(() => {
@@ -1579,6 +1557,25 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
     return feedbacks;
   }, [feedbacksData]);
+
+  // Pagination info from API - backend now provides accurate pagination
+  const paginationInfo = React.useMemo(() => {
+    // Backend returns proper pagination structure after our changes
+    if (feedbacksData?.data?.pagination) {
+      return feedbacksData.data.pagination;
+    }
+
+    // Fallback for edge cases
+    return {
+      current_page: currentPage,
+      total_pages: 1,
+      total_count: existingFeedbacks.length,
+      page_size: DEFAULT_PAGE_SIZE,
+      has_next: false,
+      has_previous: false,
+    };
+  }, [feedbacksData, currentPage, existingFeedbacks.length]);
+
   // Debug logging for add feedback section
   console.log("🎓 Available Grades (static):", availableGrades?.length);
   console.log("🎯 Selected Grade ID:", selectedGradeId);
@@ -1593,39 +1590,54 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const handleAPIError = React.useCallback((error: any, context: string) => {
     console.error(`❌ ${context} Error:`, error);
 
+    // Extract status from various possible error structures (RTK Query, Fetch, etc.)
+    const getErrorStatus = (err: any): number | null => {
+      return err?.status || err?.data?.status || err?.response?.status || null;
+    };
+
+    // Extract error message from various possible structures
+    const getErrorMessage = (err: any): string | null => {
+      return (
+        err?.data?.message ||
+        err?.message ||
+        err?.response?.data?.message ||
+        null
+      );
+    };
+
+    const status = getErrorStatus(error);
+    const message = getErrorMessage(error);
+
     // Log detailed error information for debugging
-    if (error?.status) {
-      console.error(`HTTP Status: ${error.status}`);
+    if (status) {
+      console.error(`HTTP Status: ${status}`);
     }
     if (error?.data) {
       console.error(`Error Data:`, error.data);
     }
-    if (error?.message) {
-      console.error(`Error Message:`, error.message);
+    if (message) {
+      console.error(`Error Message:`, message);
     }
 
     // Return user-friendly error message based on error type
-    if (error?.status === 401) {
+    if (status === 401) {
       return "Authentication expired. Please log in again.";
-    } else if (error?.status === 403) {
+    } else if (status === 403) {
       return "You don't have permission to access this data.";
-    } else if (error?.status === 404) {
+    } else if (status === 404) {
       return "The requested data was not found.";
-    } else if (error?.status === 422) {
-      return error?.data?.message || "Invalid data provided.";
-    } else if (error?.status === 500) {
+    } else if (status === 422) {
+      return message || "Invalid data provided.";
+    } else if (status === 500) {
       return "Server error. Please try again later.";
     } else if (
-      error?.message?.includes("network") ||
-      error?.message?.includes("fetch")
+      message?.includes("network") ||
+      message?.includes("fetch") ||
+      error?.name?.includes("fetch")
     ) {
       return "Network error. Please check your connection.";
     } else {
-      return (
-        error?.data?.message ||
-        error?.message ||
-        "An unexpected error occurred."
-      );
+      return message || "An unexpected error occurred.";
     }
   }, []);
 
@@ -1672,13 +1684,16 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
           console.warn(`❌ ${context} failed on attempt ${attempt}:`, error);
 
           // Don't retry on certain errors
-          if (
-            error?.status === 401 ||
-            error?.status === 403 ||
-            error?.status === 404
-          ) {
+          const getErrorStatus = (err: any): number | null => {
+            return (
+              err?.status || err?.data?.status || err?.response?.status || null
+            );
+          };
+          const status = getErrorStatus(error);
+
+          if (status === 401 || status === 403 || status === 404) {
             console.log(
-              `🚫 Not retrying ${context} due to error status: ${error.status}`
+              `🚫 Not retrying ${context} due to error status: ${status}`
             );
             break;
           }
@@ -1727,7 +1742,35 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   }, [mainCategories, mainCategory]);
 
   const questionnaireData = React.useMemo(() => {
-    return selectedCategoryData?.questions || [];
+    const rawQuestions = selectedCategoryData?.predefined_questions || [];
+
+    // Map API response format to component expected format
+    return rawQuestions.map((q: any) => ({
+      id: q.id,
+      text: q.question, // API uses 'question', component expects 'text'
+      answer_type_id: q.edu_fb_answer_type_id, // API uses 'edu_fb_answer_type_id'
+      answer_type:
+        q.edu_fb_answer_type_id === 1
+          ? "mcq"
+          : q.edu_fb_answer_type_id === 2
+            ? "likert"
+            : q.edu_fb_answer_type_id === 3
+              ? "custom"
+              : "text",
+      category_id:
+        q.edu_fb_category_ey_id ||
+        q.edu_fb_category_pr_id ||
+        q.edu_fb_category_sc_id,
+      predefined_answers: (q.predefined_answers || []).map((a: any) => ({
+        id: a.id,
+        text: a.predefined_answer, // API uses 'predefined_answer', component expects 'text'
+        weight: a.predefined_answer_weight || a.weight || 0,
+        marks: a.marks || 0,
+        question_id: q.id,
+      })),
+      marks: q.marks || 5,
+      required: q.required || false,
+    }));
   }, [selectedCategoryData]);
 
   // Answer types
@@ -1749,21 +1792,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   // Note: questionnaireData is now provided by API integration above
   // Keeping ANSWER_TYPES and SCALE_LABELS for compatibility
 
-  // Pagination info from API
-  const paginationInfo = React.useMemo(() => {
-    return (
-      feedbacksData?.data?.pagination ||
-      feedbacksData?.pagination || {
-        current_page: 1,
-        total_pages: 1,
-        total_count: existingFeedbacks.length,
-        page_size: DEFAULT_PAGE_SIZE,
-        has_next: false,
-        has_previous: false,
-      }
-    );
-  }, [feedbacksData, existingFeedbacks.length]);
-
   // Create grades list for filter - include "All" option plus all grade levels
   const filterGradesOptions = React.useMemo(() => {
     return [
@@ -1772,16 +1800,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     ];
   }, [availableGrades]);
 
-  // Evaluation Types with IDs as requested
-  const evaluationTypes = [
-    { id: null, name: "All Evaluations" },
-    { id: 1, name: "Under Observation" },
-    { id: 2, name: "Accept" },
-    { id: 3, name: "Decline" },
-    { id: 4, name: "Aware Parents" },
-    { id: 5, name: "Assigning to Counselor" },
-    { id: 6, name: "Correction Required" },
-  ];
   // Create categories list from API data for picker
   const baseCategories = React.useMemo(() => {
     const categoryNames = mainCategories
@@ -1912,98 +1930,8 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     };
   }, [baseSubcategoriesByMainCategory, customSubcategories]);
 
-  // 🚨 TEMPORARY: Apply frontend filtering for grades and evaluation types (remove once backend implements both)
-  //
-  // BACKEND TEAM: Once you implement both grade_filter and evaluation_type_filter in the API endpoints,
-  // this entire filteredData logic can be simplified to just:
-  // const filteredData = existingFeedbacks.filter((item) => !item || !item.student ? false : true);
-  //
-  // Current implementation does client-side filtering for both grades and evaluation types as fallback
-  const filteredData = existingFeedbacks.filter((item) => {
-    // Safety check - ensure item exists and has required structure
-    if (!item || !item.student) {
-      console.warn("⚠️ Invalid feedback item found, filtering out:", item);
-      return false;
-    }
-
-    // Apply grade filter if selected (frontend fallback until backend implements it)
-    if (selectedFilterGradeId !== null) {
-      const itemGradeId = item.grade_level?.id || item.grade_level_id;
-      if (itemGradeId !== selectedFilterGradeId) {
-        console.log("🔍 FILTER DEBUG - Filtering out feedback due to grade:", {
-          feedbackId: item.id,
-          selectedFilterGradeId,
-          itemGradeId,
-          itemGradeName: item.grade_level?.name,
-        });
-        return false;
-      }
-    }
-
-    // Apply evaluation type filter if selected
-    if (selectedEvaluationType !== null) {
-      const hasMatchingEvaluation = item.evaluations?.some(
-        (evaluation: any) => {
-          return (
-            evaluation.is_active === true &&
-            evaluation.edu_fd_evaluation_type_id === selectedEvaluationType
-          );
-        }
-      );
-
-      if (!hasMatchingEvaluation) {
-        console.log(
-          "🔍 FILTER DEBUG - Filtering out feedback due to evaluation type:",
-          {
-            feedbackId: item.id,
-            selectedEvaluationType,
-            availableEvaluations: item.evaluations?.map((e: any) => ({
-              id: e.edu_fd_evaluation_type_id,
-              isActive: e.is_active,
-            })),
-          }
-        );
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  // Final result debugging
-  React.useEffect(() => {
-    console.log("🔍 FILTER DEBUG - Final Results:", {
-      originalCount: existingFeedbacks.length,
-      filteredCount: filteredData.length,
-      activeFilters: {
-        grade: selectedFilterGradeId
-          ? `Grade ID ${selectedFilterGradeId} (${getGradeNameById(selectedFilterGradeId)})`
-          : "All Grades",
-        evaluationType: selectedEvaluationType
-          ? `Evaluation Type ${selectedEvaluationType}`
-          : "All Evaluations",
-      },
-      paginationInfo,
-      sampleFilteredItems: filteredData.slice(0, 3).map((item: any) => ({
-        id: item.id,
-        gradeId: item.grade_level?.id || item.grade_level_id,
-        gradeName: item.grade_level?.name,
-        evaluationTypes: item.evaluations
-          ?.map((e: any) => e.edu_fd_evaluation_type_id)
-          .filter(Boolean),
-      })),
-      timestamp: new Date().toISOString(),
-    });
-  }, [
-    filteredData.length,
-    existingFeedbacks.length,
-    selectedFilterGradeId,
-    selectedEvaluationType,
-    paginationInfo,
-  ]);
-
-  // Server-side pagination - use filtered data
-  const paginatedData = filteredData; // Combined server + client filtering
+  // Backend now handles all filtering - no client-side filtering needed
+  // The existingFeedbacks array already contains filtered and paginated data from the backend
   const totalPages = paginationInfo.total_pages;
 
   const handleActionPress = (feedbackItem: any) => {
@@ -2496,7 +2424,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const isFormValid = () => {
     return (
       selectedGradeId &&
-      selectedStudent &&
+      selectedStudents.length > 0 &&
       mainCategory &&
       feedbackDescription.trim()
     );
@@ -2519,7 +2447,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       missingFields.push("• Grade selection");
     }
 
-    if (!selectedStudent) {
+    if (selectedStudents.length === 0) {
       missingFields.push("• Student selection");
     }
 
@@ -2601,8 +2529,10 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             );
           }
 
-          if (!selectedStudent?.id) {
-            throw new Error("Student ID is required for backend submission.");
+          if (selectedStudents.length === 0) {
+            throw new Error(
+              "At least one student must be selected for backend submission."
+            );
           }
 
           // Set user designation as null as requested
@@ -2627,7 +2557,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
           // Prepare data for API submission in backend format
           const feedbackData = {
-            student_id: selectedStudent.id,
+            student_ids: selectedStudents.map((student) => student.id),
             grade_level_id: selectedGradeId,
             grade_level_class_id: selectedGradeId, // Same as grade_level_id as requested
             edu_fb_category_id: categoryId,
@@ -2641,7 +2571,9 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
           console.log("🚀 Submitting feedback to API (Backend Format):", {
             ...feedbackData,
             debug_info: {
-              original_student_name: selectedStudent.name,
+              original_student_names: selectedStudents
+                .map((s) => s.name || s.full_name)
+                .join(", "),
               original_category_name: mainCategory,
               original_grade_name: selectedGradeName,
               original_subcategories: selectedSubcategories,
@@ -2695,19 +2627,34 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       // Use centralized error handling
       const errorMessage = handleAPIError(error, "Feedback Submission");
 
+      // Extract status and message using the same logic as handleAPIError
+      const getErrorStatus = (err: any): number | null => {
+        return (
+          err?.status || err?.data?.status || err?.response?.status || null
+        );
+      };
+      const getErrorMessage = (err: any): string | null => {
+        return (
+          err?.data?.message ||
+          err?.message ||
+          err?.response?.data?.message ||
+          null
+        );
+      };
+      const status = getErrorStatus(error);
+      const message = getErrorMessage(error);
+
       // Determine error title based on error type
       let errorTitle = "Submission Failed";
-      if (error?.status === 401) errorTitle = "Authentication Error";
-      else if (error?.status === 403) errorTitle = "Permission Denied";
-      else if (error?.status === 404) errorTitle = "Not Found";
-      else if (error?.status === 422) errorTitle = "Validation Error";
-      else if (error?.status === 500) errorTitle = "Server Error";
-      else if (error?.message?.includes("network"))
-        errorTitle = "Network Error";
+      if (status === 401) errorTitle = "Authentication Error";
+      else if (status === 403) errorTitle = "Permission Denied";
+      else if (status === 404) errorTitle = "Not Found";
+      else if (status === 422) errorTitle = "Validation Error";
+      else if (status === 500) errorTitle = "Server Error";
+      else if (message?.includes("network")) errorTitle = "Network Error";
 
       // Show error with conditional retry option
-      const showRetry =
-        error?.status !== 401 && error?.status !== 403 && error?.status !== 404;
+      const showRetry = status !== 401 && status !== 403 && status !== 404;
 
       Alert.alert(
         errorTitle,
@@ -2724,7 +2671,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
   const resetForm = () => {
     setSelectedGradeId(null);
-    setSelectedStudent(null);
+    setSelectedStudents([]);
     setFeedbackDescription("");
     setMainCategory("");
     setSelectedSubcategories([]);
@@ -2736,13 +2683,15 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
   // Pagination handlers
   const handleNextPage = () => {
-    if (paginationInfo.has_next) {
+    if (paginationInfo.has_next && !isPaginationLoading) {
+      setIsPaginationLoading(true);
       setCurrentPage(currentPage + 1);
     }
   };
 
   const handlePreviousPage = () => {
-    if (paginationInfo.has_previous) {
+    if (paginationInfo.has_previous && !isPaginationLoading) {
+      setIsPaginationLoading(true);
       setCurrentPage(currentPage - 1);
     }
   };
@@ -2965,8 +2914,8 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
         }
       >
         <View style={styles.container}>
-          {/* Search Section */}
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          {/* Search Section - Hidden as per requirements */}
+          {/* <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.searchSection}>
               <View style={styles.searchContainer}>
                 <MaterialIcons name="search" size={20} color="#666" />
@@ -3001,7 +2950,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                 )}
               </View>
             </View>
-          </TouchableWithoutFeedback>
+          </TouchableWithoutFeedback> */}
 
           {/* New Filter Section */}
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -3013,7 +2962,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                   style={styles.resetFiltersButton}
                   onPress={() => {
                     setSelectedFilterGradeId(null);
-                    setSelectedEvaluationType(null);
                     setSearchText("");
                   }}
                 >
@@ -3060,36 +3008,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-
-              {/* Evaluation Types Filter */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.evaluationFilterScrollView}
-                contentContainerStyle={styles.evaluationFilterContent}
-              >
-                {evaluationTypes.map((evalType) => (
-                  <TouchableOpacity
-                    key={evalType.id || "all"}
-                    style={[
-                      styles.evaluationFilterChip,
-                      selectedEvaluationType === evalType.id &&
-                        styles.evaluationFilterChipSelected,
-                    ]}
-                    onPress={() => setSelectedEvaluationType(evalType.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.evaluationFilterText,
-                        selectedEvaluationType === evalType.id &&
-                          styles.evaluationFilterTextSelected,
-                      ]}
-                    >
-                      {evalType.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
             </View>
           </TouchableWithoutFeedback>
 
@@ -3107,331 +3025,374 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             </Text>
           </View>
 
-          {/* Feedback List */}
-          {feedbacksLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#920734" />
-              <Text style={styles.loadingText}>Loading feedback...</Text>
-            </View>
-          ) : feedbacksError ? (
-            <View style={styles.errorContainer}>
-              <MaterialIcons name="error-outline" size={48} color="#F44336" />
-              <Text style={styles.errorText}>
-                Failed to load feedback. Please try again.
-              </Text>
-            </View>
-          ) : paginatedData.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <MaterialIcons name="feedback" size={48} color="#CCC" />
-              <Text style={styles.emptyText}>No feedback found</Text>
-              <Text style={styles.emptySubText}>
-                Try adjusting your filters or add some feedback
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              style={styles.feedbackList}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              onScrollBeginDrag={Keyboard.dismiss}
-            >
-              {paginatedData.map((item) => {
-                // Additional safety check for rendering
-                if (!item || !item.student) {
-                  console.warn("⚠️ Skipping invalid item in render:", item);
-                  return null;
-                }
+          {/* Content Area - Wrapper with fixed height to keep pagination at bottom */}
+          <View style={styles.contentAreaWrapper}>
+            {feedbacksLoading || isPaginationLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#920734" />
+                <Text style={styles.loadingText}>
+                  {isPaginationLoading
+                    ? "Loading next page..."
+                    : "Loading feedback..."}
+                </Text>
+              </View>
+            ) : feedbacksError ? (
+              <View style={styles.errorContainer}>
+                <MaterialIcons name="error-outline" size={48} color="#F44336" />
+                <Text style={styles.errorText}>
+                  Failed to load feedback. Please try again.
+                </Text>
+              </View>
+            ) : existingFeedbacks.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="feedback" size={48} color="#CCC" />
+                <Text style={styles.emptyText}>No feedback found</Text>
+                <Text style={styles.emptySubText}>
+                  Try adjusting your filters or add some feedback
+                </Text>
+              </View>
+            ) : (
+              <Animated.View
+                key={`page-${currentPage}`}
+                entering={FadeIn.duration(400)}
+                exiting={FadeOut.duration(200)}
+                style={{ flex: 1 }}
+              >
+                <ScrollView
+                  style={styles.feedbackList}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  onScrollBeginDrag={Keyboard.dismiss}
+                >
+                  {existingFeedbacks.map((item) => {
+                    // Additional safety check for rendering
+                    if (!item || !item.student) {
+                      console.warn("⚠️ Skipping invalid item in render:", item);
+                      return null;
+                    }
 
-                // Ensure all text values are safe strings
-                const studentName = String(
-                  item.student.student_calling_name || "Unknown Student"
-                );
-                const admissionNumber = String(
-                  item.student.admission_number || "N/A"
-                );
-                const grade = String(item.grade_level.name || "Unknown Grade");
-                const description = String(
-                  item.comments?.[0]?.comment || "No description available"
-                );
-                const createdBy = String(
-                  item.created_by.call_name_with_title || "Unknown Educator"
-                );
-                const primaryCategory = String(item.category.name || "General");
-                const evaluationType = String(
-                  item.evaluations?.[0]?.evaluation_type?.name || ""
-                );
-                // Get student profile image using utility function
-                const profileImageSource =
-                  getStudentProfilePicture(item.student) ||
-                  getLocalFallbackProfileImage();
-                const rating = item.rating;
-                const date = item.created_at
-                  ? new Date(item.created_at).toLocaleDateString()
-                  : "Unknown Date";
-                const subcategories = Array.isArray(item.subcategories)
-                  ? item.subcategories
-                      .map((sub) => sub.subcategory_name)
-                      .filter(Boolean)
-                  : [];
+                    // Ensure all text values are safe strings
+                    const studentName = String(
+                      item.student.student_calling_name || "Unknown Student"
+                    );
+                    const admissionNumber = String(
+                      item.student.admission_number || "N/A"
+                    );
+                    const grade = String(
+                      item.grade_level.name || "Unknown Grade"
+                    );
+                    const description = String(
+                      item.comments?.[0]?.comment || "No description available"
+                    );
+                    const createdBy = String(
+                      item.created_by.call_name_with_title || "Unknown Educator"
+                    );
+                    const primaryCategory = String(
+                      item.category.name || "General"
+                    );
+                    const evaluationType = String(
+                      item.evaluations?.[0]?.evaluation_type?.name || ""
+                    );
+                    // Get student profile image using utility function
+                    const profileImageSource =
+                      getStudentProfilePicture(item.student) ||
+                      getLocalFallbackProfileImage();
+                    const rating = item.rating;
+                    const date = item.created_at
+                      ? new Date(item.created_at).toLocaleDateString()
+                      : "Unknown Date";
+                    const subcategories = Array.isArray(item.subcategories)
+                      ? item.subcategories
+                          .map((sub) => sub.subcategory_name)
+                          .filter(Boolean)
+                      : [];
 
-                return (
-                  <View
-                    key={item.id || Math.random()}
-                    style={styles.feedbackCard}
-                  >
-                    {/* Evaluation Type Bar - Top */}
-                    {evaluationType && (
-                      <View style={styles.evaluationTypeBar}>
-                        <Text style={styles.evaluationTypeText}>
-                          {evaluationType}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Student Info */}
-                    <View style={styles.studentHeader}>
-                      <Image
-                        source={profileImageSource}
-                        style={styles.profileImage}
-                      />
-
-                      <View style={styles.studentInfo}>
-                        <Text style={styles.studentName}>{studentName}</Text>
-                        <Text style={styles.studentDetails}>
-                          {admissionNumber} • {grade}
-                        </Text>
-                      </View>
-                      <View style={styles.ratingContainer}>
-                        <View style={styles.stars}>{renderStars(rating)}</View>
-                        <Text style={styles.ratingText}>{rating}</Text>
-                      </View>
-                    </View>
-
-                    {/* Categories */}
-                    <View style={styles.categoriesContainer}>
+                    return (
                       <View
-                        style={[styles.categoryTag, styles.primaryCategory]}
+                        key={item.id || Math.random()}
+                        style={styles.feedbackCard}
                       >
-                        <MaterialIcons name="star" size={12} color="#920734" />
-                        <Text style={styles.primaryCategoryText}>
-                          {primaryCategory}
-                        </Text>
-                      </View>
-                    </View>
+                        {/* Evaluation Type Bar - Top */}
+                        {evaluationType && (
+                          <View style={styles.evaluationTypeBar}>
+                            <Text style={styles.evaluationTypeText}>
+                              {evaluationType}
+                            </Text>
+                          </View>
+                        )}
 
-                    {/* Description with Edit Functionality */}
-                    {editingCommentId === item.id ? (
-                      // Edit Mode
-                      <View style={styles.editCommentContainer}>
-                        <TextInput
-                          style={styles.editCommentInput}
-                          value={editedComment}
-                          onChangeText={setEditedComment}
-                          placeholder="Enter comment..."
-                          multiline
-                          numberOfLines={3}
-                          autoFocus
-                        />
-                        <View style={styles.editCommentActions}>
-                          <TouchableOpacity
-                            style={[
-                              styles.editActionButton,
-                              styles.editCancelButton,
-                            ]}
-                            onPress={handleCancelEdit}
-                            disabled={isCreatingComment}
+                        {/* Student Info */}
+                        <View style={styles.studentHeader}>
+                          <Image
+                            source={profileImageSource}
+                            style={styles.profileImage}
+                          />
+
+                          <View style={styles.studentInfo}>
+                            <Text style={styles.studentName}>
+                              {studentName}
+                            </Text>
+                            <Text style={styles.studentDetails}>
+                              {admissionNumber} • {grade}
+                            </Text>
+                          </View>
+                          <View style={styles.ratingContainer}>
+                            <View style={styles.stars}>
+                              {renderStars(rating)}
+                            </View>
+                            <Text style={styles.ratingText}>{rating}</Text>
+                          </View>
+                        </View>
+
+                        {/* Categories */}
+                        <View style={styles.categoriesContainer}>
+                          <View
+                            style={[styles.categoryTag, styles.primaryCategory]}
                           >
                             <MaterialIcons
-                              name="close"
-                              size={16}
-                              color="#F44336"
+                              name="star"
+                              size={12}
+                              color="#920734"
                             />
-                            <Text style={styles.editCancelButtonText}>
-                              Cancel
+                            <Text style={styles.primaryCategoryText}>
+                              {primaryCategory}
                             </Text>
-                          </TouchableOpacity>
+                          </View>
+                        </View>
+
+                        {/* Description with Edit Functionality */}
+                        {editingCommentId === item.id ? (
+                          // Edit Mode
+                          <View style={styles.editCommentContainer}>
+                            <TextInput
+                              style={styles.editCommentInput}
+                              value={editedComment}
+                              onChangeText={setEditedComment}
+                              placeholder="Enter comment..."
+                              multiline
+                              numberOfLines={3}
+                              autoFocus
+                            />
+                            <View style={styles.editCommentActions}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.editActionButton,
+                                  styles.editCancelButton,
+                                ]}
+                                onPress={handleCancelEdit}
+                                disabled={isCreatingComment}
+                              >
+                                <MaterialIcons
+                                  name="close"
+                                  size={16}
+                                  color="#F44336"
+                                />
+                                <Text style={styles.editCancelButtonText}>
+                                  Cancel
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  styles.editActionButton,
+                                  styles.saveButton,
+                                ]}
+                                onPress={() => handleSaveComment(item.id)}
+                                disabled={
+                                  isCreatingComment || !editedComment.trim()
+                                }
+                              >
+                                {isCreatingComment ? (
+                                  <MaterialIcons
+                                    name="hourglass-empty"
+                                    size={16}
+                                    color="#FFF"
+                                  />
+                                ) : (
+                                  <MaterialIcons
+                                    name="check"
+                                    size={16}
+                                    color="#FFF"
+                                  />
+                                )}
+                                <Text style={styles.saveButtonText}>
+                                  {isCreatingComment ? "Saving..." : "Save"}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          // View Mode
+                          <View style={styles.descriptionContainer}>
+                            <Text style={styles.description}>
+                              {description}
+                            </Text>
+                            <TouchableOpacity
+                              style={styles.editButton}
+                              onPress={() =>
+                                handleEditComment(item.id, description)
+                              }
+                            >
+                              <MaterialIcons
+                                name="edit"
+                                size={16}
+                                color="#920734"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {/* Footer */}
+                        <View style={styles.feedbackFooter}>
+                          <View style={styles.metaInfo}>
+                            <Text style={styles.createdBy}>
+                              Created by: {createdBy}
+                            </Text>
+                            <Text style={styles.date}>{date}</Text>
+                          </View>
                           <TouchableOpacity
-                            style={[styles.editActionButton, styles.saveButton]}
-                            onPress={() => handleSaveComment(item.id)}
-                            disabled={
-                              isCreatingComment || !editedComment.trim()
+                            style={styles.actionButton}
+                            onPress={() => handleActionPress(item)}
+                          >
+                            <Text style={styles.actionButtonText}>
+                              {expandedItemId === item.id
+                                ? "Collapse"
+                                : "Progress"}
+                            </Text>
+                            <MaterialIcons
+                              name={
+                                expandedItemId === item.id
+                                  ? "expand-less"
+                                  : "expand-more"
+                              }
+                              size={16}
+                              color="#920734"
+                            />
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Subcategories Tags - Bottom with horizontal scroll */}
+                        {subcategories.length > 0 && (
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.subcategoriesScrollContainer}
+                            contentContainerStyle={
+                              styles.subcategoriesContainer
                             }
                           >
-                            {isCreatingComment ? (
-                              <MaterialIcons
-                                name="hourglass-empty"
-                                size={16}
-                                color="#FFF"
-                              />
+                            {subcategories.map((subcategory, index) => (
+                              <View key={index} style={styles.subcategoryTag}>
+                                <Text style={styles.subcategoryText}>
+                                  #{subcategory}
+                                </Text>
+                              </View>
+                            ))}
+                          </ScrollView>
+                        )}
+
+                        {/* Expandable Evaluation Section */}
+                        <EvaluationSection
+                          feedbackItem={item}
+                          isExpanded={expandedItemId === item.id}
+                          showAddEvaluationForm={showAddEvaluationForm}
+                          onToggleAddEvaluationForm={
+                            handleToggleAddEvaluationForm
+                          }
+                          onDeleteEvaluation={handleDeleteEvaluation}
+                          onDeleteFeedback={handleDeleteFeedback}
+                          onSubmitEvaluation={handleSubmitEvaluation}
+                          isDeletingFeedback={isDeletingFeedback}
+                          isDeletingEvaluation={isDeletingEvaluation}
+                        />
+
+                        {/* Add Evaluation Form - Above Action Buttons */}
+                        {showAddEvaluationForm === item.id && (
+                          <AddEvaluationForm
+                            feedbackItem={item}
+                            onSubmit={handleSubmitEvaluation}
+                            onCancel={() =>
+                              handleToggleAddEvaluationForm(item.id)
+                            }
+                          />
+                        )}
+
+                        {/* Fixed Bottom Action Bar */}
+                        <View style={styles.fixedBottomActionBar}>
+                          <TouchableOpacity
+                            style={[
+                              styles.bottomDeleteButton,
+                              isDeletingFeedback && styles.buttonDisabled,
+                            ]}
+                            onPress={() => {
+                              console.log(
+                                "🗑️ Delete button clicked for item:",
+                                item
+                              );
+                              console.log("🗑️ Item ID:", item.id);
+                              console.log("🗑️ Item ID type:", typeof item.id);
+                              console.log(
+                                "🗑️ Available item fields:",
+                                Object.keys(item)
+                              );
+
+                              // Ensure ID is properly formatted
+                              const feedbackId = String(item.id);
+                              console.log(
+                                "🗑️ Converted feedback ID:",
+                                feedbackId
+                              );
+
+                              handleDeleteFeedback(feedbackId);
+                            }}
+                            disabled={isDeletingFeedback}
+                          >
+                            {isDeletingFeedback ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                               <MaterialIcons
-                                name="check"
-                                size={16}
-                                color="#FFF"
+                                name="delete"
+                                size={18}
+                                color="#FFFFFF"
                               />
                             )}
-                            <Text style={styles.saveButtonText}>
-                              {isCreatingComment ? "Saving..." : "Save"}
+                            <Text style={styles.bottomDeleteButtonText}>
+                              {isDeletingFeedback ? "Deleting..." : "Delete"}
                             </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.bottomAddButton,
+                              showAddEvaluationForm === item.id &&
+                                styles.bottomButtonActive,
+                            ]}
+                            onPress={() =>
+                              handleToggleAddEvaluationForm(item.id)
+                            }
+                          >
+                            <Text style={styles.bottomAddButtonText}>
+                              {showAddEvaluationForm === item.id
+                                ? "Cancel"
+                                : "Next Action"}
+                            </Text>
+                            <MaterialIcons
+                              name={
+                                showAddEvaluationForm === item.id
+                                  ? "expand-less"
+                                  : "arrow-forward"
+                              }
+                              size={18}
+                              color="#FFFFFF"
+                            />
                           </TouchableOpacity>
                         </View>
                       </View>
-                    ) : (
-                      // View Mode
-                      <View style={styles.descriptionContainer}>
-                        <Text style={styles.description}>{description}</Text>
-                        <TouchableOpacity
-                          style={styles.editButton}
-                          onPress={() =>
-                            handleEditComment(item.id, description)
-                          }
-                        >
-                          <MaterialIcons
-                            name="edit"
-                            size={16}
-                            color="#920734"
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {/* Footer */}
-                    <View style={styles.feedbackFooter}>
-                      <View style={styles.metaInfo}>
-                        <Text style={styles.createdBy}>
-                          Created by: {createdBy}
-                        </Text>
-                        <Text style={styles.date}>{date}</Text>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => handleActionPress(item)}
-                      >
-                        <Text style={styles.actionButtonText}>
-                          {expandedItemId === item.id ? "Collapse" : "Progress"}
-                        </Text>
-                        <MaterialIcons
-                          name={
-                            expandedItemId === item.id
-                              ? "expand-less"
-                              : "expand-more"
-                          }
-                          size={16}
-                          color="#920734"
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Subcategories Tags - Bottom with horizontal scroll */}
-                    {subcategories.length > 0 && (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.subcategoriesScrollContainer}
-                        contentContainerStyle={styles.subcategoriesContainer}
-                      >
-                        {subcategories.map((subcategory, index) => (
-                          <View key={index} style={styles.subcategoryTag}>
-                            <Text style={styles.subcategoryText}>
-                              #{subcategory}
-                            </Text>
-                          </View>
-                        ))}
-                      </ScrollView>
-                    )}
-
-                    {/* Expandable Evaluation Section */}
-                    <EvaluationSection
-                      feedbackItem={item}
-                      isExpanded={expandedItemId === item.id}
-                      showAddEvaluationForm={showAddEvaluationForm}
-                      onToggleAddEvaluationForm={handleToggleAddEvaluationForm}
-                      onDeleteEvaluation={handleDeleteEvaluation}
-                      onDeleteFeedback={handleDeleteFeedback}
-                      onSubmitEvaluation={handleSubmitEvaluation}
-                      isDeletingFeedback={isDeletingFeedback}
-                      isDeletingEvaluation={isDeletingEvaluation}
-                    />
-
-                    {/* Add Evaluation Form - Above Action Buttons */}
-                    {showAddEvaluationForm === item.id && (
-                      <AddEvaluationForm
-                        feedbackItem={item}
-                        onSubmit={handleSubmitEvaluation}
-                        onCancel={() => handleToggleAddEvaluationForm(item.id)}
-                      />
-                    )}
-
-                    {/* Fixed Bottom Action Bar */}
-                    <View style={styles.fixedBottomActionBar}>
-                      <TouchableOpacity
-                        style={[
-                          styles.bottomDeleteButton,
-                          isDeletingFeedback && styles.buttonDisabled,
-                        ]}
-                        onPress={() => {
-                          console.log(
-                            "🗑️ Delete button clicked for item:",
-                            item
-                          );
-                          console.log("🗑️ Item ID:", item.id);
-                          console.log("🗑️ Item ID type:", typeof item.id);
-                          console.log(
-                            "🗑️ Available item fields:",
-                            Object.keys(item)
-                          );
-
-                          // Ensure ID is properly formatted
-                          const feedbackId = String(item.id);
-                          console.log("🗑️ Converted feedback ID:", feedbackId);
-
-                          handleDeleteFeedback(feedbackId);
-                        }}
-                        disabled={isDeletingFeedback}
-                      >
-                        {isDeletingFeedback ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <MaterialIcons
-                            name="delete"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                        )}
-                        <Text style={styles.bottomDeleteButtonText}>
-                          {isDeletingFeedback ? "Deleting..." : "Delete"}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.bottomAddButton,
-                          showAddEvaluationForm === item.id &&
-                            styles.bottomButtonActive,
-                        ]}
-                        onPress={() => handleToggleAddEvaluationForm(item.id)}
-                      >
-                        <Text style={styles.bottomAddButtonText}>
-                          {showAddEvaluationForm === item.id
-                            ? "Cancel"
-                            : "Next Action"}
-                        </Text>
-                        <MaterialIcons
-                          name={
-                            showAddEvaluationForm === item.id
-                              ? "expand_less"
-                              : "arrow-forward"
-                          }
-                          size={18}
-                          color="#FFFFFF"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          )}
+                    );
+                  })}
+                </ScrollView>
+              </Animated.View>
+            )}
+          </View>
 
           {/* Pagination */}
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -3439,10 +3400,11 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.paginationButton,
-                  !paginationInfo.has_previous && styles.disabledButton,
+                  (!paginationInfo.has_previous || isPaginationLoading) &&
+                    styles.disabledButton,
                 ]}
                 onPress={handlePreviousPage}
-                disabled={!paginationInfo.has_previous}
+                disabled={!paginationInfo.has_previous || isPaginationLoading}
               >
                 <MaterialIcons
                   name="chevron-left"
@@ -3468,10 +3430,11 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               <TouchableOpacity
                 style={[
                   styles.paginationButton,
-                  !paginationInfo.has_next && styles.disabledButton,
+                  (!paginationInfo.has_next || isPaginationLoading) &&
+                    styles.disabledButton,
                 ]}
                 onPress={handleNextPage}
-                disabled={!paginationInfo.has_next}
+                disabled={!paginationInfo.has_next || isPaginationLoading}
               >
                 <Text
                   style={[
@@ -3497,12 +3460,12 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             animationType="slide"
             onRequestClose={() => setShowAddFeedbackModal(false)}
           >
-            <KeyboardAvoidingView
-              style={styles.modalOverlay}
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-            >
-              <View style={styles.addFeedbackModal}>
+            <View style={styles.modalOverlay}>
+              <KeyboardAvoidingView
+                style={styles.addFeedbackModal}
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={0}
+              >
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Add New Feedback</Text>
                   <TouchableOpacity
@@ -3587,7 +3550,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                         <TouchableOpacity
                           onPress={() => {
                             setSelectedGradeId(null);
-                            setSelectedStudent(null); // Clear student when grade changes
+                            setSelectedStudents([]); // Clear students when grade changes
                           }}
                           style={styles.removeGradeButton}
                         >
@@ -3614,7 +3577,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                             ]}
                             onPress={() => {
                               setSelectedGradeId(grade.id);
-                              setSelectedStudent(null); // Clear student when grade changes
+                              setSelectedStudents([]); // Clear students when grade changes
                             }}
                           >
                             <MaterialIcons
@@ -3643,19 +3606,44 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                     <Text
                       style={[
                         styles.sectionTitle,
-                        !selectedStudent && styles.requiredFieldTitle,
+                        selectedStudents.length === 0 &&
+                          styles.requiredFieldTitle,
                       ]}
                     >
-                      Select Student{" "}
+                      Select Students ({selectedStudents.length}){" "}
                       <Text style={styles.requiredAsterisk}>*</Text>
                     </Text>
 
                     <StudentSelectionWithPagination
                       gradeId={selectedGradeId}
-                      onStudentSelect={setSelectedStudent}
-                      selectedStudent={selectedStudent}
+                      onStudentSelect={(student) => {
+                        if (student) {
+                          // Check if already selected
+                          const isAlreadySelected = selectedStudents.some(
+                            (s) => s.id === student.id
+                          );
+                          if (isAlreadySelected) {
+                            // Remove from selection
+                            setSelectedStudents((prev) =>
+                              prev.filter((s) => s.id !== student.id)
+                            );
+                          } else {
+                            // Add to selection
+                            setSelectedStudents((prev) => [...prev, student]);
+                          }
+                        }
+                      }}
+                      selectedStudent={null}
+                      selectedStudents={selectedStudents}
                       pageSize={10}
                       enableInfiniteScroll={true}
+                      showSelectAllButton={true}
+                      onSelectAll={(students) => {
+                        setSelectedStudents(students);
+                      }}
+                      onDeselectAll={() => {
+                        setSelectedStudents([]);
+                      }}
                       style={{ marginTop: 8 }}
                     />
                   </View>
@@ -3704,571 +3692,52 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                       </View>
                     ) : (
                       <>
-                        {/* Debug information for categories */}
-                        {allMainCategories.length === 0 && (
+                        {/* Message when no grade selected or no categories */}
+                        {!selectedGradeId ? (
                           <View style={styles.debugContainer}>
                             <Text style={styles.debugTitle}>
-                              🔍 DEBUG: No categories found
-                            </Text>
-                            <Text style={styles.debugText}>
-                              Categories Loading:{" "}
-                              {categoriesLoading ? "Yes" : "No"}
-                            </Text>
-                            <Text style={styles.debugText}>
-                              Categories Error: {categoriesError ? "Yes" : "No"}
-                            </Text>
-                            <Text style={styles.debugText}>
-                              Raw Categories Data:{" "}
-                              {JSON.stringify(categoriesData, null, 2)}
-                            </Text>
-                            <Text style={styles.debugText}>
-                              Main Categories:{" "}
-                              {JSON.stringify(mainCategories, null, 2)}
+                              Select Grade for show related Categories
                             </Text>
                           </View>
-                        )}
-
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          style={styles.mainCategoriesList}
-                        >
-                          {allMainCategories.map((category) => (
-                            <TouchableOpacity
-                              key={category}
-                              style={styles.mainCategorySelectChip}
-                              onPress={() => handleMainCategorySelect(category)}
-                            >
-                              <MaterialIcons
-                                name="category"
-                                size={18}
-                                color="#920734"
-                              />
-                              <Text style={styles.mainCategorySelectText}>
-                                {category}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-
-                          {/* Add Category Button */}
-                          <TouchableOpacity
-                            style={[
-                              styles.addCategoryChip,
-                              showInlineCategoryForm &&
-                                styles.addCategoryChipActive,
-                            ]}
-                            onPress={() =>
-                              setShowInlineCategoryForm(!showInlineCategoryForm)
-                            }
-                          >
-                            <MaterialIcons
-                              name={
-                                showInlineCategoryForm
-                                  ? "remove-circle-outline"
-                                  : "add-circle-outline"
-                              }
-                              size={20}
-                              color={
-                                showInlineCategoryForm ? "#FFFFFF" : "#920734"
-                              }
-                            />
-                            <Text
-                              style={[
-                                styles.addCategoryChipText,
-                                showInlineCategoryForm &&
-                                  styles.addCategoryChipTextActive,
-                              ]}
-                            >
-                              {showInlineCategoryForm
-                                ? "Cancel"
-                                : "Add Category"}
+                        ) : allMainCategories.length === 0 ? (
+                          <View style={styles.debugContainer}>
+                            <Text style={styles.debugTitle}>
+                              {categoriesLoading
+                                ? "⏳ Loading categories..."
+                                : categoriesError
+                                  ? "❌ Error loading categories"
+                                  : "📋 No categories available for this grade"}
                             </Text>
-                          </TouchableOpacity>
-                        </ScrollView>
+                          </View>
+                        ) : (
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.mainCategoriesList}
+                          >
+                            {allMainCategories.map((category) => (
+                              <TouchableOpacity
+                                key={category}
+                                style={styles.mainCategorySelectChip}
+                                onPress={() =>
+                                  handleMainCategorySelect(category)
+                                }
+                              >
+                                <MaterialIcons
+                                  name="category"
+                                  size={18}
+                                  color="#920734"
+                                />
+                                <Text style={styles.mainCategorySelectText}>
+                                  {category}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        )}
                       </>
                     )}
                   </View>
-
-                  {/* Inline Add Category Form */}
-                  {showInlineCategoryForm && (
-                    <View style={styles.inlineCategoryForm}>
-                      <View style={styles.inlineCategoryHeader}>
-                        <Text style={styles.inlineCategoryTitle}>
-                          Create New Category
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setShowInlineCategoryForm(false);
-                            setNewCategoryTitle("");
-                            setNewCategoryQuestions([
-                              {
-                                text: "",
-                                answerType: "likert",
-                                mcqOptions: [],
-                              },
-                            ]);
-                          }}
-                          style={styles.closeCategoryFormButton}
-                        >
-                          <MaterialIcons name="close" size={20} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={styles.categoryFormContent}>
-                        <Text style={styles.categoryFormLabel}>
-                          Category Title *
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.categoryTitleInput}
-                          onPress={() => setShowInlineCategoryDropdown(true)}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownText,
-                              !newCategoryTitle && styles.placeholderText,
-                            ]}
-                          >
-                            {newCategoryTitle || "Select intelligence type..."}
-                          </Text>
-                          <MaterialIcons
-                            name="keyboard-arrow-down"
-                            size={24}
-                            color="#666"
-                          />
-                        </TouchableOpacity>
-
-                        <View style={styles.questionsHeaderContainer}>
-                          <Text style={styles.categoryFormLabel}>
-                            Questions ({newCategoryQuestions.length})
-                          </Text>
-                          {isCreatingCategory && (
-                            <View style={styles.processingIndicator}>
-                              <ActivityIndicator size="small" color="#920734" />
-                              <Text style={styles.processingText}>
-                                Creating...
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-
-                        {newCategoryQuestions.map((question, index) => (
-                          <View key={index} style={styles.questionFormItem}>
-                            <View style={styles.questionFormHeader}>
-                              <Text style={styles.questionFormNumber}>
-                                Question {index + 1}
-                              </Text>
-                              {newCategoryQuestions.length > 1 && (
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    const updatedQuestions =
-                                      newCategoryQuestions.filter(
-                                        (_, i) => i !== index
-                                      );
-                                    setNewCategoryQuestions(updatedQuestions);
-                                  }}
-                                  style={styles.removeQuestionButton}
-                                >
-                                  <MaterialIcons
-                                    name="remove-circle"
-                                    size={18}
-                                    color="#F44336"
-                                  />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-
-                            <TextInput
-                              style={styles.questionFormInput}
-                              placeholder="Enter question text..."
-                              value={question.text}
-                              onChangeText={(text) => {
-                                const updatedQuestions = [
-                                  ...newCategoryQuestions,
-                                ];
-                                updatedQuestions[index].text = text;
-                                setNewCategoryQuestions(updatedQuestions);
-                              }}
-                              multiline
-                            />
-
-                            <View style={styles.answerTypeContainer}>
-                              <Text style={styles.answerTypeLabel}>
-                                Answer Type:
-                              </Text>
-                              <View style={styles.answerTypeChips}>
-                                {[
-                                  { id: "likert", label: "Likert Scale" },
-                                  { id: "mcq", label: "MCQ" },
-                                  { id: "custom", label: "Custom" },
-                                ].map((type) => (
-                                  <TouchableOpacity
-                                    key={type.id}
-                                    style={[
-                                      styles.answerTypeChip,
-                                      question.answerType === type.id &&
-                                        styles.selectedAnswerTypeChip,
-                                    ]}
-                                    onPress={() => {
-                                      const updatedQuestions = [
-                                        ...newCategoryQuestions,
-                                      ];
-                                      updatedQuestions[index].answerType =
-                                        type.id;
-
-                                      // Initialize MCQ options if selecting MCQ
-                                      if (
-                                        type.id === "mcq" &&
-                                        !updatedQuestions[index].mcqOptions
-                                          ?.length
-                                      ) {
-                                        updatedQuestions[index].mcqOptions = [
-                                          { text: "", marks: 1 },
-                                          { text: "", marks: 1 },
-                                        ];
-                                      } else if (type.id !== "mcq") {
-                                        // Clear MCQ options if not MCQ
-                                        updatedQuestions[index].mcqOptions = [];
-                                      }
-
-                                      setNewCategoryQuestions(updatedQuestions);
-                                    }}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles.answerTypeChipText,
-                                        question.answerType === type.id &&
-                                          styles.selectedAnswerTypeChipText,
-                                      ]}
-                                    >
-                                      {type.label}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            </View>
-
-                            {/* MCQ Options Builder */}
-                            {question.answerType === "mcq" && (
-                              <View style={styles.mcqOptionsBuilder}>
-                                <View style={styles.mcqOptionsHeader}>
-                                  <Text style={styles.mcqOptionsTitle}>
-                                    MCQ Options
-                                  </Text>
-                                  <TouchableOpacity
-                                    style={styles.addMcqOptionButton}
-                                    onPress={() => {
-                                      const updatedQuestions = [
-                                        ...newCategoryQuestions,
-                                      ];
-                                      if (!updatedQuestions[index].mcqOptions) {
-                                        updatedQuestions[index].mcqOptions = [];
-                                      }
-                                      updatedQuestions[index].mcqOptions!.push({
-                                        text: "",
-                                        marks: 1,
-                                      });
-                                      setNewCategoryQuestions(updatedQuestions);
-                                    }}
-                                  >
-                                    <MaterialIcons
-                                      name="add"
-                                      size={16}
-                                      color="#920734"
-                                    />
-                                    <Text style={styles.addMcqOptionText}>
-                                      Add Option
-                                    </Text>
-                                  </TouchableOpacity>
-                                </View>
-
-                                {question.mcqOptions?.map(
-                                  (option, optionIndex) => (
-                                    <View
-                                      key={optionIndex}
-                                      style={styles.mcqOptionRow}
-                                    >
-                                      <View style={styles.mcqOptionContainer}>
-                                        <View style={styles.mcqOptionHeader}>
-                                          <Text style={styles.mcqOptionLabel}>
-                                            Option {optionIndex + 1}
-                                          </Text>
-
-                                          {question.mcqOptions &&
-                                            question.mcqOptions.length > 1 && (
-                                              <TouchableOpacity
-                                                style={
-                                                  styles.removeMcqOptionButtonInside
-                                                }
-                                                onPress={() => {
-                                                  const updatedQuestions = [
-                                                    ...newCategoryQuestions,
-                                                  ];
-                                                  updatedQuestions[
-                                                    index
-                                                  ].mcqOptions =
-                                                    updatedQuestions[
-                                                      index
-                                                    ].mcqOptions!.filter(
-                                                      (_, i) =>
-                                                        i !== optionIndex
-                                                    );
-                                                  setNewCategoryQuestions(
-                                                    updatedQuestions
-                                                  );
-                                                }}
-                                              >
-                                                <MaterialIcons
-                                                  name="close"
-                                                  size={18}
-                                                  color="#F44336"
-                                                />
-                                              </TouchableOpacity>
-                                            )}
-                                        </View>
-
-                                        <TextInput
-                                          style={styles.mcqOptionInput}
-                                          placeholder="Enter option text..."
-                                          value={option.text}
-                                          multiline={true}
-                                          numberOfLines={2}
-                                          textAlignVertical="top"
-                                          onChangeText={(text) => {
-                                            const updatedQuestions = [
-                                              ...newCategoryQuestions,
-                                            ];
-                                            updatedQuestions[index].mcqOptions![
-                                              optionIndex
-                                            ].text = text;
-                                            setNewCategoryQuestions(
-                                              updatedQuestions
-                                            );
-                                          }}
-                                        />
-
-                                        <View style={styles.mcqMarksContainer}>
-                                          <Text style={styles.mcqMarksLabel}>
-                                            Marks:
-                                          </Text>
-                                          <View style={styles.marksSelector}>
-                                            {[1, 2, 3, 4, 5].map(
-                                              (markValue) => {
-                                                const usedMarks = getUsedMarks(
-                                                  index,
-                                                  optionIndex
-                                                );
-                                                const isUsed =
-                                                  usedMarks.includes(markValue);
-                                                const isSelected =
-                                                  option.marks === markValue;
-
-                                                return (
-                                                  <TouchableOpacity
-                                                    key={markValue}
-                                                    style={[
-                                                      styles.markChip,
-                                                      isSelected &&
-                                                        styles.selectedMarkChip,
-                                                      isUsed &&
-                                                        !isSelected &&
-                                                        styles.disabledMarkChip,
-                                                    ]}
-                                                    onPress={() => {
-                                                      if (
-                                                        !isUsed ||
-                                                        isSelected
-                                                      ) {
-                                                        const updatedQuestions =
-                                                          [
-                                                            ...newCategoryQuestions,
-                                                          ];
-                                                        updatedQuestions[
-                                                          index
-                                                        ].mcqOptions![
-                                                          optionIndex
-                                                        ].marks = markValue;
-                                                        setNewCategoryQuestions(
-                                                          updatedQuestions
-                                                        );
-                                                      }
-                                                    }}
-                                                    disabled={
-                                                      isUsed && !isSelected
-                                                    }
-                                                  >
-                                                    <Text
-                                                      style={[
-                                                        styles.markChipText,
-                                                        isSelected &&
-                                                          styles.selectedMarkChipText,
-                                                        isUsed &&
-                                                          !isSelected &&
-                                                          styles.disabledMarkChipText,
-                                                      ]}
-                                                    >
-                                                      {markValue}
-                                                    </Text>
-                                                  </TouchableOpacity>
-                                                );
-                                              }
-                                            )}
-                                          </View>
-                                        </View>
-                                      </View>
-                                    </View>
-                                  )
-                                )}
-
-                                {(!question.mcqOptions ||
-                                  question.mcqOptions.length === 0) && (
-                                  <View style={styles.noMcqOptionsContainer}>
-                                    <Text style={styles.noMcqOptionsText}>
-                                      No options added yet
-                                    </Text>
-                                    <TouchableOpacity
-                                      style={styles.firstMcqOptionButton}
-                                      onPress={() => {
-                                        const updatedQuestions = [
-                                          ...newCategoryQuestions,
-                                        ];
-                                        updatedQuestions[index].mcqOptions = [
-                                          { text: "", marks: 1 },
-                                          { text: "", marks: 1 },
-                                        ];
-                                        setNewCategoryQuestions(
-                                          updatedQuestions
-                                        );
-                                      }}
-                                    >
-                                      <MaterialIcons
-                                        name="add"
-                                        size={18}
-                                        color="#920734"
-                                      />
-                                      <Text style={styles.firstMcqOptionText}>
-                                        Add First Option
-                                      </Text>
-                                    </TouchableOpacity>
-                                  </View>
-                                )}
-                              </View>
-                            )}
-                          </View>
-                        ))}
-
-                        <TouchableOpacity
-                          style={styles.addQuestionButton}
-                          onPress={() => {
-                            setNewCategoryQuestions([
-                              ...newCategoryQuestions,
-                              {
-                                text: "",
-                                answerType: "likert",
-                                mcqOptions: [],
-                              },
-                            ]);
-                          }}
-                        >
-                          <MaterialIcons name="add" size={16} color="#920734" />
-                          <Text style={styles.addQuestionButtonText}>
-                            Add Question
-                          </Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.categoryFormActions}>
-                          <TouchableOpacity
-                            style={styles.cancelCategoryButton}
-                            onPress={() => {
-                              setShowInlineCategoryForm(false);
-                              setNewCategoryTitle("");
-                              setNewCategoryQuestions([
-                                {
-                                  text: "",
-                                  answerType: "likert",
-                                  mcqOptions: [],
-                                },
-                              ]);
-                            }}
-                            disabled={isCreatingCategory}
-                          >
-                            <Text style={styles.cancelCategoryButtonText}>
-                              Cancel
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[
-                              styles.createCategoryButton,
-                              isCreatingCategory && styles.disabledButton,
-                            ]}
-                            onPress={handleCreateInlineCategory}
-                            disabled={isCreatingCategory || !newCategoryTitle}
-                          >
-                            {isCreatingCategory ? (
-                              <ActivityIndicator size="small" color="#FFFFFF" />
-                            ) : (
-                              <Text style={styles.createCategoryButtonText}>
-                                Create Category
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Inline Category Dropdown Modal */}
-                  <Modal
-                    visible={showInlineCategoryDropdown}
-                    transparent={true}
-                    animationType="fade"
-                    onRequestClose={() => setShowInlineCategoryDropdown(false)}
-                  >
-                    <TouchableOpacity
-                      style={styles.dropdownOverlay}
-                      activeOpacity={1}
-                      onPress={() => setShowInlineCategoryDropdown(false)}
-                    >
-                      <View style={styles.dropdownModal}>
-                        <Text style={styles.dropdownTitle}>
-                          Select Intelligence Type
-                        </Text>
-                        <ScrollView style={styles.dropdownList}>
-                          {INTELLIGENCE_TYPES.map((type) => (
-                            <TouchableOpacity
-                              key={type.id}
-                              style={[
-                                styles.dropdownItem,
-                                newCategoryTitle === type.label &&
-                                  styles.dropdownItemSelected,
-                              ]}
-                              onPress={() => {
-                                setNewCategoryTitle(type.label);
-                                setShowInlineCategoryDropdown(false);
-                              }}
-                            >
-                              <Text
-                                style={[
-                                  styles.dropdownItemText,
-                                  newCategoryTitle === type.label &&
-                                    styles.dropdownItemTextSelected,
-                                ]}
-                              >
-                                {type.label}
-                              </Text>
-                              {newCategoryTitle === type.label && (
-                                <MaterialIcons
-                                  name="check"
-                                  size={20}
-                                  color="#920734"
-                                />
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </View>
-                    </TouchableOpacity>
-                  </Modal>
 
                   {/* Assessment Questions Section */}
                   {mainCategory && (
@@ -4481,8 +3950,8 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
-            </KeyboardAvoidingView>
+              </KeyboardAvoidingView>
+            </View>
           </Modal>
         </View>
       </FullScreenModal>
@@ -4569,6 +4038,10 @@ const styles = StyleSheet.create({
   feedbackListContainer: {
     flex: 1,
   },
+  contentAreaWrapper: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
+  },
   filterSection: {
     backgroundColor: "#FFFFFF",
     paddingVertical: 12,
@@ -4639,15 +4112,15 @@ const styles = StyleSheet.create({
   },
   feedbackList: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingTop: 8,
   },
   feedbackCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    marginHorizontal: 4,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    marginHorizontal: 0,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -4662,20 +4135,20 @@ const styles = StyleSheet.create({
   studentHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   profileImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    marginRight: 10,
   },
   studentInfo: {
     flex: 1,
   },
   studentName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#1a1a1a",
     marginBottom: 2,
@@ -4711,14 +4184,14 @@ const styles = StyleSheet.create({
   categoriesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 10,
   },
   categoryTag: {
     backgroundColor: "#F0F0F0",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
@@ -4740,16 +4213,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   description: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#333",
-    lineHeight: 20,
-    marginBottom: 16,
+    lineHeight: 19,
+    marginBottom: 12,
     flex: 1,
   },
   descriptionContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   editButton: {
     marginLeft: 8,
@@ -4932,8 +4405,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 20,
-    paddingTop: 24,
+    padding: 16,
+    paddingTop: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#E0E0E0",
     backgroundColor: "#FAFAFA",
@@ -4954,17 +4427,17 @@ const styles = StyleSheet.create({
   },
   addFeedbackContent: {
     flex: 1,
-    padding: 20,
+    padding: 14,
     minHeight: 400,
   },
   formSection: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   requiredFieldTitle: {
     color: "black",
@@ -4977,7 +4450,7 @@ const styles = StyleSheet.create({
   categoryHelpText: {
     fontSize: 12,
     color: "#666",
-    marginBottom: 16,
+    marginBottom: 10,
     fontStyle: "italic",
   },
   debugText: {
@@ -5652,14 +5125,14 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 14,
     color: "#333",
-    minHeight: 100,
+    minHeight: 80,
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
   modalActions: {
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 20,
+    padding: 14,
     borderTopWidth: 1,
     borderTopColor: "#E0E0E0",
     gap: 12,
@@ -6145,7 +5618,7 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: "#F8F9FA",
     borderRadius: 8,
-    marginVertical: 8,
+    margin: 16,
   },
   loadingText: {
     marginLeft: 10,
@@ -6153,7 +5626,6 @@ const styles = StyleSheet.create({
     color: "#666",
   },
   errorContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 40,
@@ -6200,7 +5672,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   emptyContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 40,
@@ -6239,18 +5710,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   debugContainer: {
-    backgroundColor: "#FFF3E0",
+    backgroundColor: "lightgray",
     padding: 12,
     borderRadius: 8,
     marginVertical: 8,
     borderWidth: 1,
-    borderColor: "#FF9800",
+    borderColor: "gray",
   },
   debugTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#E65100",
-    marginBottom: 8,
+    color: "gray",
+    marginBottom: 0,
   },
   debugText: {
     fontSize: 12,
@@ -6806,35 +6277,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   gradeFilterTextSelected: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
-  evaluationFilterScrollView: {
-    marginTop: 4,
-  },
-  evaluationFilterContent: {
-    paddingHorizontal: 0,
-  },
-  evaluationFilterChip: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    alignItems: "center",
-  },
-  evaluationFilterChipSelected: {
-    backgroundColor: "#920734",
-    borderColor: "#920734",
-  },
-  evaluationFilterText: {
-    fontSize: 10,
-    color: "#666",
-    fontWeight: "500",
-  },
-  evaluationFilterTextSelected: {
     color: "#FFFFFF",
     fontWeight: "600",
   },

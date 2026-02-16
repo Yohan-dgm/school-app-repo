@@ -595,7 +595,7 @@ const QuestionnaireComponent: React.FC<QuestionnaireComponentProps> = ({
 
                   <View style={styles.questionMeta}>
                     <Text style={styles.questionType}>
-                      {question.answer_type.toUpperCase()}
+                      {question.answer_type?.toUpperCase() || 'UNKNOWN'}
                     </Text>
                     {question.marks && (
                       <Text style={styles.questionMarks}>

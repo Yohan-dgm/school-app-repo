@@ -7,9 +7,13 @@ import {
   Dimensions,
   ScrollView,
   Platform,
+  TouchableOpacity,
+  Linking,
+  Alert,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { getAppStoreLinkForPlatform } from "../../utils/appStoreLinks";
 
 interface AppVersionUpdateOverlayProps {
   visible: boolean;
@@ -29,6 +33,28 @@ const AppVersionUpdateOverlay: React.FC<AppVersionUpdateOverlayProps> = ({
     platform === "ios"
       ? { storeName: "App Store", icon: "apple" as const }
       : { storeName: "Google Play Store", icon: "android" as const };
+
+  const handleUpdatePress = async () => {
+    try {
+      const storeLink = getAppStoreLinkForPlatform(platform);
+      const canOpen = await Linking.canOpenURL(storeLink);
+
+      if (canOpen) {
+        await Linking.openURL(storeLink);
+      } else {
+        Alert.alert(
+          "Unable to Open Store",
+          "Please manually visit the app store to update."
+        );
+      }
+    } catch (error) {
+      console.error("Error opening app store:", error);
+      Alert.alert(
+        "Error",
+        "Unable to open the app store. Please try again later."
+      );
+    }
+  };
 
   return (
     <Modal
@@ -96,12 +122,17 @@ const AppVersionUpdateOverlay: React.FC<AppVersionUpdateOverlayProps> = ({
                 version of the app.
               </Text>
 
-              <View style={styles.storeInfo}>
-                <MaterialIcons name="download" size={20} color="#6b7280" />
-                <Text style={styles.storeText}>
+              <TouchableOpacity
+                style={styles.updateButton}
+                onPress={handleUpdatePress}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="download" size={24} color="#ffffff" />
+                <Text style={styles.updateButtonText}>
                   Update from {storeInfo.storeName}
                 </Text>
-              </View>
+                <MaterialIcons name="arrow-forward" size={20} color="#ffffff" />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.footer}>
@@ -234,19 +265,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  storeInfo: {
+  updateButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
+    backgroundColor: "#059669",
     padding: 16,
     borderRadius: 12,
     marginTop: 8,
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  storeText: {
-    fontSize: 15,
-    color: "#4b5563",
+  updateButtonText: {
+    fontSize: 16,
+    color: "#ffffff",
     marginLeft: 12,
-    fontWeight: "500",
+    marginRight: 12,
+    fontWeight: "700",
     flex: 1,
   },
 

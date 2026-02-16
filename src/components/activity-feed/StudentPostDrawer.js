@@ -9,6 +9,7 @@ import {
   Alert,
   Image,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { useSelector, useDispatch } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialIcons";
@@ -24,6 +25,12 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadStep, setUploadStep] = useState("");
+  const [uploadProgress, setUploadProgress] = useState({
+    current: 0,
+    total: 0,
+  });
+  const [isLoadingMedia, setIsLoadingMedia] = useState(false);
 
   // Get global state
   const { sessionData, selectedStudent } = useSelector((state) => state.app);
@@ -76,6 +83,9 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
     setSelectedCategory("achievement");
     setSelectedMedia([]);
     setSelectedTags([]);
+    setUploadStep("");
+    setUploadProgress({ current: 0, total: 0 });
+    setIsLoadingMedia(false);
   };
 
   const handleClose = () => {
@@ -83,44 +93,71 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
     onClose();
   };
 
+  // Get progress message with upload tracking
+  const getProgressMessage = () => {
+    switch (uploadStep) {
+      case "validating":
+        return "Validating post data...";
+      case "uploading":
+        if (uploadProgress.total > 0) {
+          return `Uploading ${uploadProgress.current} of ${uploadProgress.total} files...`;
+        }
+        return "Uploading media files...";
+      case "posting":
+        return "Creating post...";
+      default:
+        return "Creating...";
+    }
+  };
+
   const toggleTag = (tagId) => {
     setSelectedTags((prev) =>
       prev.includes(tagId)
         ? prev.filter((id) => id !== tagId)
-        : [...prev, tagId],
+        : [...prev, tagId]
     );
   };
 
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
-        "Please grant camera roll permissions to add images.",
-      );
-      return;
-    }
+    setIsLoadingMedia(true);
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-      allowsMultipleSelection: true,
-    });
+    try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        setIsLoadingMedia(false);
+        Alert.alert(
+          "Permission needed",
+          "Please grant camera roll permissions to add images."
+        );
+        return;
+      }
 
-    if (!result.canceled) {
-      const newMedia = result.assets.map((asset) => ({
-        id: Date.now() + Math.random(),
-        type: asset.type,
-        uri: asset.uri,
-        name: asset.fileName || `media_${Date.now()}`,
-      }));
-      setSelectedMedia((prev) => [...prev, ...newMedia]);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+        allowsMultipleSelection: true,
+      });
+
+      if (!result.canceled) {
+        const newMedia = result.assets.map((asset) => ({
+          id: Date.now() + Math.random(),
+          type: asset.type,
+          uri: asset.uri,
+          name: asset.fileName || `media_${Date.now()}`,
+        }));
+        setSelectedMedia((prev) => [...prev, ...newMedia]);
+      }
+    } finally {
+      setIsLoadingMedia(false);
     }
   };
 
   const pickDocument = async () => {
+    setIsLoadingMedia(true);
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "*/*",
@@ -140,6 +177,8 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick document");
+    } finally {
+      setIsLoadingMedia(false);
     }
   };
 
@@ -148,25 +187,29 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
   };
 
   const handleSubmitPost = async () => {
+    // Set submitting immediately to disable button on first click
+    setIsSubmitting(true);
+
     if (!selectedStudent?.student_id) {
+      setIsSubmitting(false);
       Alert.alert(
         "Error",
-        "No student selected. Please select a student first.",
+        "No student selected. Please select a student first."
       );
       return;
     }
 
     if (!postTitle.trim()) {
+      setIsSubmitting(false);
       Alert.alert("Error", "Please enter a title for your student post");
       return;
     }
 
     if (!postContent.trim()) {
+      setIsSubmitting(false);
       Alert.alert("Error", "Please enter some content for your student post");
       return;
     }
-
-    setIsSubmitting(true);
 
     try {
       // TODO: Implement API call to create student post
@@ -187,7 +230,7 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
       Alert.alert(
         "Success",
-        `Student post created successfully for ${selectedStudent?.student_calling_name || "the student"}!`,
+        `Student post created successfully for ${selectedStudent?.student_calling_name || "the student"}!`
       );
 
       // Reset form and close drawer
@@ -289,16 +332,37 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
       <Text style={styles.sectionTitle}>Media & Documents</Text>
 
       <View style={styles.mediaActions}>
-        <TouchableOpacity style={styles.mediaButton} onPress={pickImage}>
+        <TouchableOpacity
+          style={[
+            styles.mediaButton,
+            isLoadingMedia && styles.mediaButtonDisabled,
+          ]}
+          onPress={pickImage}
+          disabled={isLoadingMedia}
+        >
           <Icon name="photo-library" size={20} color={theme.colors.primary} />
           <Text style={styles.mediaButtonText}>Add Photos/Videos</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.mediaButton} onPress={pickDocument}>
+        <TouchableOpacity
+          style={[
+            styles.mediaButton,
+            isLoadingMedia && styles.mediaButtonDisabled,
+          ]}
+          onPress={pickDocument}
+          disabled={isLoadingMedia}
+        >
           <Icon name="attach-file" size={20} color={theme.colors.primary} />
           <Text style={styles.mediaButtonText}>Add Documents</Text>
         </TouchableOpacity>
       </View>
+
+      {isLoadingMedia && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading media...</Text>
+        </View>
+      )}
 
       {selectedMedia.length > 0 && (
         <ScrollView
@@ -383,7 +447,7 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
               <Icon name="close" size={24} color={theme.colors.text} />
             </TouchableOpacity>
             <View style={styles.headerTitleContainer}>
-              <Text style={styles.title}>Create Student Post</Text>
+              <Text style={styles.title}>Create Student Posts</Text>
               <Text style={styles.subtitle}>
                 Share student-specific updates
               </Text>
@@ -415,7 +479,12 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <Text style={styles.submitButtonText}>Creating...</Text>
+              <>
+                <ActivityIndicator size="small" color="white" />
+                <Text style={styles.submitButtonText}>
+                  {getProgressMessage()}
+                </Text>
+              </>
             ) : (
               <>
                 <Icon name="send" size={20} color="white" />
@@ -554,10 +623,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  mediaButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: theme.colors.background,
+  },
   mediaButtonText: {
     fontSize: 14,
     color: theme.colors.primary,
     marginLeft: 8,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    backgroundColor: theme.colors.card,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: theme.colors.text,
+    marginLeft: 12,
+    fontWeight: "500",
   },
   mediaPreview: {
     flexDirection: "row",

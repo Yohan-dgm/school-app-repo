@@ -120,10 +120,15 @@ export const ANNOUNCEMENT_STATUS_OPTIONS = [
 ] as const;
 
 export const TARGET_TYPES = [
-  { value: "broadcast", label: "Everyone", description: "All school members" },
-  // { value: "role", label: "By Role", description: "Specific user roles" },
-  // { value: "class", label: "By Class", description: "Specific classes" },
-  // { value: "grade", label: "By Grade", description: "Specific grade levels" },
+  { value: "All", label: "All", description: "Everyone" },
+  { value: "Educator", label: "Educator", description: "All educators" },
+  { value: "Management", label: "Management", description: "School management" },
+  { value: "Grade_Level", label: "Grade Level", description: "Specific grades" },
+  { value: "Grade_Level_class", label: "Class", description: "Specific classes" },
+  { value: "Primary", label: "Primary", description: "Primary section" },
+  { value: "Secondary", label: "Secondary", description: "Secondary section" },
+  { value: "Early_Years", label: "Early Years", description: "Early years section" },
+  { value: "Student", label: "Student", description: "Individual students" },
 ] as const;
 
 // Helper functions

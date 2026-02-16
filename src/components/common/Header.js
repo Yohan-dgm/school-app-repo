@@ -77,7 +77,7 @@ const Header = () => {
     useSessionRefresh();
 
   // App version checking
-  const currentAppVersion = Constants.expoConfig?.version || "1.0.0";
+  const currentAppVersion = Constants.expoConfig?.version || "1.0.8";
   const currentPlatform = Platform.OS;
 
   // Get user category from session data
@@ -90,31 +90,29 @@ const Header = () => {
   const userToken = sessionData?.token || sessionData?.data?.token;
   const userId = sessionData?.data?.id || sessionData?.id;
 
-  // Notification API Integration with improved error handling
+  // Simple notification API integration following UniversalNotificationSystem pattern
   const {
     data: notificationsData,
     isLoading: notificationsLoading,
     error: notificationsError,
-    refetch: refetchNotifications,
   } = useGetNotificationsQuery(
     {
       page: 1,
-      limit: 5, // Only fetch 5 notifications for header popup
+      limit: 50,
       filters: {
         filter: "all",
         search: "",
-        type_id: null,
-        priority: "",
+        type_id: undefined, // Standardized: undefined instead of null for shared cache
+        priority: undefined, // Standardized: undefined instead of "" for shared cache
         unread_only: false,
       },
     },
     {
       skip: !userId || !userToken,
-      // Add retry configuration to handle server errors
-      refetchOnMountOrArgChange: 30, // Refetch if older than 30 seconds
-      refetchOnFocus: false, // Don't refetch on window focus to reduce API calls
-      refetchOnReconnect: true, // Refetch when network reconnects
-    },
+      refetchOnMountOrArgChange: 30,
+      refetchOnFocus: false,
+      refetchOnReconnect: true,
+    }
   );
 
   // App version checking API call
@@ -189,7 +187,7 @@ const Header = () => {
 
       if (isVersionMismatch) {
         console.log(
-          "⚠️ TESTING - Version mismatch detected, showing update overlay",
+          "⚠️ TESTING - Version mismatch detected, showing update overlay"
         );
         console.log("⚠️ TESTING - Overlay should be visible with:", {
           currentVersion: currentAppVersion,
@@ -214,7 +212,7 @@ const Header = () => {
       });
     } else {
       console.log(
-        "📱 TESTING - No version check data yet, ensuring overlay is hidden",
+        "📱 TESTING - No version check data yet, ensuring overlay is hidden"
       );
       dispatch(setShowVersionUpdateOverlay(false));
     }
@@ -399,7 +397,7 @@ const Header = () => {
 
       console.log(
         "🔄 Fresh login response:",
-        JSON.stringify(response, null, 2),
+        JSON.stringify(response, null, 2)
       );
 
       if (response?.success && response?.data) {
@@ -415,17 +413,17 @@ const Header = () => {
 
         dispatch(setSessionData(enhancedSessionData));
         console.log(
-          "✅ Student data refreshed successfully with real API data!",
+          "✅ Student data refreshed successfully with real API data!"
         );
 
         if (showAlerts) {
           alert(
-            `Student data refreshed! Found ${response.data.student_list?.length || 0} students.`,
+            `Student data refreshed! Found ${response.data.student_list?.length || 0} students.`
           );
         }
       } else {
         console.log(
-          "⚠️ Login API returned invalid response, falling back to cache clear...",
+          "⚠️ Login API returned invalid response, falling back to cache clear..."
         );
         await AsyncStorage.removeItem("persist:root");
         dispatch(logout());
@@ -451,7 +449,7 @@ const Header = () => {
 
         if (showAlerts) {
           alert(
-            "Error refreshing student data. Please try logging out and back in manually.",
+            "Error refreshing student data. Please try logging out and back in manually."
           );
         }
       }
@@ -475,7 +473,7 @@ const Header = () => {
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === "active" && sessionData?.data?.student_list) {
         console.log(
-          "🔄 App came to foreground, auto-refreshing student data...",
+          "🔄 App came to foreground, auto-refreshing student data..."
         );
         refreshStudentData(false); // Silent refresh (no alerts)
       }
@@ -483,7 +481,7 @@ const Header = () => {
 
     const subscription = AppState.addEventListener(
       "change",
-      handleAppStateChange,
+      handleAppStateChange
     );
 
     // Set up periodic refresh every 5 minutes
@@ -494,7 +492,7 @@ const Header = () => {
           refreshStudentData(false); // Silent refresh (no alerts)
         }
       },
-      5 * 60 * 1000,
+      5 * 60 * 1000
     ); // 5 minutes
 
     // Cleanup subscription and interval on unmount
@@ -524,7 +522,7 @@ const Header = () => {
           duration: 3000,
           useNativeDriver: false, // Keep false for color/shadow animations
         }),
-      ]),
+      ])
     );
 
     // Create shadow animation with glow effect
@@ -540,7 +538,7 @@ const Header = () => {
           duration: 2500,
           useNativeDriver: false, // Keep false for shadow animations
         }),
-      ]),
+      ])
     );
 
     // Create subtle rotation animation
@@ -549,7 +547,7 @@ const Header = () => {
         toValue: 1,
         duration: 8000,
         useNativeDriver: false, // Changed to false to avoid mixing native/JS drivers
-      }),
+      })
     );
 
     pulseAnimation.start();
@@ -592,27 +590,22 @@ const Header = () => {
     setShowStudentSelector(true);
   };
 
-  // Process notification data from API
+  // Simple notification processing following UniversalNotificationSystem pattern
   const notifications = React.useMemo(() => {
     if (!notificationsData?.data) return [];
 
-    // Take first 5 notifications and transform them for header popup
-    return notificationsData.data.slice(0, 5).map((notification) => ({
+    // Take first 10 notifications for header popup, following UniversalNotificationSystem pattern
+    return notificationsData.data.slice(0, 10).map((notification) => ({
       id: notification.id,
       title: notification.title,
       message: notification.message,
       time: notification.time_ago,
-      type: notification.notification_type?.slug || "general",
       read: notification.is_read,
       icon: notification.notification_type?.icon || "notifications",
-      color: notification.notification_type?.color || "#7c2d3e",
-      priority: notification.priority,
-      // Legacy fields for compatibility
-      isRead: notification.is_read,
     }));
   }, [notificationsData]);
 
-  // Log notification data for debugging
+  // Simple notification data logging following UniversalNotificationSystem pattern
   React.useEffect(() => {
     if (notificationsData) {
       console.log("🔔 Header - Notification data received:", {
@@ -637,60 +630,37 @@ const Header = () => {
         timestamp: new Date().toISOString(),
       });
 
-      // Track error count and adjust behavior accordingly
+      // Track error count
       setNotificationErrorCount((prev) => prev + 1);
 
-      // If it's a 500 error, it's likely a server issue - don't retry too aggressively
-      if (notificationsError?.status === 500) {
-        console.warn(
-          "🔔 Header - Server error (500) detected, reducing retry frequency",
-        );
-
-        // If we've had multiple 500 errors, log a more specific message
-        if (notificationErrorCount >= 3) {
-          console.error(
-            "🔔 Header - Multiple notification API failures detected, may need server-side investigation",
-          );
-        }
-      }
-    }
-  }, [notificationsError]);
-
-  // Auto-reload notifications on login and component mount (with error handling)
-  React.useEffect(() => {
-    if (userId && userToken) {
-      console.log("🔔 Header - User logged in, refreshing notifications...");
-      try {
-        refetchNotifications();
-      } catch (error) {
+      if (notificationsError?.status === 500 && notificationErrorCount >= 3) {
         console.error(
-          "🔔 Header - Error refreshing notifications on login:",
-          error,
+          "🔔 Header - Multiple notification API failures detected, may need server-side investigation"
         );
       }
     }
-  }, [userId, userToken, refetchNotifications]);
+  }, [notificationsError, notificationErrorCount]);
 
-  // Auto-refresh session data and notifications when app comes to foreground
+  // Real-time notifications now handled by the initialization effect above
+  // No need for separate listener effects - callbacks handle everything
+
+  // Auto-refresh session data when app comes to foreground
   React.useEffect(() => {
     const handleAppStateChange = async (nextAppState) => {
       if (nextAppState === "active" && userId && userToken) {
         console.log(
-          "🔄 Header - App came to foreground, refreshing session data and notifications...",
+          "🔄 Header - App came to foreground, refreshing session data..."
         );
 
         try {
-          // Refresh session data first (this will trigger payment validation via middleware)
+          // Refresh session data (this will trigger payment validation via middleware)
           await refreshSession();
           console.log("✅ Header - Session data refreshed on foreground");
-
-          // Then refresh notifications
-          refetchNotifications();
-          console.log("✅ Header - Notifications refreshed on foreground");
+          // Note: Notifications will be updated automatically via RTK Query cache
         } catch (error) {
           console.error(
             "❌ Header - Error refreshing data on foreground:",
-            error,
+            error
           );
         }
       }
@@ -698,10 +668,10 @@ const Header = () => {
 
     const subscription = AppState.addEventListener(
       "change",
-      handleAppStateChange,
+      handleAppStateChange
     );
     return () => subscription?.remove();
-  }, [userId, userToken, refreshSession, refetchNotifications]);
+  }, [userId, userToken, refreshSession]);
 
   // Auto-refresh session data on component mount (app startup) - with data freshness check
   React.useEffect(() => {
@@ -736,19 +706,19 @@ const Header = () => {
           refreshSession()
             .then(() => {
               console.log(
-                "✅ Header - Session data refreshed on mount (delayed)",
+                "✅ Header - Session data refreshed on mount (delayed)"
               );
             })
             .catch((error) => {
               console.error(
                 "❌ Header - Error refreshing session data on mount:",
-                error,
+                error
               );
             });
         }, 2000); // 2 second delay
       } else {
         console.log(
-          "✅ Header - Session data is fresh, skipping refresh on mount",
+          "✅ Header - Session data is fresh, skipping refresh on mount"
         );
       }
     }
@@ -768,7 +738,7 @@ const Header = () => {
           console.error("❌ Header - Periodic session refresh failed:", error);
         }
       },
-      10 * 60 * 1000,
+      10 * 60 * 1000
     ); // 10 minutes
 
     return () => clearInterval(interval);
@@ -796,11 +766,11 @@ const Header = () => {
     // Transform student data using utility function
     const transformedStudent = transformStudentWithProfilePicture(
       student,
-      sessionData,
+      sessionData
     );
 
     console.log(
-      `🎓 Header - Using API calling name: "${transformedStudent.student_calling_name}" for student "${transformedStudent.name}"`,
+      `🎓 Header - Using API calling name: "${transformedStudent.student_calling_name}" for student "${transformedStudent.name}"`
     );
     console.log(`🎓 Header - Student grade_level_class data:`, {
       student_id: transformedStudent.id,
@@ -812,7 +782,7 @@ const Header = () => {
       {
         attachments: student.attachments,
         profileImage: transformedStudent.profileImage,
-      },
+      }
     );
 
     return transformedStudent;
@@ -886,10 +856,10 @@ const Header = () => {
   console.log(`🎓 Header - Total students: ${transformedStudents.length}`);
   console.log(`🎓 Header - Has multiple students: ${hasMultipleStudents}`);
   console.log(
-    `🎓 Header - Current student: ${currentStudent?.student_calling_name}`,
+    `🎓 Header - Current student: ${currentStudent?.student_calling_name}`
   );
   console.log(
-    `🎓 Header - Selected student ID: ${selectedStudent?.id || "none"}`,
+    `🎓 Header - Selected student ID: ${selectedStudent?.id || "none"}`
   );
 
   // Enhanced auto-select first student logic with proper dependency management
@@ -898,7 +868,7 @@ const Header = () => {
     if (hasStudents && !selectedStudent && transformedStudents.length > 0) {
       const firstStudent = transformedStudents[0];
       console.log(
-        `🎓 Header - Auto-selecting first student: ${firstStudent?.student_calling_name} (ID: ${firstStudent?.student_id})`,
+        `🎓 Header - Auto-selecting first student: ${firstStudent?.student_calling_name} (ID: ${firstStudent?.student_id})`
       );
       console.log(`🎓 Header - Auto-selected student class info:`, {
         student_calling_name: firstStudent?.student_calling_name,
@@ -912,11 +882,11 @@ const Header = () => {
     // If we have a selected student but it's not in the current list (e.g., after data refresh)
     else if (selectedStudent && transformedStudents.length > 0) {
       const studentExists = transformedStudents.find(
-        (student) => student.student_id === selectedStudent.student_id,
+        (student) => student.student_id === selectedStudent.student_id
       );
       if (!studentExists) {
         console.log(
-          `🎓 Header - Selected student no longer exists, auto-selecting first available: ${transformedStudents[0]?.student_calling_name}`,
+          `🎓 Header - Selected student no longer exists, auto-selecting first available: ${transformedStudents[0]?.student_calling_name}`
         );
         dispatch(setSelectedStudent(transformedStudents[0]));
       }
@@ -927,21 +897,34 @@ const Header = () => {
   useEffect(() => {
     if (selectedStudent) {
       console.log(
-        `🎓 Header - Student selection changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`,
+        `🎓 Header - Student selection changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`
       );
       console.log(
         `🎓 Header - Selected student details:`,
-        JSON.stringify(selectedStudent, null, 2),
+        JSON.stringify(selectedStudent, null, 2)
       );
     } else {
       console.log(`🎓 Header - No student currently selected`);
     }
   }, [selectedStudent]);
 
-  // Calculate unread notifications count
-  const unreadCount = notifications.filter(
-    (notification) => !notification.read,
+  // Simple unread count calculation following UniversalNotificationSystem pattern
+  const allNotifications = notificationsData?.data || [];
+  const unreadCount = allNotifications.filter(
+    (notification) => !notification.is_read
   ).length;
+
+  // Simple debug logging following UniversalNotificationSystem pattern
+  React.useEffect(() => {
+    console.log("🔔 Header - Notification state:", {
+      totalNotifications: allNotifications.length,
+      unreadCount,
+      hasData: !!notificationsData,
+      preview: allNotifications
+        .slice(0, 2)
+        .map((n) => ({ id: n.id, title: n.title, is_read: n.is_read })),
+    });
+  }, [allNotifications.length, unreadCount, notificationsData]);
 
   // Check if we're currently on the notifications page for active state
   const isOnNotificationsPage = pathname?.includes("/notifications");
@@ -955,9 +938,10 @@ const Header = () => {
     setShowNotifications(true);
   };
 
+  // Simplified notification handlers - real-time updates handled by UniversalNotificationSystem
   const handleNotificationItemPress = (notificationId) => {
     console.log(
-      `🔔 Header - Notification item ${notificationId} pressed, navigating to notifications section`,
+      `🔔 Header - Notification item ${notificationId} pressed, navigating to notifications section`
     );
 
     // Close the popup modal
@@ -969,27 +953,11 @@ const Header = () => {
     try {
       router.push(notificationRoute);
       console.log(`🔔 Header - Navigation successful to: ${notificationRoute}`);
-
-      // Trigger notification reload after a short delay to ensure navigation completes
-      setTimeout(() => {
-        refetchNotifications();
-        console.log("🔔 Header - Notifications reloaded after navigation");
-      }, 500);
     } catch (error) {
       console.error("🔔 Header - Navigation failed:", error);
       // Fallback navigation
       router.push("/authenticated/notifications");
     }
-  };
-
-  const handleMarkAsRead = (notificationId) => {
-    console.log(`🔔 Header - Mark notification ${notificationId} as read`);
-    // TODO: Implement mark as read API call when available
-  };
-
-  const handleMarkAllAsRead = () => {
-    console.log("🔔 Header - Mark all notifications as read");
-    // TODO: Implement mark all as read API call when available
   };
 
   const handleClosePaymentOverlay = () => {
@@ -1103,9 +1071,7 @@ const Header = () => {
           />
           {unreadCount > 0 && (
             <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </Text>
+              <Text style={styles.notificationBadgeText}>{unreadCount}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -1397,7 +1363,7 @@ const Header = () => {
                     onPress={() => {
                       console.log("🔔 Header - Manual retry requested by user");
                       setNotificationErrorCount(0); // Reset error count on manual retry
-                      refetchNotifications();
+                      // Note: RTK Query will automatically retry, real-time updates handled by UniversalNotificationSystem
                     }}
                     style={styles.retryButton}
                   >
@@ -1514,6 +1480,16 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.bold,
     fontSize: 10,
     color: "#FFFFFF",
+  },
+  connectionIndicator: {
+    position: "absolute",
+    bottom: 2,
+    left: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
   },
   bottomSection: {
     flexDirection: "row",

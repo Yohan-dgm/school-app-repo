@@ -3,12 +3,17 @@
     "name": "School App",
     "slug": "school-app",
     "scheme": "school-app",
-    "version": "1.0.1",
+    "version": "1.0.8",
     "orientation": "default",
-    // "orientation": "portrait",
     "icon": "src/assets/SchooSnap_logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "notification": {
+      "icon": "./src/assets/icon.png",
+      "color": "#7c2d3e",
+      "iosDisplayInForeground": true,
+      "androidMode": "default"
+    },
     "splash": {
       "image": "src/assets/SchooSnap_logo.png",
       "resizeMode": "contain",
@@ -23,6 +28,7 @@
         "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload profile pictures",
         "NSCameraUsageDescription": "This app needs access to camera to take profile pictures",
         "UIApplicationSupportsIndirectInputEvents": true,
+        "UIBackgroundModes": ["remote-notification"],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSAllowsArbitraryLoadsInWebContent": true,
@@ -44,7 +50,7 @@
         },
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "16",
+      "buildNumber": "25",
       "bundleIdentifier": "lk.toyar.schoolapp"
     },
     "android": {
@@ -53,17 +59,24 @@
         "backgroundColor": "#ffffff"
       },
       "package": "lk.toyar.schoolapp",
-      "versionCode": 6,
+      "versionCode": 11,
       "compileSdkVersion": 35,
       "targetSdkVersion": 35,
       "minSdkVersion": 21,
+      "buildToolsVersion": "35.0.0",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.VIBRATE",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "com.google.android.c2dm.permission.RECEIVE"
       ],
       "softwareKeyboardLayoutMode": "pan",
       "statusBarStyle": "dark-content",

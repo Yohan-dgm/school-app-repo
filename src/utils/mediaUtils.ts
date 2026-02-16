@@ -277,11 +277,38 @@ export const buildStudentAttachmentImageUrl = (
   return mediaUrl;
 };
 
+/**
+ * Resolve relative media URL from backend to absolute URL
+ */
+export const resolveMediaUrl = (url?: string): string => {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("data:")) return url;
+
+  // Ensure base URL doesn't end with slash
+  const baseUrl = API_BASE_URL?.endsWith("/")
+    ? API_BASE_URL.slice(0, -1)
+    : API_BASE_URL;
+
+  if (!baseUrl) {
+    console.error("❌ resolveMediaUrl: No API base URL configured");
+    return url;
+  }
+
+  // Prepend base URL to relative storage paths
+  if (url.startsWith("/")) {
+    return `${baseUrl}${url}`;
+  }
+
+  return `${baseUrl}/${url}`;
+};
+
 export default {
   buildActivityFeedMediaUrl,
   buildVideoThumbnailUrl,
   buildUserProfileImageUrl,
   buildStudentAttachmentImageUrl,
   isValidMediaUrl,
+  resolveMediaUrl,
   getMimeType,
 };

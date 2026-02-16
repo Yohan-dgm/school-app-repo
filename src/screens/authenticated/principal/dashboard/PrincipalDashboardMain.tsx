@@ -9,23 +9,34 @@ import {
   Modal,
   TextInput,
   Alert,
+  RefreshControl,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Modalize } from "react-native-modalize";
 import { Picker } from "@react-native-picker/picker";
-import DashboardGrid from "./components/DashboardGrid";
+import EnhancedDashboardGrid from "../../educator/dashboard/components/EnhancedDashboardGrid";
 import SummaryDashboard from "./components/SummaryDashboard";
 import SimpleSummaryDashboard from "./components/SimpleSummaryDashboard";
 import FullScreenModal from "./components/FullScreenModal";
 import StudentsModalContent from "./components/StudentsModalContent";
 import TeachersModalContent from "./components/TeachersModalContent";
 import EducatorFeedbackModal from "./modals/EducatorFeedbackModal";
+import EducatorFeedbackStatsModal from "./modals/EducatorFeedbackStatsModal";
+import StudentFeedbackStatsModal from "./modals/StudentFeedbackStatsModal";
 import StudentAttendanceModal from "./modals/StudentAttendanceModal";
+import StudentAttendanceStatsModal from "./modals/StudentAttendanceStatsModal";
 import AcademicReportsModal from "./modals/AcademicReportsModal";
 import SchoolFacilitiesModal from "./modals/SchoolFacilitiesModal";
 import FinancialOverviewModal from "./modals/FinancialOverviewModal";
 import ParentCommunicationModal from "./modals/ParentCommunicationModal";
 import EmergencyManagementModal from "./modals/EmergencyManagementModal";
+import ClassTeacherModal from "./modals/ClassTeacherModal";
+import SectionalHeadModal from "./modals/SectionalHeadModal";
+import MyFeedbackModal from "./modals/MyFeedbackModal";
+import StudentAchievementModal from "../../educator/dashboard/modals/StudentAchievementModal";
+import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
+import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
+import { GradeLevelClass } from "../../../../api/grade-level-api";
 
 export interface DashboardItem {
   id: string;
@@ -324,7 +335,7 @@ const EducatorFeedbackContent = () => {
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   // Reset page when filters change
@@ -425,8 +436,8 @@ const EducatorFeedbackContent = () => {
   const handleStatusChange = (id: string, newStatus: string) => {
     setFeedbackData((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, status: newStatus } : item,
-      ),
+        item.id === id ? { ...item, status: newStatus } : item
+      )
     );
   };
 
@@ -444,7 +455,7 @@ const EducatorFeedbackContent = () => {
             Alert.alert("Success", "Feedback deleted successfully");
           },
         },
-      ],
+      ]
     );
   };
 
@@ -1059,6 +1070,16 @@ const EducatorFeedbackContent = () => {
 function PrincipalDashboardMain() {
   // Full-screen modal state
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // My Class drawer states
+  const [selectedClassData, setSelectedClassData] = useState<
+    (GradeLevelClass & { gradeLevelName: string }) | null
+  >(null);
+  const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
+  const [showStudentDetails, setShowStudentDetails] = useState(false);
+  const [showClassSelectionDrawer, setShowClassSelectionDrawer] =
+    useState(false);
 
   // Modal refs
   // Updated to use FullScreenModal pattern
@@ -1083,6 +1104,72 @@ function PrincipalDashboardMain() {
 
   const openStudentAttendanceModal = () => {
     setActiveModal("student_attendance");
+  };
+
+  const openEducatorFeedbackStatsModal = () => {
+    setActiveModal("educator_feedback_stats");
+  };
+
+  const openStudentFeedbackStatsModal = () => {
+    setActiveModal("student_feedback_stats");
+  };
+
+  const openStudentAttendanceStatsModal = () => {
+    setActiveModal("student_attendance_stats");
+  };
+
+  const openClassTeachersModal = () => {
+    setActiveModal("class_teachers");
+  };
+
+  const openSectionalHeadsModal = () => {
+    setActiveModal("sectional_heads");
+  };
+
+  const openMyFeedbackModal = () => {
+    setActiveModal("my_feedback");
+  };
+
+  const openStudentAchievementModal = () => {
+    setActiveModal("student_achievement");
+  };
+
+  const openMyClassDrawer = () => {
+    console.log("🔔 Opening Grade Level Class Selection Drawer...");
+    setShowClassSelectionDrawer(true);
+  };
+
+  const handleClassSelection = (
+    classData: GradeLevelClass & { gradeLevelName: string }
+  ) => {
+    console.log(
+      "✅ Class selected in GradeLevelClassSelectionDrawer...",
+      classData
+    );
+    setSelectedClassData(classData);
+  };
+
+  const handleCloseUniversalDrawer = () => {
+    setShowUniversalDrawer(false);
+    setShowStudentDetails(false);
+    setSelectedClassData(null);
+  };
+
+  const handleBackFromStudentDetails = () => {
+    setShowStudentDetails(false);
+    setShowClassSelectionDrawer(true);
+  };
+
+  const handleCloseClassSelectionDrawer = () => {
+    setShowClassSelectionDrawer(false);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    // Simulate data refresh
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1500);
   };
 
   const renderModalContent = (modalId: string) => {
@@ -1168,6 +1255,24 @@ function PrincipalDashboardMain() {
 
   const dashboardItems: DashboardItem[] = [
     {
+      id: "my_class",
+      title: "My Class",
+      subtitle: "Student Details & Management",
+      icon: "class",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openMyClassDrawer,
+    },
+    {
+      id: "student_achievement",
+      title: "Student Achievement",
+      subtitle: "Record Student Achievements",
+      icon: "emoji-events",
+      color: "#FFD700",
+      gradient: ["#FFD700", "#FFA500"],
+      onPress: openStudentAchievementModal,
+    },
+    {
       id: "all_students",
       title: "All Students",
       subtitle: "Student Management",
@@ -1204,6 +1309,24 @@ function PrincipalDashboardMain() {
       onPress: openEducatorFeedbackModal,
     },
     {
+      id: "educator_feedback_stats",
+      title: "Feedback Statistics",
+      subtitle: "Educator Analytics",
+      icon: "analytics",
+      color: "#0057FF",
+      gradient: ["#0057FF", "#3d7cff"],
+      onPress: openEducatorFeedbackStatsModal,
+    },
+    {
+      id: "student_feedback_stats",
+      title: "Student Analytics",
+      subtitle: "Feedback by Students",
+      icon: "school",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openStudentFeedbackStatsModal,
+    },
+    {
       id: "student_attendance",
       title: "Student Attendance",
       subtitle: "Attendance Management",
@@ -1211,6 +1334,42 @@ function PrincipalDashboardMain() {
       color: "#0057FF",
       gradient: ["#0057FF", "#3d7cff"],
       onPress: openStudentAttendanceModal,
+    },
+    {
+      id: "class_teachers",
+      title: "Class Teachers",
+      subtitle: "Teacher Assignments",
+      icon: "people-outline",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openClassTeachersModal,
+    },
+    {
+      id: "sectional_heads",
+      title: "Sectional Heads",
+      subtitle: "Grade Level Leaders",
+      icon: "school",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openSectionalHeadsModal,
+    },
+    // {
+    //   id: "student_attendance_stats",
+    //   title: "Attendance Analytics",
+    //   subtitle: "Student Attendance Stats",
+    //   icon: "analytics",
+    //   color: "#059669",
+    //   gradient: ["#059669", "#10B981"],
+    //   onPress: openStudentAttendanceStatsModal,
+    // },
+    {
+      id: "my_feedback",
+      title: "My Feedbacks",
+      subtitle: "Feedbacks I Created",
+      icon: "person",
+      color: "#10B981",
+      gradient: ["#10B981", "#059669"],
+      onPress: openMyFeedbackModal,
     },
     // {
     //   id: "announcements",
@@ -1270,22 +1429,20 @@ function PrincipalDashboardMain() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dashboard Overview</Text>
-      </View>
-
       {/* Content with Summary Dashboard */}
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#920734"
+            colors={["#920734"]}
+          />
+        }
       >
-        {/* Test Component */}
-        {/* <View style={{backgroundColor: 'red', height: 100, margin: 20}}>
-          <Text style={{color: 'white', fontSize: 18, textAlign: 'center', marginTop: 40}}>TEST DASHBOARD AREA</Text>
-        </View> */}
-
         {/* Summary Dashboard */}
         <SimpleSummaryDashboard />
 
@@ -1294,9 +1451,8 @@ function PrincipalDashboardMain() {
 
         {/* Main Dashboard Grid */}
         <View style={styles.mainGridSection}>
-          {/* <Text style={styles.sectionTitle}>Quick Actions</Text> */}
-          <Text style={styles.sectionTitle}></Text>
-          <DashboardGrid
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <EnhancedDashboardGrid
             items={dashboardItems}
             onFullScreenPress={handleFullScreenPress}
           />
@@ -1308,8 +1464,36 @@ function PrincipalDashboardMain() {
         visible={activeModal === "educator_feedback"}
         onClose={handleCloseModal}
       />
+      <EducatorFeedbackStatsModal
+        visible={activeModal === "educator_feedback_stats"}
+        onClose={handleCloseModal}
+      />
+      <StudentFeedbackStatsModal
+        visible={activeModal === "student_feedback_stats"}
+        onClose={handleCloseModal}
+      />
       <StudentAttendanceModal
         visible={activeModal === "student_attendance"}
+        onClose={handleCloseModal}
+      />
+      <StudentAttendanceStatsModal
+        visible={activeModal === "student_attendance_stats"}
+        onClose={handleCloseModal}
+      />
+      <ClassTeacherModal
+        visible={activeModal === "class_teachers"}
+        onClose={handleCloseModal}
+      />
+      <SectionalHeadModal
+        visible={activeModal === "sectional_heads"}
+        onClose={handleCloseModal}
+      />
+      <MyFeedbackModal
+        visible={activeModal === "my_feedback"}
+        onClose={handleCloseModal}
+      />
+      <StudentAchievementModal
+        visible={activeModal === "student_achievement"}
         onClose={handleCloseModal}
       />
       <AcademicReportsModal ref={academicReportsModalRef} />
@@ -1317,11 +1501,35 @@ function PrincipalDashboardMain() {
       <FinancialOverviewModal ref={financialOverviewModalRef} />
       <ParentCommunicationModal ref={parentCommunicationModalRef} />
       <EmergencyManagementModal ref={emergencyManagementModalRef} />
+      {showClassSelectionDrawer && (
+        <GradeLevelClassSelectionDrawer
+          onClose={handleCloseClassSelectionDrawer}
+          onSelectClass={handleClassSelection}
+        />
+      )}
+
+      {showUniversalDrawer && (
+        <UniversalDrawerMenu
+          onClose={handleCloseUniversalDrawer}
+          showStudentDetails={showStudentDetails}
+          selectedClassId={selectedClassData?.id}
+          selectedClassName={selectedClassData?.name}
+          selectedGradeLevelName={selectedClassData?.gradeLevelName}
+          onBack={handleBackFromStudentDetails}
+        />
+      )}
 
       {/* Full-Screen Modal */}
       {activeModal &&
         activeModal !== "educator_feedback" &&
-        activeModal !== "student_attendance" && (
+        activeModal !== "educator_feedback_stats" &&
+        activeModal !== "student_feedback_stats" &&
+        activeModal !== "student_attendance" &&
+        activeModal !== "student_attendance_stats" &&
+        activeModal !== "class_teachers" &&
+        activeModal !== "sectional_heads" &&
+        activeModal !== "my_feedback" &&
+        activeModal !== "student_achievement" && (
           <FullScreenModal
             visible={!!activeModal}
             onClose={handleCloseModal}

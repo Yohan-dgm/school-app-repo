@@ -274,10 +274,17 @@ export const activityFeedApi = apiServer1
       uploadMedia: build.mutation({
         query: (formData) => {
           console.log("📎 Uploading media files with FormData");
+          console.log("📎 Platform: React Native with FormData");
+          console.log("📎 CRITICAL: Content-Type will be auto-set by fetch for FormData");
+
           return {
             url: "/api/activity-feed-management/media/upload",
             method: "POST",
             body: formData, // FormData with media files
+            // CRITICAL: Don't set Content-Type header manually for FormData
+            // React Native's fetch will automatically set multipart/form-data with boundary
+            // Setting it manually causes "Network request failed" on Android
+            formData: true, // Flag to indicate this is FormData
           };
         },
         transformResponse: (response: any) => {
@@ -372,328 +379,456 @@ export const activityFeedApi = apiServer1
           // Handle different response structures
           if (response?.success || response?.status === "successful") {
             console.log("📎 ✅ Upload API returned success response");
-            const data =
-              response.data ||
-              response.files ||
-              response.media ||
-              response.uploaded ||
-              response.results ||
-              [];
+
+            // ===== ENHANCED DATA EXTRACTION FOR MULTIPLE STRUCTURES =====
+            let extractedData = [];
+
+            console.log("📎 🔍 Analyzing backend response structure...");
+
+            // Strategy 1: Direct array in various fields
+            const directArrayFields = [
+              "data",
+              "files",
+              "media",
+              "uploaded",
+              "results",
+              "uploaded_files",
+              "file_list",
+              "media_list",
+            ];
+
+            for (const field of directArrayFields) {
+              if (response[field] && Array.isArray(response[field])) {
+                console.log(
+                  `📎 ✅ Found direct array in response.${field} with ${response[field].length} items`,
+                );
+                extractedData = response[field];
+                break;
+              }
+            }
+
+            // Strategy 2: Single object containing file arrays
+            if (extractedData.length === 0) {
+              const objectFields = [
+                "data",
+                "result",
+                "upload_result",
+                "response",
+              ];
+
+              for (const field of objectFields) {
+                if (
+                  response[field] &&
+                  typeof response[field] === "object" &&
+                  !Array.isArray(response[field])
+                ) {
+                  console.log(
+                    `📎 🔍 Checking nested object response.${field}...`,
+                  );
+
+                  // Check for nested arrays within the object
+                  for (const nestedField of directArrayFields) {
+                    if (
+                      response[field][nestedField] &&
+                      Array.isArray(response[field][nestedField])
+                    ) {
+                      console.log(
+                        `📎 ✅ Found nested array in response.${field}.${nestedField} with ${response[field][nestedField].length} items`,
+                      );
+                      extractedData = response[field][nestedField];
+                      break;
+                    }
+                  }
+
+                  if (extractedData.length > 0) break;
+                }
+              }
+            }
+
+            // Strategy 3: Fallback - treat response itself as data if it contains upload info
+            if (extractedData.length === 0) {
+              if (
+                response.uploaded_files ||
+                response.file_list ||
+                response.url ||
+                response.filename
+              ) {
+                console.log("📎 ℹ️ Using response itself as single file data");
+                extractedData = [response];
+              }
+            }
+
+            console.log("📎 📊 Data extraction summary:", {
+              foundData: extractedData.length > 0,
+              extractedCount: extractedData.length,
+              dataType: typeof extractedData,
+              isArray: Array.isArray(extractedData),
+            });
+
             console.log(
               "📎 Extracted data field:",
-              JSON.stringify(data, null, 2),
-            );
-            console.log(
-              "📎 Data type:",
-              typeof data,
-              "Is array:",
-              Array.isArray(data),
+              JSON.stringify(extractedData, null, 2),
             );
 
-            // Ensure data is always an array
-            const mediaArray = Array.isArray(data) ? data : data ? [data] : [];
+            // Enhanced array normalization with multiple fallbacks
+            let mediaArray = [];
+
+            if (Array.isArray(extractedData)) {
+              mediaArray = extractedData;
+            } else if (extractedData && typeof extractedData === "object") {
+              console.log(
+                "📎 ⚠️ Data is object, converting to single-item array",
+              );
+              mediaArray = [extractedData];
+            } else {
+              console.log("📎 ❌ No valid data found, using empty array");
+              mediaArray = [];
+            }
+
             console.log(
-              "📎 Media array after normalization:",
+              "📎 Media array after enhanced normalization:",
               JSON.stringify(mediaArray, null, 2),
             );
 
-            // Process media items with backend filename prioritization for consistency
-            const validatedMedia = mediaArray.map((media, index) => {
+            console.log(
+              `📎 🎯 NORMALIZATION RESULT: ${mediaArray.length} media items ready for processing`,
+            );
+
+            // ===== CRITICAL FIX: HANDLE ALL NESTED FILES =====
+            // First, flatten any nested uploaded_files arrays to ensure ALL files are processed
+            const flattenedMediaArray = [];
+
+            mediaArray.forEach((media, originalIndex) => {
               console.log(
-                `📎 Processing upload API response item ${index}:`,
+                `📎 Processing upload API response item ${originalIndex}:`,
                 JSON.stringify(media, null, 2),
               );
 
               // ===== HANDLE NESTED UPLOADED_FILES STRUCTURE =====
               // Check if backend returned data in nested uploaded_files format
-              let actualMediaData = media;
               if (
                 media.uploaded_files &&
                 Array.isArray(media.uploaded_files) &&
                 media.uploaded_files.length > 0
               ) {
                 console.log(
-                  `📎 🔍 Found nested uploaded_files structure for item ${index}`,
-                );
-                console.log(
-                  `📎 uploaded_files[0]:`,
-                  JSON.stringify(media.uploaded_files[0], null, 2),
+                  `📎 🔍 Found nested uploaded_files structure with ${media.uploaded_files.length} files for item ${originalIndex}`,
                 );
 
-                // Extract the actual media data from uploaded_files[0]
-                const uploadedFile = media.uploaded_files[0];
-                actualMediaData = {
-                  // Preserve wrapper fields that might be useful
-                  ...media,
-
-                  // Override with actual upload data from uploaded_files[0]
-                  type: uploadedFile.type || media.type,
-                  url: uploadedFile.url, // This is the real URL!
-                  filename: uploadedFile.filename, // Backend temp filename
-                  original_filename: uploadedFile.original_filename, // User's original filename!
-                  size: uploadedFile.size || media.size,
-                  mime_type: uploadedFile.mime_type,
-                  width: uploadedFile.width,
-                  height: uploadedFile.height,
-                  duration: uploadedFile.duration,
-                  storage_path: uploadedFile.storage_path,
-                  is_temp: uploadedFile.is_temp,
-                  uploaded_at: uploadedFile.uploaded_at,
-                  file_index: uploadedFile.file_index,
-                  file_id: uploadedFile.file_id,
-                  thumbnail_url: uploadedFile.thumbnail_url,
-                };
-
-                console.log(
-                  `📎 ✅ Extracted actual media data from uploaded_files:`,
-                  JSON.stringify(actualMediaData, null, 2),
-                );
-              }
-
-              // For upload API responses, ALWAYS prioritize backend-generated filenames
-              // This ensures consistency between upload API and post creation API
-              let extractedFilename = null;
-
-              // Priority 1: Backend-specific temp filename fields (highest priority)
-              const tempFilenameFields = [
-                "temp_name",
-                "saved_name",
-                "temp_filename",
-                "saved_filename",
-                "backend_filename",
-                "generated_name",
-              ];
-              for (const field of tempFilenameFields) {
-                if (
-                  actualMediaData[field] &&
-                  typeof actualMediaData[field] === "string"
-                ) {
-                  extractedFilename = actualMediaData[field];
+                // ❌ OLD BEHAVIOR: Only process uploaded_files[0]
+                // ✅ NEW BEHAVIOR: Process ALL files in uploaded_files array
+                media.uploaded_files.forEach((uploadedFile, fileIndex) => {
                   console.log(
-                    `📎 🎯 Upload API - Found backend filename in ${field}: ${extractedFilename}`,
+                    `📎 📁 Processing uploaded_files[${fileIndex}]:`,
+                    JSON.stringify(uploadedFile, null, 2),
                   );
-                  break;
-                }
-              }
 
-              // Priority 2: Standard filename fields (only if they contain temp pattern)
-              if (!extractedFilename) {
-                const standardFilenameFields = [
-                  "filename",
-                  "name",
-                  "original_name",
-                  "file_name",
-                  "original_filename",
-                ];
-                for (const field of standardFilenameFields) {
-                  if (
-                    actualMediaData[field] &&
-                    typeof actualMediaData[field] === "string" &&
-                    actualMediaData[field].includes("temp-")
-                  ) {
-                    extractedFilename = actualMediaData[field];
-                    console.log(
-                      `📎 🎯 Upload API - Found temp pattern in ${field}: ${extractedFilename}`,
-                    );
-                    break;
-                  }
-                }
-              }
+                  const actualMediaData = {
+                    // Preserve wrapper fields that might be useful
+                    ...media,
 
-              // Priority 3: Extract filename from URL/path if it contains temp pattern
-              if (!extractedFilename) {
-                const urlFields = [
-                  "url",
-                  "path",
-                  "file_url",
-                  "file_path",
-                  "storage_path",
-                  "full_path",
-                  "public_path",
-                  "temp_path",
+                    // Override with actual upload data from each uploaded file
+                    type: uploadedFile.type || media.type,
+                    url: uploadedFile.url, // This is the real URL!
+                    filename: uploadedFile.filename, // Backend temp filename
+                    original_filename: uploadedFile.original_filename, // User's original filename!
+                    size: uploadedFile.size || media.size,
+                    mime_type: uploadedFile.mime_type,
+                    width: uploadedFile.width,
+                    height: uploadedFile.height,
+                    duration: uploadedFile.duration,
+                    storage_path: uploadedFile.storage_path,
+                    is_temp: uploadedFile.is_temp,
+                    uploaded_at: uploadedFile.uploaded_at,
+                    file_index: uploadedFile.file_index,
+                    file_id: uploadedFile.file_id,
+                    thumbnail_url: uploadedFile.thumbnail_url,
+
+                    // Add metadata for debugging
+                    original_response_index: originalIndex,
+                    nested_file_index: fileIndex,
+                    source_structure: "nested_uploaded_files",
+                  };
+
+                  flattenedMediaArray.push(actualMediaData);
+
+                  console.log(
+                    `📎 ✅ Extracted file ${fileIndex} from nested structure:`,
+                    JSON.stringify(actualMediaData, null, 2),
+                  );
+                });
+              } else {
+                // No nested structure, add directly to flattened array
+                console.log(
+                  `📎 📁 Processing direct media item ${originalIndex} (no nested structure)`,
+                );
+                flattenedMediaArray.push({
+                  ...media,
+                  original_response_index: originalIndex,
+                  nested_file_index: 0,
+                  source_structure: "direct",
+                });
+              }
+            });
+
+            console.log(
+              `📎 🎯 FLATTENING RESULT: Input ${mediaArray.length} items → Output ${flattenedMediaArray.length} files`,
+            );
+            console.log(
+              `📎 📋 Flattened media array:`,
+              JSON.stringify(flattenedMediaArray, null, 2),
+            );
+
+            // Now process each flattened file item
+            const validatedMedia = flattenedMediaArray.map(
+              (actualMediaData, index) => {
+                // For upload API responses, ALWAYS prioritize backend-generated filenames
+                // This ensures consistency between upload API and post creation API
+                let extractedFilename = null;
+
+                // Priority 1: Backend-specific temp filename fields (highest priority)
+                const tempFilenameFields = [
+                  "temp_name",
+                  "saved_name",
+                  "temp_filename",
+                  "saved_filename",
+                  "backend_filename",
+                  "generated_name",
                 ];
-                for (const field of urlFields) {
+                for (const field of tempFilenameFields) {
                   if (
                     actualMediaData[field] &&
                     typeof actualMediaData[field] === "string"
                   ) {
-                    const pathParts = actualMediaData[field].split("/");
-                    const lastPart = pathParts[pathParts.length - 1];
-                    if (lastPart && lastPart.includes("temp-")) {
-                      extractedFilename = lastPart;
+                    extractedFilename = actualMediaData[field];
+                    console.log(
+                      `📎 🎯 Upload API - Found backend filename in ${field}: ${extractedFilename}`,
+                    );
+                    break;
+                  }
+                }
+
+                // Priority 2: Standard filename fields (only if they contain temp pattern)
+                if (!extractedFilename) {
+                  const standardFilenameFields = [
+                    "filename",
+                    "name",
+                    "original_name",
+                    "file_name",
+                    "original_filename",
+                  ];
+                  for (const field of standardFilenameFields) {
+                    if (
+                      actualMediaData[field] &&
+                      typeof actualMediaData[field] === "string" &&
+                      actualMediaData[field].includes("temp-")
+                    ) {
+                      extractedFilename = actualMediaData[field];
                       console.log(
-                        `📎 🎯 Found temp filename in ${field} path: ${extractedFilename}`,
+                        `📎 🎯 Upload API - Found temp pattern in ${field}: ${extractedFilename}`,
                       );
                       break;
                     }
                   }
                 }
-              }
 
-              // Priority 4: Fallback to any available filename
-              if (!extractedFilename) {
-                const fallbackFields = [
-                  "filename",
-                  "name",
-                  "original_name",
-                  "file_name",
-                  "original_filename",
-                ];
-                for (const field of fallbackFields) {
-                  if (
-                    actualMediaData[field] &&
-                    typeof actualMediaData[field] === "string" &&
-                    actualMediaData[field].trim()
-                  ) {
-                    extractedFilename = actualMediaData[field];
-                    console.log(
-                      `📎 ℹ️ Using fallback filename from ${field}: ${extractedFilename}`,
-                    );
-                    break;
+                // Priority 3: Extract filename from URL/path if it contains temp pattern
+                if (!extractedFilename) {
+                  const urlFields = [
+                    "url",
+                    "path",
+                    "file_url",
+                    "file_path",
+                    "storage_path",
+                    "full_path",
+                    "public_path",
+                    "temp_path",
+                  ];
+                  for (const field of urlFields) {
+                    if (
+                      actualMediaData[field] &&
+                      typeof actualMediaData[field] === "string"
+                    ) {
+                      const pathParts = actualMediaData[field].split("/");
+                      const lastPart = pathParts[pathParts.length - 1];
+                      if (lastPart && lastPart.includes("temp-")) {
+                        extractedFilename = lastPart;
+                        console.log(
+                          `📎 🎯 Found temp filename in ${field} path: ${extractedFilename}`,
+                        );
+                        break;
+                      }
+                    }
                   }
                 }
-              }
 
-              // Priority 5: Generate fallback filename
-              if (!extractedFilename) {
-                extractedFilename = `file_${Date.now()}_${index}`;
-                console.log(
-                  `📎 ⚠️ Generated fallback filename: ${extractedFilename}`,
-                );
-              }
+                // Priority 4: Fallback to any available filename
+                if (!extractedFilename) {
+                  const fallbackFields = [
+                    "filename",
+                    "name",
+                    "original_name",
+                    "file_name",
+                    "original_filename",
+                  ];
+                  for (const field of fallbackFields) {
+                    if (
+                      actualMediaData[field] &&
+                      typeof actualMediaData[field] === "string" &&
+                      actualMediaData[field].trim()
+                    ) {
+                      extractedFilename = actualMediaData[field];
+                      console.log(
+                        `📎 ℹ️ Using fallback filename from ${field}: ${extractedFilename}`,
+                      );
+                      break;
+                    }
+                  }
+                }
 
-              // Use the URL provided by the backend (from actualMediaData)
-              const mediaType =
-                actualMediaData.type ||
-                actualMediaData.media_type ||
-                actualMediaData.file_type ||
-                "image";
-
-              // Use the URL directly from backend response (no need to reconstruct)
-              let finalUrl = actualMediaData.url || "";
-              console.log(`📎 🔧 Using backend-provided URL: ${finalUrl}`);
-
-              // Extract original user filename - prioritize original_filename from backend
-              let originalUserFilename = null;
-
-              // Priority 1: Backend-provided original_filename (best source)
-              if (
-                actualMediaData.original_filename &&
-                typeof actualMediaData.original_filename === "string"
-              ) {
-                originalUserFilename = actualMediaData.original_filename;
-                console.log(
-                  `📎 🎯 Using backend original_filename: ${originalUserFilename}`,
-                );
-              }
-              // Priority 2: Extract from temp pattern if available
-              else if (
-                extractedFilename &&
-                extractedFilename.includes("temp-")
-              ) {
-                // Try to extract original filename from temp pattern: temp-timestamp-original_filename
-                const tempPattern = /^temp-\d+-(.+)$/;
-                const match = extractedFilename.match(tempPattern);
-                if (match && match[1]) {
-                  originalUserFilename = match[1];
+                // Priority 5: Generate fallback filename
+                if (!extractedFilename) {
+                  extractedFilename = `file_${Date.now()}_${index}`;
                   console.log(
-                    `📎 🎯 Extracted original user filename from temp pattern: ${extractedFilename} → ${originalUserFilename}`,
+                    `📎 ⚠️ Generated fallback filename: ${extractedFilename}`,
                   );
                 }
-              }
 
-              // Build the final processed media object using actualMediaData
-              const processedMedia = {
-                type: mediaType,
-                url: finalUrl, // Use backend-provided URL directly
-                filename: extractedFilename, // Backend-generated filename for upload consistency
-                original_user_filename: originalUserFilename, // Preserved user-selected filename
-                backend_filename: extractedFilename, // Explicit backend filename reference
-                size:
-                  actualMediaData.size ||
-                  actualMediaData.file_size ||
-                  actualMediaData.filesize ||
-                  0,
-                // Include additional backend fields
-                mime_type: actualMediaData.mime_type,
-                width: actualMediaData.width,
-                height: actualMediaData.height,
-                duration: actualMediaData.duration,
-                storage_path: actualMediaData.storage_path,
-                is_temp: actualMediaData.is_temp,
-                uploaded_at: actualMediaData.uploaded_at,
-                file_index: actualMediaData.file_index,
-                file_id: actualMediaData.file_id,
-                thumbnail_url: actualMediaData.thumbnail_url,
-                // Keep any additional fields from the wrapper
-                upload_count: media.upload_count,
-                error_count: media.error_count,
-                temp_storage: media.temp_storage,
-                post_type: media.post_type,
-              };
+                // Use the URL provided by the backend (from actualMediaData)
+                const mediaType =
+                  actualMediaData.type ||
+                  actualMediaData.media_type ||
+                  actualMediaData.file_type ||
+                  "image";
 
-              console.log(
-                `📎 ✅ Upload API - Processed media ${index}:`,
-                processedMedia,
-              );
-              console.log(
-                `📎 ✅ Backend filename (for consistency): ${processedMedia.filename}`,
-              );
-              console.log(
-                `📎 🎯 Original user filename (for user intent): ${processedMedia.original_user_filename || "not extracted"}`,
-              );
-              console.log(
-                `📎 ✅ Storage URL constructed: ${processedMedia.url}`,
-              );
-              console.log(
-                `📎 ✅ Consistency check: ${processedMedia.filename?.includes("temp-") ? "✅ Backend filename preserved" : "⚠️ Using fallback"}`,
-              );
+                // Use the URL directly from backend response (no need to reconstruct)
+                let finalUrl = actualMediaData.url || "";
+                console.log(`📎 🔧 Using backend-provided URL: ${finalUrl}`);
 
-              // Validate URL and filename consistency
-              const urlEndsWithFilename = processedMedia.url.endsWith(
-                processedMedia.filename,
-              );
-              const urlContainsTempPattern =
-                processedMedia.url.includes("temp-");
-              const filenameContainsTempPattern =
-                processedMedia.filename.includes("temp-");
+                // Extract original user filename - prioritize original_filename from backend
+                let originalUserFilename = null;
 
-              console.log(`📎 🔍 URL/Filename Validation for media ${index}:`);
-              console.log(
-                `  - URL ends with filename: ${urlEndsWithFilename ? "✅" : "❌"}`,
-              );
-              console.log(
-                `  - URL contains temp pattern: ${urlContainsTempPattern ? "✅" : "❌"}`,
-              );
-              console.log(
-                `  - Filename contains temp pattern: ${filenameContainsTempPattern ? "✅" : "❌"}`,
-              );
+                // Priority 1: Backend-provided original_filename (best source)
+                if (
+                  actualMediaData.original_filename &&
+                  typeof actualMediaData.original_filename === "string"
+                ) {
+                  originalUserFilename = actualMediaData.original_filename;
+                  console.log(
+                    `📎 🎯 Using backend original_filename: ${originalUserFilename}`,
+                  );
+                }
+                // Priority 2: Extract from temp pattern if available
+                else if (
+                  extractedFilename &&
+                  extractedFilename.includes("temp-")
+                ) {
+                  // Try to extract original filename from temp pattern: temp-timestamp-original_filename
+                  const tempPattern = /^temp-\d+-(.+)$/;
+                  const match = extractedFilename.match(tempPattern);
+                  if (match && match[1]) {
+                    originalUserFilename = match[1];
+                    console.log(
+                      `📎 🎯 Extracted original user filename from temp pattern: ${extractedFilename} → ${originalUserFilename}`,
+                    );
+                  }
+                }
 
-              if (
-                urlEndsWithFilename &&
-                urlContainsTempPattern &&
-                filenameContainsTempPattern
-              ) {
+                // Build the final processed media object using actualMediaData
+                const processedMedia = {
+                  type: mediaType,
+                  url: finalUrl, // Use backend-provided URL directly
+                  filename: extractedFilename, // Backend-generated filename for upload consistency
+                  original_user_filename: originalUserFilename, // Preserved user-selected filename
+                  backend_filename: extractedFilename, // Explicit backend filename reference
+                  size:
+                    actualMediaData.size ||
+                    actualMediaData.file_size ||
+                    actualMediaData.filesize ||
+                    0,
+                  // Include additional backend fields
+                  mime_type: actualMediaData.mime_type,
+                  width: actualMediaData.width,
+                  height: actualMediaData.height,
+                  duration: actualMediaData.duration,
+                  storage_path: actualMediaData.storage_path,
+                  is_temp: actualMediaData.is_temp,
+                  uploaded_at: actualMediaData.uploaded_at,
+                  file_index: actualMediaData.file_index,
+                  file_id: actualMediaData.file_id,
+                  thumbnail_url: actualMediaData.thumbnail_url,
+                  // Keep any additional fields from the wrapper (using actualMediaData which contains the spread media fields)
+                  upload_count: actualMediaData.upload_count,
+                  error_count: actualMediaData.error_count,
+                  temp_storage: actualMediaData.temp_storage,
+                  post_type: actualMediaData.post_type,
+                };
+
                 console.log(
-                  `📎 ✅ PERFECT! URL and filename are properly matched with backend temp pattern`,
+                  `📎 ✅ Upload API - Processed media ${index}:`,
+                  processedMedia,
                 );
-              } else if (
-                filenameContainsTempPattern &&
-                !urlContainsTempPattern
-              ) {
                 console.log(
-                  `📎 ⚠️ WARNING: Filename has temp pattern but URL doesn't - URL construction may have failed`,
+                  `📎 ✅ Backend filename (for consistency): ${processedMedia.filename}`,
                 );
-              } else if (!filenameContainsTempPattern) {
                 console.log(
-                  `📎 ⚠️ INFO: Using fallback filename - backend temp filename not found`,
+                  `📎 🎯 Original user filename (for user intent): ${processedMedia.original_user_filename || "not extracted"}`,
                 );
-              } else {
-                console.log(`📎 ❌ ERROR: URL/filename mismatch detected`);
-              }
+                console.log(
+                  `📎 ✅ Storage URL constructed: ${processedMedia.url}`,
+                );
+                console.log(
+                  `📎 ✅ Consistency check: ${processedMedia.filename?.includes("temp-") ? "✅ Backend filename preserved" : "⚠️ Using fallback"}`,
+                );
 
-              return processedMedia;
-            });
+                // Validate URL and filename consistency
+                const urlEndsWithFilename = processedMedia.url.endsWith(
+                  processedMedia.filename,
+                );
+                const urlContainsTempPattern =
+                  processedMedia.url.includes("temp-");
+                const filenameContainsTempPattern =
+                  processedMedia.filename.includes("temp-");
+
+                console.log(
+                  `📎 🔍 URL/Filename Validation for media ${index}:`,
+                );
+                console.log(
+                  `  - URL ends with filename: ${urlEndsWithFilename ? "✅" : "❌"}`,
+                );
+                console.log(
+                  `  - URL contains temp pattern: ${urlContainsTempPattern ? "✅" : "❌"}`,
+                );
+                console.log(
+                  `  - Filename contains temp pattern: ${filenameContainsTempPattern ? "✅" : "❌"}`,
+                );
+
+                if (
+                  urlEndsWithFilename &&
+                  urlContainsTempPattern &&
+                  filenameContainsTempPattern
+                ) {
+                  console.log(
+                    `📎 ✅ PERFECT! URL and filename are properly matched with backend temp pattern`,
+                  );
+                } else if (
+                  filenameContainsTempPattern &&
+                  !urlContainsTempPattern
+                ) {
+                  console.log(
+                    `📎 ⚠️ WARNING: Filename has temp pattern but URL doesn't - URL construction may have failed`,
+                  );
+                } else if (!filenameContainsTempPattern) {
+                  console.log(
+                    `📎 ⚠️ INFO: Using fallback filename - backend temp filename not found`,
+                  );
+                } else {
+                  console.log(`📎 ❌ ERROR: URL/filename mismatch detected`);
+                }
+
+                return processedMedia;
+              },
+            );
 
             console.log("📎 ===== FINAL VALIDATED MEDIA ARRAY =====");
             console.log(
@@ -770,6 +905,70 @@ export const activityFeedApi = apiServer1
                 `📎 ❌ No perfect matches - URL construction needs investigation`,
               );
             }
+
+            // ===== COMPREHENSIVE PIPELINE DEBUGGING =====
+            console.log("📎 🔍 ===== COMPLETE PIPELINE DEBUG SUMMARY =====");
+            console.log("📎 📊 Processing Pipeline Summary:");
+            console.log(
+              `  1. ✅ Backend Response: Success=${response?.success}`,
+            );
+            console.log(
+              `  2. ✅ Data Extraction: Found ${extractedData.length} items`,
+            );
+            console.log(
+              `  3. ✅ Array Normalization: ${mediaArray.length} items normalized`,
+            );
+            console.log(
+              `  4. ✅ Nested File Flattening: ${flattenedMediaArray.length} files flattened`,
+            );
+            console.log(
+              `  5. ✅ Final Validation: ${validatedMedia.length} files validated`,
+            );
+
+            console.log("📎 🎯 CRITICAL SUCCESS METRICS:");
+            console.log(
+              `  - Input → Output Consistency: ${validatedMedia.length > 0 ? "✅ SUCCESS" : "❌ FAILED"}`,
+            );
+            console.log(
+              `  - Multiple Files Preserved: ${validatedMedia.length > 1 ? "✅ YES" : validatedMedia.length === 1 ? "⚠️ SINGLE FILE" : "❌ NO FILES"}`,
+            );
+            console.log(
+              `  - Backend Integration: ${backendFilenames}/${validatedMedia.length} files have backend filenames`,
+            );
+            console.log(
+              `  - URL Construction: ${correctUrls}/${validatedMedia.length} files have correct URLs`,
+            );
+
+            if (validatedMedia.length === 0) {
+              console.error(
+                "📎 ❌ CRITICAL ISSUE: No media files in final output!",
+              );
+              console.error("📎 🔍 Debug Info:", {
+                responseSuccess: response?.success,
+                responseStatus: response?.status,
+                extractedDataLength: extractedData.length,
+                mediaArrayLength: mediaArray.length,
+                flattenedLength: flattenedMediaArray.length,
+              });
+            } else if (validatedMedia.length === 1) {
+              console.warn(
+                "📎 ⚠️ WARNING: Only 1 file in output - multiple selection may have failed",
+              );
+            } else {
+              console.log(
+                `📎 🎉 SUCCESS: ${validatedMedia.length} files processed successfully!`,
+              );
+            }
+
+            console.log("📎 📋 Final Output Structure:", {
+              totalFiles: validatedMedia.length,
+              fileTypes: validatedMedia.map((f) => f.type),
+              filenames: validatedMedia.map((f) => f.filename),
+              hasUrls: validatedMedia.every((f) => !!f.url),
+              structureValid: validatedMedia.every(
+                (f) => f.type && f.url && f.filename,
+              ),
+            });
 
             return {
               success: true,
@@ -863,6 +1062,37 @@ export const activityFeedApi = apiServer1
           return response;
         },
       }),
+
+      createStudentPost: build.mutation({
+        query: (payload) => {
+          console.log(
+            `👨‍🎓 Creating student post with JSON payload (two-step process)`,
+          );
+          console.log(
+            `👨‍🎓 Payload structure:`,
+            JSON.stringify(payload, null, 2),
+          );
+
+          // Always use JSON for post creation in two-step process
+          return {
+            url: "api/activity-feed-management/student-posts/create",
+            method: "POST",
+            body: payload,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          };
+        },
+        invalidatesTags: (result, error, { student_id }) => [
+          { type: "StudentPosts", id: `STUDENT_${student_id}` },
+          { type: "StudentPosts", id: "LIST" },
+          { type: "ActivityFeed", id: "LIST" },
+        ],
+        transformResponse: (response: any) => {
+          console.log("👨‍🎓 Student Post Creation Response:", response);
+          return response;
+        },
+      }),
     }),
   });
 
@@ -885,6 +1115,7 @@ export const {
   useUploadMediaMutation,
   useCreateSchoolPostMutation,
   useCreateClassPostMutation,
+  useCreateStudentPostMutation,
 } = activityFeedApi;
 
 /*

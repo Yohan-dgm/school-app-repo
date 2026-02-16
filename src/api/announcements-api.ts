@@ -9,12 +9,14 @@ export interface CreateAnnouncementRequest {
   category_id: number;
   priority_level: 1 | 2 | 3;
   status: "draft" | "scheduled" | "published";
-  target_type?: "broadcast" | "role" | "class" | "grade" | "user";
+  target_type: string; // Changed from enum to string to support dynamic values
   target_data?: {
     roles?: string[];
     user_ids?: number[];
     grade_level_class_ids?: number[];
     grade_level_ids?: number[];
+    group_filter?: string; // Added for the new filter logic
+    selected_ids?: number[] | string[]; // Generic holder for IDs
   };
   image_url?: string;
   attachment_urls?: string[];
@@ -70,7 +72,7 @@ export interface GetAnnouncementsRequest {
 export interface AnnouncementsResponse {
   success: boolean;
   message: string;
-  data: AnnouncementItem[];
+  announcements: AnnouncementItem[];
   pagination?: {
     current_page: number;
     per_page: number;
@@ -234,17 +236,11 @@ export const announcementsApi = apiServer1.injectEndpoints({
   overrideExisting: false,
 });
 
+
+
 export const {
   useCreateAnnouncementMutation,
   useGetAnnouncementsQuery,
   useGetAnnouncementDetailsQuery,
   useGetAnnouncementCategoriesQuery,
 } = announcementsApi;
-
-// Export types for component usage
-export type {
-  CreateAnnouncementRequest,
-  AnnouncementItem,
-  GetAnnouncementsRequest,
-  AnnouncementsResponse,
-};

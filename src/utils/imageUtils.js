@@ -1,9 +1,11 @@
 /**
  * Image compression utilities using expo-image-manipulator
  * Handles image compression for file uploads to reduce bandwidth
+ * Android-specific: Handles content:// URIs and proper file access
  */
 
 import * as ImageManipulator from "expo-image-manipulator";
+import { Platform } from "react-native";
 
 /**
  * Compresses an image if it's larger than 1MB
@@ -20,7 +22,20 @@ export const compressImageIfNeeded = async (uri, originalSize) => {
     originalSize,
     sizeInMB: (originalSize / ONE_MB).toFixed(2),
     needsCompression: originalSize >= ONE_MB,
+    platform: Platform.OS,
+    uriType: uri.startsWith("content://") ? "content://" : uri.startsWith("file://") ? "file://" : "other",
   });
+
+  // Validate URI before processing
+  if (!uri || uri.length === 0) {
+    console.error("❌ Invalid URI provided for compression");
+    return {
+      uri,
+      size: originalSize,
+      wasCompressed: false,
+      error: "Invalid URI",
+    };
+  }
 
   // Skip compression if image is under 1MB
   if (originalSize < ONE_MB) {
@@ -36,6 +51,7 @@ export const compressImageIfNeeded = async (uri, originalSize) => {
 
   try {
     console.log(`🔄 Compressing image (${originalSize} bytes)...`);
+    console.log(`📱 Platform: ${Platform.OS}`);
 
     // Start with quality 0.8
     let quality = 0.8;
@@ -179,22 +195,69 @@ export const sanitizeFilename = (filename) => {
 };
 
 /**
- * Validates video file size (5MB limit)
+ * Validates video file size (5MB limit) with enhanced error handling
  * @param {number} fileSize - File size in bytes
- * @returns {Object} { isValid, error }
+ * @param {string} fileName - Optional filename for better error messages
+ * @returns {Object} { isValid, error, fileSize, sizeInMB }
  */
-export const validateVideoSize = (fileSize) => {
+export const validateVideoSize = (fileSize, fileName = "video file") => {
   const FIVE_MB = 5 * 1024 * 1024; // 5MB in bytes
 
-  if (fileSize > FIVE_MB) {
+  console.log(`🎥 Video size validation for ${fileName}:`, {
+    fileSizeBytes: fileSize,
+    fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
+    limitMB: 5,
+    isOverLimit: fileSize > FIVE_MB,
+    platform: Platform.OS,
+  });
+
+  try {
+    // Check if fileSize is valid
+    if (!fileSize || typeof fileSize !== "number" || fileSize <= 0) {
+      console.warn(`⚠️ Invalid file size for ${fileName}: ${fileSize}`);
+      // On Android, file size might not be immediately available from content URI
+      if (Platform.OS === "android") {
+        console.warn(`🤖 Android: File size unavailable - this should have been fetched earlier`);
+      }
+      return {
+        isValid: false,
+        error: `Unable to determine file size for ${fileName}. Please try selecting the file again.`,
+        fileSize: fileSize,
+        sizeInMB: 0,
+      };
+    }
+
+    if (fileSize > FIVE_MB) {
+      const sizeInMB = (fileSize / (1024 * 1024)).toFixed(1);
+      console.warn(
+        `❌ Video ${fileName} is too large: ${sizeInMB}MB (limit: 5MB)`,
+      );
+
+      return {
+        isValid: false,
+        error: `Video "${fileName}" is ${sizeInMB}MB. Please select a video under 5MB.\n\nTip: You can compress the video using your phone's video editor or a video compression app.`,
+        fileSize: fileSize,
+        sizeInMB: parseFloat(sizeInMB),
+      };
+    }
+
     const sizeInMB = (fileSize / (1024 * 1024)).toFixed(1);
+    console.log(`✅ Video ${fileName} passed size validation: ${sizeInMB}MB`);
+
+    return {
+      isValid: true,
+      fileSize: fileSize,
+      sizeInMB: parseFloat(sizeInMB),
+    };
+  } catch (error) {
+    console.error(`❌ Error validating video size for ${fileName}:`, error);
     return {
       isValid: false,
-      error: `Video file is ${sizeInMB}MB. Currently can't upload video exceeding 5MB.`,
+      error: `Error validating video "${fileName}". Please try again or select a different video.`,
+      fileSize: fileSize,
+      sizeInMB: 0,
     };
   }
-
-  return { isValid: true };
 };
 
 /**
@@ -322,19 +385,23 @@ export const processMediaForUpload = async (media, index) => {
       },
     };
   } else if (mediaType === "video") {
-    // Validate video size (5MB limit)
-    const validation = validateVideoSize(originalSize);
+    // Enhanced video size validation with filename
+    const validation = validateVideoSize(originalSize, filename);
     if (!validation.isValid) {
-      console.warn(`❌ Video validation failed: ${validation.error}`);
+      console.warn(
+        `❌ Video validation failed for ${filename}:`,
+        validation.error,
+      );
       return {
         success: false,
         error: validation.error,
+        fileName: filename,
+        fileSize: validation.fileSize,
+        sizeInMB: validation.sizeInMB,
       };
     }
 
-    console.log(
-      `🎥 Video size OK (${(originalSize / (1024 * 1024)).toFixed(1)}MB)`,
-    );
+    console.log(`🎥 Video "${filename}" size OK (${validation.sizeInMB}MB)`);
     return {
       success: true,
       data: {

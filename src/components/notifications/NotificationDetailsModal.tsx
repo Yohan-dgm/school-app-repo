@@ -10,8 +10,10 @@ import {
   Dimensions,
   Linking,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { MaterialIcons } from "@expo/vector-icons";
 import { BaseNotification } from "../../types/notifications";
+import MediaPreviewModal from "../common/MediaPreviewModal";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -30,6 +32,8 @@ export default function NotificationDetailsModal({
 }: NotificationDetailsModalProps) {
   if (!notification) return null;
 
+  const [webViewHeight, setWebViewHeight] = React.useState(100);
+  const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
   const isUnread = !(notification.is_read ?? notification.isRead);
 
   const getPriorityColor = (priority: string) => {
@@ -56,6 +60,147 @@ export default function NotificationDetailsModal({
         minute: "2-digit",
       })
     );
+  };
+
+  // Helper function to detect HTML content
+  const isHTMLContent = (text: string) => {
+    if (!text) return false;
+    return /<[^>]+>/g.test(text);
+  };
+
+  // Helper function to wrap HTML content with proper styling
+  const wrapHTMLContent = (html: string) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-size: 16px;
+            color: #374151;
+            line-height: 24px;
+            padding: 0;
+            margin: 0;
+            background: transparent;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 12px 0;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+          }
+          table, th, td {
+            border: 1px solid #e5e7eb;
+          }
+          th, td {
+            padding: 8px;
+            text-align: left;
+          }
+          a {
+            color: #3b82f6;
+            text-decoration: underline;
+          }
+          p {
+            margin: 8px 0;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin: 12px 0 8px 0;
+            color: #111827;
+          }
+          ul, ol {
+            margin: 8px 0;
+            padding-left: 24px;
+          }
+          li {
+            margin: 4px 0;
+          }
+          blockquote {
+            border-left: 4px solid #3b82f6;
+            padding-left: 16px;
+            margin: 12px 0;
+            color: #6b7280;
+          }
+          code {
+            background-color: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+          }
+          pre {
+            background-color: #f3f4f6;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+          }
+          pre code {
+            background: none;
+            padding: 0;
+          }
+        </style>
+      </head>
+      <body>
+        ${html}
+        <script>
+          // Auto-height calculation function
+          function updateHeight() {
+            const height = Math.max(
+              document.body.scrollHeight,
+              document.documentElement.scrollHeight,
+              document.body.offsetHeight,
+              document.documentElement.offsetHeight,
+              document.body.clientHeight,
+              document.documentElement.clientHeight
+            );
+
+            // Send height to React Native
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ height: height }));
+            }
+          }
+
+          // Send height when page loads
+          if (document.readyState === 'complete') {
+            updateHeight();
+          } else {
+            window.addEventListener('load', updateHeight);
+          }
+
+          // Send height when content changes (for dynamic content)
+          if (window.ResizeObserver) {
+            const observer = new ResizeObserver(updateHeight);
+            observer.observe(document.body);
+          }
+
+          // Fallback: send height after short delays to catch late-loading content
+          setTimeout(updateHeight, 100);
+          setTimeout(updateHeight, 300);
+          setTimeout(updateHeight, 500);
+
+          // Update on image load
+          const images = document.getElementsByTagName('img');
+          for (let i = 0; i < images.length; i++) {
+            images[i].addEventListener('load', updateHeight);
+          }
+        </script>
+      </body>
+      </html>
+    `;
   };
 
   const handleActionPress = () => {
@@ -224,7 +369,7 @@ export default function NotificationDetailsModal({
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Status Banner */}
-          {isUnread && (
+          {/* {isUnread && (
             <TouchableOpacity
               style={styles.unreadBanner}
               onPress={handleMarkAsRead}
@@ -237,7 +382,7 @@ export default function NotificationDetailsModal({
               <Text style={styles.unreadBannerText}>Mark as Read</Text>
               <MaterialIcons name="arrow-forward" size={16} color="#3b82f6" />
             </TouchableOpacity>
-          )}
+          )} */}
 
           {/* Title */}
           <View style={styles.section}>
@@ -250,24 +395,75 @@ export default function NotificationDetailsModal({
           {/* Message */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Message</Text>
-            <Text style={styles.notificationMessage}>
-              {String(
+            {(() => {
+              const messageContent =
                 notification.message ||
-                  notification.description ||
-                  "No message content",
-              )}
-            </Text>
+                notification.description ||
+                "No message content";
+              const isHTML = isHTMLContent(String(messageContent));
+
+              if (isHTML) {
+                return (
+                  <View style={styles.webViewContainer}>
+                    <WebView
+                      source={{ html: wrapHTMLContent(String(messageContent)) }}
+                      style={[styles.webView, { height: webViewHeight }]}
+                      scrollEnabled={false}
+                      showsVerticalScrollIndicator={false}
+                      showsHorizontalScrollIndicator={false}
+                      originWhitelist={["*"]}
+                      javaScriptEnabled={true}
+                      scalesPageToFit={false}
+                      bounces={false}
+                      onMessage={(event) => {
+                        try {
+                          const data = JSON.parse(event.nativeEvent.data);
+                          if (data.height && data.height > 0) {
+                            // Add 20px padding to prevent cutting off content
+                            setWebViewHeight(data.height + 20);
+                          }
+                        } catch (error) {
+                          console.warn("WebView height update error:", error);
+                        }
+                      }}
+                      onShouldStartLoadWithRequest={(request) => {
+                        // Allow external links to open in browser
+                        if (
+                          request.url !== "about:blank" &&
+                          !request.url.includes("data:text/html")
+                        ) {
+                          Linking.openURL(request.url);
+                          return false;
+                        }
+                        return true;
+                      }}
+                    />
+                  </View>
+                );
+              } else {
+                return (
+                  <Text style={styles.notificationMessage}>
+                    {String(messageContent)}
+                  </Text>
+                );
+              }
+            })()}
           </View>
 
           {/* Image */}
           {notification.image_url && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Attachment</Text>
-              <Image
-                source={{ uri: notification.image_url }}
-                style={styles.attachmentImage}
-                resizeMode="cover"
-              />
+              <TouchableOpacity 
+                onPress={() => setIsPreviewVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Image
+                  source={{ uri: notification.image_url }}
+                  style={styles.attachmentImage}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -393,6 +589,13 @@ export default function NotificationDetailsModal({
           </TouchableOpacity>
         </View>
       </View>
+
+      <MediaPreviewModal
+        visible={isPreviewVisible}
+        onClose={() => setIsPreviewVisible(false)}
+        mediaUrl={notification.image_url || null}
+        mediaType="image"
+      />
     </Modal>
   );
 }
@@ -502,6 +705,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#374151",
     lineHeight: 24,
+    flexShrink: 1,
+    flexWrap: "wrap",
+  },
+  webViewContainer: {
+    width: "100%",
+    backgroundColor: "transparent",
+  },
+  webView: {
+    backgroundColor: "transparent",
   },
   attachmentImage: {
     width: "100%",

@@ -1,3 +1,6 @@
+// IMMEDIATE DEBUG - Check if _layout.tsx is loading
+console.log("🔴 [CRITICAL DEBUG] _layout.tsx file is loading...");
+
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import React, { useState, useEffect } from "react";
@@ -17,11 +20,23 @@ import {
   Inter_500Medium,
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
-import { Platform, LogBox, useWindowDimensions } from "react-native";
+import { Platform, useWindowDimensions } from "react-native";
+// LogBox import disabled to prevent web bundling issues
+let LogBox: any = null;
+if (Platform.OS !== "web") {
+  LogBox = require("react-native").LogBox;
+}
 import * as ExpoSplashScreen from "expo-splash-screen";
 import * as ScreenOrientation from "expo-screen-orientation";
 import NetInfo from "@react-native-community/netinfo";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useSelector } from "react-redux";
+import { RootState } from "../state-store/store";
+// Test import immediately
+console.log("🔵 [_LAYOUT DEBUG] Importing SafeBackgroundNotificationService...");
+import SafeBackgroundNotificationService from "../components/notifications/SafeBackgroundNotificationService";
+console.log("🔵 [_LAYOUT DEBUG] SafeBackgroundNotificationService imported successfully:", !!SafeBackgroundNotificationService);
+
 // import { SplashUtils } from "../utils/splash-utils";
 import "../../global.css";
 
@@ -40,8 +55,9 @@ if (__DEV__) {
 }
 
 // Disable LogBox for web to avoid bundling issues
-if (Platform.OS === "web") {
+if (Platform.OS !== "web" && LogBox) {
   LogBox.ignoreAllLogs();
+  LogBox.ignoreLogs(['Warning:']); // Ignore specific warnings that cause bundling issues
 }
 
 // Prevent auto hide of native splash screen
@@ -175,9 +191,21 @@ function AppContent() {
   }
 
   // Render main app
+  console.log("🔵 [_LAYOUT DEBUG] AppContent rendering...");
+  
   return (
     <>
       <StatusBar style="auto" />
+      {/* Background notification service - runs app-wide when user is authenticated */}
+      {(() => {
+        console.log("🔵 [_LAYOUT DEBUG] About to render SafeBackgroundNotificationService...");
+        try {
+          return <SafeBackgroundNotificationService />;
+        } catch (error) {
+          console.error("❌ [_LAYOUT DEBUG] SafeBackgroundNotificationService crashed during render:", error);
+          return null;
+        }
+      })()}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="public" />

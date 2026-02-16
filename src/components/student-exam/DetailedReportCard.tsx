@@ -29,7 +29,7 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
   selectedStudent,
 }) => {
   const [expandedSubjects, setExpandedSubjects] = useState<Set<number>>(
-    new Set(),
+    new Set()
   );
 
   const formatDate = (dateString: string) => {
@@ -262,7 +262,7 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
               const hasRemarks = Boolean(
                 subject.subject_remark &&
                   typeof subject.subject_remark === "string" &&
-                  subject.subject_remark.trim().length > 0,
+                  subject.subject_remark.trim().length > 0
               );
 
               return (
@@ -395,9 +395,9 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
             {/* </View> */}
 
             <View style={styles.footerBranding}>
-              <Text style={styles.brandingText}>
+              {/* <Text style={styles.brandingText}>
                 Please collect the exam report card hard copy from the school.
-              </Text>
+              </Text> */}
               {/* <Text style={styles.brandingSubtext}>
                 Powered by Toyar Technologies
               </Text> */}

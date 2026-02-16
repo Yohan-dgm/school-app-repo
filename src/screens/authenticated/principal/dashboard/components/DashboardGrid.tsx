@@ -66,7 +66,7 @@ const DashboardCard: React.FC<{
 
   const handlePress = () => {
     console.log(`🎯 Dashboard item "${item.title}" (${item.id}) clicked`);
-    
+
     // Use item's custom onPress if it exists, otherwise use onFullScreenPress
     if (item.onPress) {
       console.log(`✅ Using custom onPress for "${item.title}"`);
@@ -85,7 +85,7 @@ const DashboardCard: React.FC<{
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        activeOpacity={0.9}
+        activeOpacity={0.7}
         style={styles.cardTouchable}
       >
         <LinearGradient

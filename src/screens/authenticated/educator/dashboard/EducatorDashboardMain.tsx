@@ -1,27 +1,43 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
+  Dimensions,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Modalize } from "react-native-modalize";
-import DashboardGrid from "../../principal/dashboard/components/DashboardGrid";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import EnhancedDashboardGrid from "./components/EnhancedDashboardGrid";
 import FullScreenModal from "../../principal/dashboard/components/FullScreenModal";
 import StudentsModalContent from "../../principal/dashboard/components/StudentsModalContent";
 import TeachersModalContent from "../../principal/dashboard/components/TeachersModalContent";
 import EducatorFeedbackModal from "../../principal/dashboard/modals/EducatorFeedbackModal";
 import StudentAttendanceModal from "../../principal/dashboard/modals/StudentAttendanceModal";
+import MyFeedbackModal from "../../principal/dashboard/modals/MyFeedbackModal";
+import StudentAttendanceStatsModal from "../../principal/dashboard/modals/StudentAttendanceStatsModal";
+import StudentFeedbackStatsModal from "../../principal/dashboard/modals/StudentFeedbackStatsModal";
 import AcademicReportsModal from "../../principal/dashboard/modals/AcademicReportsModal";
 import SchoolFacilitiesModal from "../../principal/dashboard/modals/SchoolFacilitiesModal";
 import FinancialOverviewModal from "../../principal/dashboard/modals/FinancialOverviewModal";
 import ParentCommunicationModal from "../../principal/dashboard/modals/ParentCommunicationModal";
 import EmergencyManagementModal from "../../principal/dashboard/modals/EmergencyManagementModal";
+import StudentAchievementModal from "./modals/StudentAchievementModal";
 import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
 import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
+
+const { width } = Dimensions.get("window");
 
 // Configuration: Set to false to hide "All Teachers" section for educators
 // To hide teachers section: Change this to false
@@ -40,12 +56,16 @@ export interface DashboardItem {
 function EducatorDashboardMain() {
   // Full-screen modal state
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // My Class drawer states
-  const [selectedClassData, setSelectedClassData] = useState<(GradeLevelClass & { gradeLevelName: string }) | null>(null);
+  const [selectedClassData, setSelectedClassData] = useState<
+    (GradeLevelClass & { gradeLevelName: string }) | null
+  >(null);
   const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
-  const [showClassSelectionDrawer, setShowClassSelectionDrawer] = useState(false);
+  const [showClassSelectionDrawer, setShowClassSelectionDrawer] =
+    useState(false);
 
   // Modal refs
   const academicReportsModalRef = useRef<Modalize>(null);
@@ -53,6 +73,26 @@ function EducatorDashboardMain() {
   const financialOverviewModalRef = useRef<Modalize>(null);
   const parentCommunicationModalRef = useRef<Modalize>(null);
   const emergencyManagementModalRef = useRef<Modalize>(null);
+
+  // Animation values
+  const fabScale = useSharedValue(1);
+
+  // Initialize animations
+  useEffect(() => {
+    fabScale.value = withRepeat(
+      withSequence(
+        withTiming(1.1, { duration: 1000 }),
+        withTiming(1, { duration: 1000 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  // Animated styles
+  const fabAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: fabScale.value }],
+  }));
 
   // Handlers
   const handleFullScreenPress = (itemId: string) => {
@@ -71,13 +111,34 @@ function EducatorDashboardMain() {
     setActiveModal("student_attendance");
   };
 
+  const openMyFeedbackModal = () => {
+    setActiveModal("my_feedback");
+  };
+
+  const openStudentAttendanceStatsModal = () => {
+    setActiveModal("student_attendance_stats");
+  };
+
+  const openStudentFeedbackStatsModal = () => {
+    setActiveModal("student_feedback_stats");
+  };
+
+  const openStudentAchievementModal = () => {
+    setActiveModal("student_achievement");
+  };
+
   const openMyClassDrawer = () => {
     console.log("🔔 Opening Grade Level Class Selection Drawer...");
     setShowClassSelectionDrawer(true);
   };
 
-  const handleClassSelection = (classData: GradeLevelClass & { gradeLevelName: string }) => {
-    console.log("✅ Class selected in GradeLevelClassSelectionDrawer...", classData);
+  const handleClassSelection = (
+    classData: GradeLevelClass & { gradeLevelName: string }
+  ) => {
+    console.log(
+      "✅ Class selected in GradeLevelClassSelectionDrawer...",
+      classData
+    );
     // Don't automatically open UniversalDrawerMenu anymore
     // The GradeLevelClassSelectionDrawer handles student details internally now
     setSelectedClassData(classData);
@@ -96,6 +157,19 @@ function EducatorDashboardMain() {
 
   const handleCloseClassSelectionDrawer = () => {
     setShowClassSelectionDrawer(false);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    // Simulate data refresh
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1500);
+  };
+
+  const handleFABPress = () => {
+    // Quick action - open educator feedback by default
+    openEducatorFeedbackModal();
   };
 
   const renderModalContent = (modalId: string) => {
@@ -177,8 +251,8 @@ function EducatorDashboardMain() {
     );
   };
 
-  // Educator Dashboard Items - Configurable Teachers section
-  const dashboardItems: DashboardItem[] = [
+  // Primary Dashboard Items - Special cards
+  const primaryItems: DashboardItem[] = [
     {
       id: "my_class",
       title: "My Class",
@@ -189,29 +263,6 @@ function EducatorDashboardMain() {
       onPress: openMyClassDrawer,
     },
     {
-      id: "all_students",
-      title: "Students Overview",
-      subtitle: "View All Students",
-      icon: "school",
-      color: "#0057FF",
-      gradient: ["#0057FF", "#3d7cff"],
-      onPress: () => handleFullScreenPress("all_students"),
-    },
-    // Conditionally include Teachers section based on configuration
-    ...(SHOW_TEACHERS_FOR_EDUCATORS
-      ? [
-          {
-            id: "all_teachers",
-            title: "All Teachers",
-            subtitle: "Staff Directory",
-            icon: "people" as keyof typeof MaterialIcons.glyphMap,
-            color: "#920734",
-            gradient: ["#920734", "#b8285a"] as [string, string],
-            onPress: () => handleFullScreenPress("all_teachers"),
-          },
-        ]
-      : []),
-    {
       id: "educator_feedback",
       title: "Educator Feedback",
       subtitle: "Student Performance Reviews",
@@ -219,6 +270,15 @@ function EducatorDashboardMain() {
       color: "#920734",
       gradient: ["#920734", "#b8285a"],
       onPress: openEducatorFeedbackModal,
+    },
+    {
+      id: "student_achievement",
+      title: "Student Achievement",
+      subtitle: "Record Student Achievements",
+      icon: "emoji-events",
+      color: "#FFD700",
+      gradient: ["#FFD700", "#FFA500"],
+      onPress: openStudentAchievementModal,
     },
     {
       id: "student_attendance",
@@ -231,35 +291,141 @@ function EducatorDashboardMain() {
     },
   ];
 
+  // Other Dashboard Items - Regular cards
+  const otherItems: DashboardItem[] = [
+    {
+      id: "all_students",
+      title: "Students Overview",
+      subtitle: "View All Students",
+      icon: "school",
+      color: "#0057FF",
+      gradient: ["#0057FF", "#3d7cff"],
+      onPress: () => handleFullScreenPress("all_students"),
+    },
+    // Conditionally include Teachers section based on configuration
+    ...(SHOW_TEACHERS_FOR_EDUCATORS
+      ? [
+          // {
+          //   id: "all_teachers",
+          //   title: "All Teachers",
+          //   subtitle: "Staff Directory",
+          //   icon: "people" as keyof typeof MaterialIcons.glyphMap,
+          //   color: "#920734",
+          //   gradient: ["#920734", "#b8285a"] as [string, string],
+          //   onPress: () => handleFullScreenPress("all_teachers"),
+          // },
+        ]
+      : []),
+    // {
+    //   id: "student_attendance_stats",
+    //   title: "Attendance Analytics",
+    //   subtitle: "Student Attendance Stats",
+    //   icon: "analytics",
+    //   color: "#059669",
+    //   gradient: ["#059669", "#10B981"],
+    //   onPress: openStudentAttendanceStatsModal,
+    // },
+    {
+      id: "student_feedback_stats",
+      title: "Student Analytics",
+      subtitle: "Feedback by Students",
+      icon: "school",
+      color: "#920734",
+      gradient: ["#920734", "#b8285a"],
+      onPress: openStudentFeedbackStatsModal,
+    },
+    {
+      id: "my_feedback",
+      title: "My Feedbacks",
+      subtitle: "Feedbacks I Created",
+      icon: "person",
+      color: "#10B981",
+      gradient: ["#10B981", "#059669"],
+      onPress: openMyFeedbackModal,
+    },
+  ];
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Educator Dashboard</Text>
-        {/* <Text style={styles.headerSubtitle}>
-          Access student information, staff directory, and performance data
-        </Text> */}
-      </View>
-
-      {/* Dashboard Grid */}
+      {/* Dashboard Grid with Pull-to-Refresh */}
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#920734"
+            colors={["#920734"]}
+          />
+        }
       >
-        <DashboardGrid
-          items={dashboardItems}
+        {/* Section Title */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Quick Access</Text>
+          <Text style={styles.sectionSubtitle}>
+            Manage your classes and students
+          </Text>
+        </View>
+
+        {/* Primary Cards */}
+        <EnhancedDashboardGrid
+          items={primaryItems}
+          onFullScreenPress={handleFullScreenPress}
+        />
+
+        {/* Horizontal Divider */}
+        <View style={styles.divider} />
+
+        {/* Other Cards */}
+        <EnhancedDashboardGrid
+          items={otherItems}
           onFullScreenPress={handleFullScreenPress}
         />
       </ScrollView>
+
+      {/* Floating Action Button */}
+      {/* <Animated.View style={[styles.fabContainer, fabAnimatedStyle]}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleFABPress}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={["#920734", "#b8285a"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.fabGradient}
+          >
+            <MaterialIcons name="add" size={32} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View> */}
 
       {/* Modals */}
       <EducatorFeedbackModal
         visible={activeModal === "educator_feedback"}
         onClose={handleCloseModal}
       />
+      <StudentAchievementModal
+        visible={activeModal === "student_achievement"}
+        onClose={handleCloseModal}
+      />
       <StudentAttendanceModal
         visible={activeModal === "student_attendance"}
+        onClose={handleCloseModal}
+      />
+      <MyFeedbackModal
+        visible={activeModal === "my_feedback"}
+        onClose={handleCloseModal}
+      />
+      <StudentAttendanceStatsModal
+        visible={activeModal === "student_attendance_stats"}
+        onClose={handleCloseModal}
+      />
+      <StudentFeedbackStatsModal
+        visible={activeModal === "student_feedback_stats"}
         onClose={handleCloseModal}
       />
       <AcademicReportsModal ref={academicReportsModalRef} />
@@ -273,7 +439,7 @@ function EducatorDashboardMain() {
           onSelectClass={handleClassSelection}
         />
       )}
-      
+
       {showUniversalDrawer && (
         <UniversalDrawerMenu
           onClose={handleCloseUniversalDrawer}
@@ -288,7 +454,11 @@ function EducatorDashboardMain() {
       {/* Full-Screen Modal */}
       {activeModal &&
         activeModal !== "educator_feedback" &&
-        activeModal !== "student_attendance" && (
+        activeModal !== "student_attendance" &&
+        activeModal !== "my_feedback" &&
+        activeModal !== "student_attendance_stats" &&
+        activeModal !== "student_feedback_stats" &&
+        activeModal !== "student_achievement" && (
           <FullScreenModal
             visible={!!activeModal}
             onClose={handleCloseModal}
@@ -318,33 +488,57 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8f9fa",
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 8,
-    backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#1a1a1a",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-  },
+  // Content Section
   content: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingTop: 12,
+    paddingBottom: 100,
   },
+  // Horizontal Divider
+  divider: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
+    marginVertical: 16,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#1a1a1a",
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: "#666",
+  },
+  // Floating Action Button
+  fabContainer: {
+    position: "absolute",
+    bottom: 24,
+    right: 20,
+    zIndex: 1000,
+  },
+  fab: {
+    shadowColor: "#920734",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Modal Content Styles (kept for compatibility)
   fullScreenContent: {
     flex: 1,
     padding: 30,

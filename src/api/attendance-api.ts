@@ -12,6 +12,46 @@ import { apiServer1 } from "./api-server-1";
 
 // ===== TYPESCRIPT INTERFACES =====
 
+// Student Attendance Statistics Interfaces
+export interface StudentAttendanceStatsRequest {
+  grade_level_class_id: number;
+  filter_type: 'month' | 'year';
+  year: number;
+  month?: number;
+}
+
+export interface StudentAttendanceStatsStudent {
+  student_id: number;
+  full_name: string;
+  admission_number: string;
+  grade_level_id: number;
+  grade_level_name: string;
+  in_time_count: number;
+  out_time_count: number;
+  leave_count: number;
+  absent_count: number;
+  total_attendance_records: number;
+}
+
+export interface StudentAttendanceStatsSummary {
+  total_students: number;
+  students_with_attendance: number;
+  total_in_time: number;
+  total_out_time: number;
+  total_leave: number;
+  total_absent: number;
+  filter_type: string;
+  filter_display: string;
+}
+
+export interface StudentAttendanceStatsResponse {
+  success: boolean;
+  data: {
+    summary: StudentAttendanceStatsSummary;
+    students: StudentAttendanceStatsStudent[];
+  };
+}
+
 export interface GradeLevel {
   id: number;
   name: string;
@@ -794,6 +834,26 @@ export const attendanceApi = apiServer1.injectEndpoints({
         ];
       },
     }),
+
+    getStudentAttendanceStats: builder.query<
+      StudentAttendanceStatsResponse,
+      StudentAttendanceStatsRequest
+    >({
+      query: (params) => {
+        console.log("🔗 Student Attendance Stats API Request:", {
+          url: "api/attendance-management/student-attendance/stats/student-attendance-stats",
+          method: "POST",
+          params,
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+        });
+        return {
+          url: "api/attendance-management/student-attendance/stats/student-attendance-stats",
+          method: "POST",
+          body: params,
+        };
+      },
+      providesTags: ["StudentAttendanceStats"],
+    }),
   }),
   overrideExisting: false,
 });
@@ -1230,6 +1290,8 @@ export const {
   useGetStudentAttendanceByDateAndClassQuery,
   useLazyGetStudentAttendanceByDateAndClassQuery,
   useUpdateStudentAttendanceMutation,
+  useGetStudentAttendanceStatsQuery,
+  useLazyGetStudentAttendanceStatsQuery,
 } = attendanceApi;
 
 // ===== UTILITY FUNCTIONS =====

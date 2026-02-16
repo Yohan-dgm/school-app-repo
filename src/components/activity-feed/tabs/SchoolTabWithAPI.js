@@ -359,9 +359,9 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
         return false;
       }
 
-      console.log(
-        `🏫 Including school post ${post.id}: school_id=${post.school_id}, class_id=${post.class_id}, student_id=${post.student_id}`,
-      );
+      // console.log(
+      //   `🏫 Including school post ${post.id}: school_id=${post.school_id}, class_id=${post.class_id}, student_id=${post.student_id}`,
+      // );
 
       // Search term filter
       if (

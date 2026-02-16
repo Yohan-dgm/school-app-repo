@@ -23,32 +23,36 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
   const getTypeIcon = (type: string) => {
     switch (type) {
       case "academic":
-        return { name: "school", color: "#2196F3" };
+        return { name: "school", color: "#3b82f6" };
       case "payment":
-        return { name: "payment", color: "#FF9800" };
+        return { name: "payment", color: "#f59e0b" };
       case "event":
-        return { name: "event", color: "#4CAF50" };
+        return { name: "event", color: "#10b981" };
       case "security":
-        return { name: "security", color: "#f44336" };
+        return { name: "security", color: "#ef4444" };
       case "system":
-        return { name: "settings", color: "#9E9E9E" };
+        return { name: "settings", color: "#6b7280" };
       case "communication":
-        return { name: "message", color: "#9C27B0" };
+        return { name: "message", color: "#8b5cf6" };
       default:
-        return { name: "notifications", color: "#607D8B" };
+        return { name: "notifications", color: "#3b82f6" };
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
+      case "urgent":
+        return "#ef4444";
       case "high":
-        return "#f44336";
+        return "#f59e0b";
+      case "normal":
+        return "#10b981";
       case "medium":
-        return "#FF9800";
+        return "#f59e0b";
       case "low":
-        return "#4CAF50";
+        return "#10b981";
       default:
-        return "#9E9E9E";
+        return "#6b7280";
     }
   };
 
@@ -56,7 +60,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
     const date = new Date(timestamp);
     const now = new Date();
     const diffInMinutes = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60),
+      (now.getTime() - date.getTime()) / (1000 * 60)
     );
 
     if (diffInMinutes < 1) {
@@ -85,55 +89,49 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       onPress={() => onPress?.(notification)}
       activeOpacity={0.7}
     >
-      {/* Priority indicator */}
+      {/* Left unread indicator bar */}
+      {!notification.read && <View style={styles.unreadIndicator} />}
+
+      {/* Icon Container */}
       <View
-        style={[styles.priorityIndicator, { backgroundColor: priorityColor }]}
-      />
+        style={[
+          styles.iconContainer,
+          { backgroundColor: typeIcon.color + "15" },
+          !notification.read && styles.unreadIconContainer,
+        ]}
+      >
+        <MaterialIcons
+          name={typeIcon.name as any}
+          size={compact ? 18 : 20}
+          color={typeIcon.color}
+        />
+        {/* Priority badge on icon for high/urgent */}
+        {(notification.priority === "urgent" ||
+          notification.priority === "high") && (
+          <View
+            style={[styles.priorityDot, { backgroundColor: priorityColor }]}
+          />
+        )}
+      </View>
 
       {/* Content */}
       <View style={styles.content}>
-        {/* Header */}
+        {/* Header with title and time */}
         <View style={styles.header}>
-          <View style={styles.typeContainer}>
-            <MaterialIcons
-              name={typeIcon.name as any}
-              size={compact ? 16 : 20}
-              color={typeIcon.color}
-            />
-            <Text style={[styles.typeText, compact && styles.compactText]}>
-              {notification.type.toUpperCase()}
-            </Text>
-          </View>
-
-          <View style={styles.metaContainer}>
-            <Text style={[styles.timeText, compact && styles.compactText]}>
-              {formatTime(notification.timestamp)}
-            </Text>
-            <MaterialIcons
-              name={
-                notification.source === "push"
-                  ? "smartphone"
-                  : notification.source === "websocket"
-                    ? "wifi"
-                    : "cloud"
-              }
-              size={compact ? 12 : 14}
-              color="#9E9E9E"
-            />
-          </View>
+          <Text
+            style={[
+              styles.title,
+              !notification.read && styles.unreadTitle,
+              compact && styles.compactTitle,
+            ]}
+            numberOfLines={compact ? 1 : 2}
+          >
+            {notification.title}
+          </Text>
+          <Text style={[styles.timeText, compact && styles.compactText]}>
+            {formatTime(notification.timestamp)}
+          </Text>
         </View>
-
-        {/* Title */}
-        <Text
-          style={[
-            styles.title,
-            !notification.read && styles.unreadTitle,
-            compact && styles.compactTitle,
-          ]}
-          numberOfLines={compact ? 1 : 2}
-        >
-          {notification.title}
-        </Text>
 
         {/* Body */}
         <Text
@@ -143,160 +141,213 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
           {notification.body}
         </Text>
 
-        {/* Actions */}
-        {showActions && !compact && (
-          <View style={styles.actions}>
-            {!notification.read && onMarkAsRead && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.readButton]}
-                onPress={() => onMarkAsRead(notification.id)}
+        {/* Footer with priority and actions */}
+        <View style={styles.footer}>
+          <View style={styles.footerLeft}>
+            {/* Show priority badge only for non-normal priorities */}
+            {notification.priority && notification.priority !== "normal" && (
+              <View
+                style={[
+                  styles.priorityBadge,
+                  {
+                    backgroundColor: priorityColor + "20",
+                    borderColor: priorityColor + "40",
+                  },
+                ]}
               >
-                <MaterialIcons
-                  name="mark-email-read"
-                  size={16}
-                  color="#4CAF50"
-                />
-                <Text style={[styles.actionText, { color: "#4CAF50" }]}>
-                  Mark as Read
+                <Text style={[styles.priorityText, { color: priorityColor }]}>
+                  {notification.priority.toUpperCase()}
                 </Text>
-              </TouchableOpacity>
-            )}
-
-            {onDelete && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => onDelete(notification.id)}
-              >
-                <MaterialIcons name="delete" size={16} color="#f44336" />
-                <Text style={[styles.actionText, { color: "#f44336" }]}>
-                  Delete
-                </Text>
-              </TouchableOpacity>
+              </View>
             )}
           </View>
-        )}
-      </View>
 
-      {/* Unread indicator */}
-      {!notification.read && <View style={styles.unreadDot} />}
+          {/* Actions */}
+          {showActions && !compact && (
+            <View style={styles.footerRight}>
+              {!notification.read ? (
+                <>
+                  {onMarkAsRead && (
+                    <TouchableOpacity
+                      style={styles.markReadButton}
+                      onPress={() => onMarkAsRead(notification.id)}
+                    >
+                      <MaterialIcons
+                        name="mark-email-read"
+                        size={14}
+                        color="#10b981"
+                      />
+                      <Text style={styles.markReadText}>Mark Read</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={styles.readIndicator}>
+                  <MaterialIcons name="done-all" size={12} color="#6b7280" />
+                  <Text style={styles.readText}>Read</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    marginVertical: 4,
-    marginHorizontal: 16,
-    overflow: "hidden",
-    elevation: 2,
+    backgroundColor: "#fafafa",
+    borderRadius: 12,
+    marginBottom: 12,
+    flexDirection: "row",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    overflow: "hidden",
+    opacity: 0.85,
   },
   unreadContainer: {
-    backgroundColor: "#f8f9ff",
+    backgroundColor: "#ffffff",
+    borderColor: "#3b82f6",
     borderLeftWidth: 4,
-    borderLeftColor: "#2196F3",
+    shadowOpacity: 0.12,
+    elevation: 3,
+    opacity: 1.0,
+    shadowRadius: 6,
   },
   compactContainer: {
-    marginVertical: 2,
+    marginBottom: 8,
   },
-  priorityIndicator: {
+  unreadIndicator: {
+    width: 6,
+    backgroundColor: "#3b82f6",
+    borderTopRightRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    margin: 16,
+    position: "relative",
+  },
+  unreadIconContainer: {
+    transform: [{ scale: 1.1 }],
+  },
+  priorityDot: {
     position: "absolute",
-    top: 0,
-    right: 0,
-    width: 4,
-    height: "100%",
+    top: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "white",
   },
   content: {
-    padding: 16,
-    paddingRight: 8,
+    flex: 1,
+    paddingVertical: 16,
+    paddingRight: 16,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 8,
-  },
-  typeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  typeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#666",
-    marginLeft: 4,
-    letterSpacing: 0.5,
-  },
-  metaContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  timeText: {
-    fontSize: 12,
-    color: "#9E9E9E",
-    marginRight: 4,
   },
   title: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
-    marginBottom: 4,
-    lineHeight: 20,
+    fontWeight: "600",
+    color: "#111827",
+    flex: 1,
+    lineHeight: 22,
   },
   unreadTitle: {
-    fontWeight: "600",
-    color: "#000",
+    fontWeight: "800",
+    color: "#1e40af",
+    fontSize: 16.5,
+  },
+  timeText: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500",
+    marginLeft: 12,
   },
   body: {
     fontSize: 14,
-    color: "#666",
+    color: "#6b7280",
     lineHeight: 20,
     marginBottom: 12,
   },
-  actions: {
+  footer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  actionButton: {
+  footerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: "#f5f5f5",
+    gap: 8,
+    flex: 1,
   },
-  readButton: {
-    backgroundColor: "#e8f5e8",
+  footerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  deleteButton: {
-    backgroundColor: "#ffebee",
-  },
-  actionText: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginLeft: 4,
-  },
-  unreadDot: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
+  priorityBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: "#2196F3",
+    borderWidth: 1,
+  },
+  priorityText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  markReadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#10b981",
+    gap: 4,
+  },
+  markReadText: {
+    fontSize: 10,
+    color: "#10b981",
+    fontWeight: "600",
+  },
+  readIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: "#f3f4f6",
+    gap: 3,
+  },
+  readText: {
+    fontSize: 9,
+    color: "#6b7280",
+    fontWeight: "500",
   },
   compactText: {
     fontSize: 10,
   },
   compactTitle: {
     fontSize: 14,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   compactBody: {
     fontSize: 12,

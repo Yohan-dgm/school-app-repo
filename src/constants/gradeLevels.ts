@@ -18,7 +18,7 @@ export interface GradeLevel {
 export const GRADE_LEVELS: GradeLevel[] = [
   // Early Years (IDs 1-3)
 
-  // Primary Grades (IDs 4-9)
+  // Primary Grades (IDs 1-5)
   {
     id: 1,
     name: "Grade 1",
@@ -54,15 +54,14 @@ export const GRADE_LEVELS: GradeLevel[] = [
     category: "primary",
     order: 5,
   },
+  // Secondary Grades (IDs 6-12)
   {
     id: 6,
     name: "Grade 6",
     display_name: "Grade 6",
-    category: "primary",
+    category: "secondary",
     order: 6,
   },
-
-  // Secondary Grades (IDs 10-15)
   {
     id: 7,
     name: "Grade 7",
@@ -164,6 +163,46 @@ export const getGradeDisplayNameById = (id: number): string => {
 // Check if grade ID is valid
 export const isValidGradeId = (id: number): boolean => {
   return getAllGradeIds().includes(id);
+};
+
+// Get category API endpoint for a grade ID
+export const getCategoryApiForGrade = (gradeId: number): string | null => {
+  const grade = getGradeLevelById(gradeId);
+  if (!grade) return null;
+  
+  switch (grade.category) {
+    case "early_years":
+      return "ey";
+    case "primary":
+      return "pr";
+    case "secondary":
+      return "sc";
+    default:
+      return null;
+  }
+};
+
+// Get category section name for display
+export const getCategorySectionName = (gradeId: number): string => {
+  const grade = getGradeLevelById(gradeId);
+  if (!grade) return "Unknown";
+  
+  switch (grade.category) {
+    case "early_years":
+      return "Early Years";
+    case "primary":
+      return "Primary";
+    case "secondary":
+      return "Secondary";
+    default:
+      return "Unknown";
+  }
+};
+
+// Check if a grade belongs to a specific section
+export const isGradeInSection = (gradeId: number, section: "early_years" | "primary" | "secondary"): boolean => {
+  const grade = getGradeLevelById(gradeId);
+  return grade?.category === section;
 };
 
 // Default export for convenience
