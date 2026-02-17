@@ -83,24 +83,24 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         const fileUrl = resolveMediaUrl(message.attachment_url || message.content);
         return (
           <TouchableOpacity
-            className={`flex-row items-center p-3 rounded-xl ${isMe ? "bg-white/20" : "bg-gray-100"}`}
+            className={`flex-row items-center p-1 rounded-xl ${isMe ? "bg-white/10" : "bg-gray-50"}`}
             activeOpacity={0.7}
             onPress={() => setIsPreviewVisible(true)}
             onLongPress={() => onLongPress?.(message)}
             delayLongPress={200}
           >
-            <View className={`w-10 h-10 rounded-lg items-center justify-center ${isMe ? "bg-white/20" : "bg-red-50"}`}>
-              <MaterialIcons name="picture-as-pdf" size={24} color={isMe ? "white" : "#ef4444"} />
+            <View className={`w-8 h-8 rounded-lg items-center justify-center ${isMe ? "bg-white/20" : "bg-red-50"}`}>
+              <MaterialIcons name="picture-as-pdf" size={18} color={isMe ? "white" : "#ef4444"} />
             </View>
-            <View className="ml-3 flex-1">
-              <Text className={`text-sm font-bold ${isMe ? "text-black" : "text-gray-900"}`} numberOfLines={1}>
+            <View className="ml-2 flex-1">
+              <Text className={`text-xs font-bold ${isMe ? "text-black" : "text-gray-900"}`} numberOfLines={1}>
                 {message.metadata?.original_filename || "File"}
               </Text>
-              <Text className={`text-[10px] ${isMe ? "text-black/70" : "text-gray-500"}`}>
-                {message.metadata?.size ? `${(message.metadata.size / 1024).toFixed(1)} KB` : ""} • FILE
+              <Text className={`text-[9px] ${isMe ? "text-black/70" : "text-gray-500"}`}>
+                {message.metadata?.size ? `${(message.metadata.size / 1024).toFixed(1)} KB` : ""} • PDF
               </Text>
             </View>
-            <MaterialIcons name="file-download" size={18} color={isMe ? "black" : "#6b7280"} />
+            <MaterialIcons name="open-in-new" size={16} color={isMe ? "black" : "#9ca3af"} />
           </TouchableOpacity>
         );
       default:
@@ -109,11 +109,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   };
 
   return (
-    <View className={`mb-4 px-3 flex-row ${isMe ? "justify-end" : "justify-start"}`}>
+    <View className={`${message.type === 'file' ? 'mb-2' : 'mb-4'} px-3 flex-row ${isMe ? "justify-end" : "justify-start"}`}>
       <TouchableOpacity
         activeOpacity={0.8}
         onLongPress={() => onLongPress?.(message)}
-        className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-sm ${
+        className={`max-w-[85%] rounded-2xl ${message.type === 'file' ? 'px-2 py-1.5' : 'px-3 py-2'} shadow-sm ${
           isMe 
             ? "bg-[#E3F2FD] rounded-tr-none border border-[#BBDEFB]" // Light Blue for own messages
             : "bg-white rounded-tl-none border border-gray-100"

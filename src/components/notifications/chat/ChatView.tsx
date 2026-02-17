@@ -138,6 +138,10 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     console.log(`🔌 Setting up Echo listeners for group ${group.id}`);
     
     RealTimeNotificationService.subscribeToGroup(Number(group.id), {
+      onGroupDeleted: () => {
+        Alert.alert("Group Deleted", "This group has been deleted by the administrator.");
+        onBack();
+      },
       onMessageSent: (newMessage) => {
         console.log("⚡ Real-time: New message received:", newMessage.id, newMessage.content);
         dispatch(
@@ -151,15 +155,25 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         );
       },
       onMessageUpdated: (updatedMessage) => {
-        console.log("⚡ Real-time: Message updated:", updatedMessage.id, "Reactions:", updatedMessage.reactions?.length);
+        console.log("⚡ Real-time: Message updated event received!", {
+          id: updatedMessage.id,
+          reactions: updatedMessage.reactions?.length,
+          type: updatedMessage.type
+        });
+        
         dispatch(
           chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
-            const index = draft.data.messages.findIndex(m => m.id === updatedMessage.id);
+            console.log("🔍 Checking cache for message ID:", updatedMessage.id, "Cache size:", draft.data.messages.length);
+            const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
             if (index !== -1) {
-              console.log("✅ Updating message in list", updatedMessage.id);
-              draft.data.messages[index] = { ...draft.data.messages[index], ...updatedMessage };
+              console.log("✅ Match found at index", index, ". Updating reactions.");
+              draft.data.messages[index] = { 
+                ...draft.data.messages[index], 
+                ...updatedMessage,
+                reactions: updatedMessage.reactions // Explicitly ensure reactions are copied
+              };
             } else {
-              console.log("⚠️ Message not found in current cache for update", updatedMessage.id);
+              console.log("⚠️ Message not found in current cache. ID search was for:", updatedMessage.id);
             }
           })
         );

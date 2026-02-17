@@ -47,6 +47,7 @@ export interface RealTimeCallbacks {
   onChatMessage?: (message: any) => void;
   onMessageUpdated?: (message: any) => void;
   onMessageDeleted?: (data: { id: number; chat_group_id: number }) => void;
+  onGroupDeleted?: (data: { chat_group_id: number }) => void;
   onStatsUpdated?: (stats: NotificationStats) => void;
   onConnectionStateChange?: (connected: boolean) => void;
   onError?: (error: any) => void;
@@ -388,6 +389,7 @@ class RealTimeNotificationService {
     onMessageDeleted?: (data: { id: number; chat_group_id: number }) => void;
     onTyping?: (data: { user_id: number; user_name: string }) => void;
     onPresenceChange?: (users: any[]) => void;
+    onGroupDeleted?: (data: { chat_group_id: number }) => void;
   }): void {
     if (!this.echo) return;
 
@@ -436,6 +438,13 @@ class RealTimeNotificationService {
         channel.listenForWhisper('typing', (data: any) => {
           console.log("✍️ RealTimeService - Typing indicator:", data);
           handlers.onTyping!(data);
+        });
+      }
+
+      if (handlers.onGroupDeleted) {
+        channel.listen(".group.deleted", (data: any) => {
+          console.log("🚫 RealTimeService - Group DELETED:", data);
+          handlers.onGroupDeleted!(data);
         });
       }
 

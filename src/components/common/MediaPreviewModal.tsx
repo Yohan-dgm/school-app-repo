@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { Modal, View, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { WebView } from 'react-native-webview';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -61,10 +61,15 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
               />
             ) : isPdf ? (
               <WebView
-                source={{ uri: mediaUrl }}
+                source={{ 
+                  uri: Platform.OS === 'android' 
+                    ? `https://docs.google.com/viewer?url=${encodeURIComponent(mediaUrl)}&embedded=true` 
+                    : mediaUrl 
+                }}
                 style={{ flex: 1, backgroundColor: 'white' }}
                 startInLoadingState={true}
                 scalesPageToFit={true}
+                originWhitelist={['*']}
                 renderLoading={() => (
                   <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-black/95">
                     <ActivityIndicator color="white" size="large" />

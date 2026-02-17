@@ -76,7 +76,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   const handlePickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
+        type: ["image/*", "application/pdf"],
         copyToCacheDirectory: true,
       });
 

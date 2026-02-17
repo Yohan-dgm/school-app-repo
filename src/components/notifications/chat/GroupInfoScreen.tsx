@@ -82,23 +82,30 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
   };
 
   const handleDeleteGroup = () => {
-    if (!isOwner) return;
+    if (!isAdmin) {
+      Alert.alert("Permission Denied", "Only administrators can delete this group.");
+      return;
+    }
 
     Alert.alert(
       "Delete Group",
-      "This action will permanently delete the group and all messages. This cannot be undone.",
+      "Are you sure you want to delete this group? This will permanently remove all messages and members for everyone. This action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         { 
           text: "Delete Group", 
           style: "destructive", 
-          onPress: async () => {
-            try {
-              await deleteGroup({ chat_group_id: chat.id }).unwrap();
+            onPress: async () => {
+              try {
+                await deleteGroup({ chat_group_id: chat.id }).unwrap();
+              
+              // Local navigation handling
               onDeleteGroup(chat.id.toString());
-            } catch (error) {
+              
+              Alert.alert("Success", "Group has been successfully deleted.");
+            } catch (error: any) {
               console.error("Failed to delete group:", error);
-              Alert.alert("Error", "Failed to delete group.");
+              Alert.alert("Error", error?.data?.message || "Failed to delete group. Please try again.");
             }
           }
         },
