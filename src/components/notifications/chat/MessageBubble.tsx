@@ -15,6 +15,8 @@ interface MessageBubbleProps {
   onShowReceipts?: (message: ChatMessage) => void;
   onLongPress?: (message: ChatMessage) => void;
   onDelete?: (message: ChatMessage) => void;
+  onReactionPress?: (emoji: string) => void;
+  currentUserId?: string | number;
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ 
@@ -24,7 +26,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   canViewReceipts,
   onShowReceipts,
   onLongPress,
-  onDelete 
+  onDelete,
+  onReactionPress,
+  currentUserId
 }) => {
   const [imageLoading, setImageLoading] = React.useState(true);
   const [imageError, setImageError] = React.useState(false);
@@ -131,8 +135,35 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         
         <View className="relative">
           {renderContent()}
-          
-          <View className={`flex-row items-center justify-end mt-1 ${message.type === 'image' ? 'absolute bottom-1 right-2 bg-black/30 rounded-full px-2 py-0.5' : ''}`}>
+
+          {/* Message Reactions */}
+          {message.reactions && message.reactions.length > 0 && (
+            <View className={`flex-row flex-wrap mt-1 ${isMe ? "justify-end" : "justify-start"}`}>
+              {message.reactions.map((reaction, index) => (
+                <TouchableOpacity
+                  key={index}
+                  className={`flex-row items-center rounded-full px-2 py-0.5 mr-1 mb-1 border ${
+                    reaction.user_ids.map(id => String(id)).includes(String(currentUserId)) 
+                      ? "border-blue-200 bg-blue-50" 
+                      : "border-gray-100 bg-gray-50"
+                  }`}
+                  onPress={() => onReactionPress?.(reaction.emoji)}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-xs">{reaction.emoji}</Text>
+                  <Text className={`text-[10px] ml-1 font-bold ${
+                    reaction.user_ids.map(id => String(id)).includes(String(currentUserId)) 
+                      ? "text-blue-600" 
+                      : "text-gray-500"
+                  }`}>
+                    {reaction.count}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <View className={`flex-row items-center justify-end mt-1 ${message.type === 'image' && (!message.reactions || message.reactions.length === 0) ? 'absolute bottom-1 right-2 bg-black/30 rounded-full px-2 py-0.5' : ''}`}>
             {canViewReceipts && message.read_count !== undefined && message.read_count > 0 && (
               <TouchableOpacity 
                 className="flex-row items-center mr-2 bg-gray-100 rounded-full px-1.5 py-0.5"

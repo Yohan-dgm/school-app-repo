@@ -45,6 +45,8 @@ export interface RealTimeCallbacks {
     read_at: string;
   }) => void;
   onChatMessage?: (message: any) => void;
+  onMessageUpdated?: (message: any) => void;
+  onMessageDeleted?: (data: { id: number; chat_group_id: number }) => void;
   onStatsUpdated?: (stats: NotificationStats) => void;
   onConnectionStateChange?: (connected: boolean) => void;
   onError?: (error: any) => void;
@@ -360,27 +362,112 @@ class RealTimeNotificationService {
       const channel = this.echo.private(channelName);
 
       channel.listen(".message.sent", (data: any) => {
-        console.log("💬 RealTimeService - New chat message received:", data);
-        
-        // Call global callback if exists
-        if (this.callbacks.onChatMessage) {
-          this.callbacks.onChatMessage(data);
-        }
-        
-        // Call all registered listeners
-        this.chatListeners.forEach(listener => {
-          try {
-            listener(data);
-          } catch (error) {
-            console.error("❌ Error in chat listener:", error);
-          }
-        });
+        console.log("💬 RealTimeService - New chat message received (Global):", data);
+        if (this.callbacks.onChatMessage) this.callbacks.onChatMessage(data);
+        this.chatListeners.forEach(listener => listener({ type: 'sent', ...data }));
+      });
+
+      channel.listen(".message.deleted", (data: any) => {
+        console.log("🗑️ RealTimeService - Message deleted (Global):", data);
+        if (this.callbacks.onMessageDeleted) this.callbacks.onMessageDeleted(data);
+        this.chatListeners.forEach(listener => listener({ type: 'deleted', ...data }));
       });
 
       this.channels.set(channelName, channel);
     } catch (error) {
       console.error("❌ Failed to subscribe to chat channel:", error);
     }
+  }
+
+  /**
+   * Subscribe to a specific group chat channel
+   */
+  subscribeToGroup(groupId: number, handlers: {
+    onMessageSent?: (message: any) => void;
+    onMessageUpdated?: (message: any) => void;
+    onMessageDeleted?: (data: { id: number; chat_group_id: number }) => void;
+    onTyping?: (data: { user_id: number; user_name: string }) => void;
+    onPresenceChange?: (users: any[]) => void;
+  }): void {
+    if (!this.echo) return;
+
+    const channelName = `chat.group.${groupId}`;
+    console.log("📡 Subscribing to group Presence channel:", channelName);
+
+    try {
+      const channel = this.echo.join(channelName);
+
+      channel.here((users: any[]) => {
+        console.log("👥 Presence: Users in group:", users.length);
+        if (handlers.onPresenceChange) handlers.onPresenceChange(users);
+      });
+
+      channel.joining((user: any) => {
+        console.log("👋 Presence: User joining:", user.name);
+        // Echo.join result doesn't provide the full list in joining(), so we might need a local state or fetch
+        // But for now, we'll let the component handle it if needed
+      });
+
+      channel.leaving((user: any) => {
+        console.log("🚶 Presence: User leaving:", user.name);
+      });
+
+      if (handlers.onMessageSent) {
+        channel.listen(".message.sent", (data: any) => {
+          console.log("💬 RealTimeService - Group message received:", data);
+          handlers.onMessageSent!(data);
+        });
+      }
+      if (handlers.onMessageUpdated) {
+        channel.listen(".message.updated", (data: any) => {
+          console.log("🔄 RealTimeService - Group message updated:", data);
+          handlers.onMessageUpdated!(data);
+        });
+      }
+      if (handlers.onMessageDeleted) {
+        channel.listen(".message.deleted", (data: any) => {
+          console.log("🗑️ RealTimeService - Group message deleted:", data);
+          handlers.onMessageDeleted!(data);
+        });
+      }
+      
+      // typing indicators using listenForWhisper
+      if (handlers.onTyping) {
+        channel.listenForWhisper('typing', (data: any) => {
+          console.log("✍️ RealTimeService - Typing indicator:", data);
+          handlers.onTyping!(data);
+        });
+      }
+
+      this.channels.set(channelName, channel);
+    } catch (error) {
+      console.error(`❌ Failed to subscribe to group ${groupId}:`, error);
+    }
+  }
+
+  /**
+   * Send typing indicator (whisper)
+   */
+  sendTypingIndicator(groupId: number, userName: string): void {
+    if (!this.echo) return;
+    const channelName = `chat.group.${groupId}`;
+    // Use private() fallback if join() wasn't used, but join() is preferred for whisper on presence channels
+    const channel = this.channels.get(channelName) || this.echo.join(channelName);
+    
+    if (channel) {
+      console.log(`✍️ Sending typing indicator to group ${groupId}`);
+      channel.whisper('typing', {
+        user_id: parseInt(this.userId || '0'),
+        user_name: userName,
+      });
+    }
+  }
+
+  /**
+   * Unsubscribe from a specific group
+   */
+  unsubscribeFromGroup(groupId: number): void {
+    this.unsubscribeFromChannel(`chat.group.${groupId}`);
   }
 
   /**

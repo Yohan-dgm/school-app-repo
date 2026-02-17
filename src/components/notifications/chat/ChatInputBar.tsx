@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform
 import { MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 
 interface ChatInputBarProps {
   onSendMessage: (text: string) => void;
@@ -11,6 +12,7 @@ interface ChatInputBarProps {
   isDisabled?: boolean;
   isUploading?: boolean;
   uploadProgress?: number;
+  onTyping?: () => void;
 }
 
 const ChatInputBar: React.FC<ChatInputBarProps> = ({ 
@@ -19,7 +21,8 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   initialValue = "",
   isDisabled = false,
   isUploading = false,
-  uploadProgress = 0
+  uploadProgress = 0,
+  onTyping
 }) => {
   const [message, setMessage] = React.useState(initialValue);
   const [showAttachments, setShowAttachments] = React.useState(false);
@@ -47,10 +50,19 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        
+        // Performance: Compress image before upload
+        console.log("🖼️ Compressing image before upload...");
+        const compressed = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 1200 } }], // Reasonable limit for mobile view
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+
         const file = {
-          uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
-          type: asset.mimeType || "image/jpeg",
+          uri: compressed.uri,
+          name: (asset.fileName || `image_${Date.now()}.jpg`).replace(/\.[^/.]+$/, "") + ".jpg",
+          type: "image/jpeg",
         };
         onSendAttachment("image", file);
         setShowAttachments(false);
@@ -163,7 +175,12 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
               multiline
               className="text-[15px] text-gray-900 leading-5"
               value={message}
-              onChangeText={setMessage}
+              onChangeText={(text) => {
+                setMessage(text);
+                if (text.length > 0 && onTyping) {
+                  onTyping();
+                }
+              }}
               placeholderTextColor="#9ca3af"
               editable={!isUploading}
             />

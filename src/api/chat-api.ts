@@ -142,6 +142,11 @@ export interface SearchChatUsersRequest {
   page?: number;
 }
 
+export interface ToggleMessageReactionRequest {
+  message_id: string | number;
+  emoji: string;
+}
+
 export interface SearchChatUsersResponse {
   success: boolean;
   message: string;
@@ -213,6 +218,42 @@ export const chatApi = apiServer1.injectEndpoints({
         method: "POST",
         body: params,
       }),
+      // Cache by chat_group_id only to allow merging paginated results
+      serializeQueryArgs: ({ endpointName, queryArgs }) => {
+        return `${endpointName}-${queryArgs.chat_group_id}`;
+      },
+      // Merge results when page changes
+      merge: (currentCache, newItems, { arg }) => {
+        // If it's page 1, it might be a refresh or polling
+        if (arg.page === 1 || !arg.page) {
+          // If we have newer messages in the new batch that aren't in currentCache, 
+          // we might want to be careful. But for simplicity, if it's page 1, we often 
+          // just want to ensure we have the latest.
+          // However, if we just want to ADD new messages from polling:
+          const existingIds = new Set(currentCache.data.messages.map(m => m.id));
+          const newMessages = newItems.data.messages.filter(m => !existingIds.has(m.id));
+          
+          if (newMessages.length > 0) {
+            // Prepend new messages (they are newest)
+            currentCache.data.messages.unshift(...newMessages);
+          }
+          
+          // Update pagination info from the latest fetch (usually page 1)
+          currentCache.data.pagination = newItems.data.pagination;
+        } else {
+          // It's a "load more" (older messages)
+          // Avoid duplicates
+          const existingIds = new Set(currentCache.data.messages.map(m => m.id));
+          const olderMessages = newItems.data.messages.filter(m => !existingIds.has(m.id));
+          
+          currentCache.data.messages.push(...olderMessages);
+          currentCache.data.pagination = newItems.data.pagination;
+        }
+      },
+      // Always allow refetching for the first page
+      forceRefetch({ currentArg, previousArg }) {
+        return currentArg?.page !== previousArg?.page || currentArg?.page === 1;
+      },
       providesTags: (result, error, arg) => [
         { type: "ChatMessages", id: arg.chat_group_id },
       ],
@@ -408,6 +449,24 @@ export const chatApi = apiServer1.injectEndpoints({
       }),
       invalidatesTags: ["ChatThreads"],
     }),
+
+    reactToMessage: builder.mutation<any, ToggleMessageReactionRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/messages/react",
+        method: "POST",
+        body: data,
+      }),
+      // We don't necessarily need to invalidate ChatMessages if we use real-time updates,
+      // but adding it here as a fallback for the local user.
+      invalidatesTags: (result, error, arg) => ["ChatMessages"],
+    }),
+    setChatFocus: builder.mutation<any, { chat_group_id: number | null }>({
+      query: (payload) => ({
+        url: "/chats/focus",
+        method: "POST",
+        body: payload,
+      }),
+    }),
   }),
 });
 
@@ -430,4 +489,6 @@ export const {
   useDeleteChatGroupMutation,
   useSearchChatUsersQuery,
   useToggleChatGroupPinMutation,
+  useReactToMessageMutation,
+  useSetChatFocusMutation,
 } = chatApi;

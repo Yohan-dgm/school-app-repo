@@ -7,8 +7,9 @@ import MessageBubble from "./MessageBubble";
 import ChatInputBar from "./ChatInputBar";
 import { useChunkedUpload } from "../../../hooks/useChunkedUpload";
 import MessageReceiptsModal from "./MessageReceiptsModal";
-import { useSelector } from "react-redux";
-import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery } from "../../../api/chat-api";
+import { useSelector, useDispatch } from "react-redux";
+import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, chatApi } from "../../../api/chat-api";
+import RealTimeNotificationService from "../../../services/notifications/RealTimeNotificationService";
 
 interface ChatViewProps {
   group: ChatGroup;
@@ -20,11 +21,16 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const user = useSelector((state: any) => state.app.user);
   const currentUserId = user?.id;
   
-  const { data: messagesData, isLoading, refetch } = useGetChatMessagesQuery(
-    { chat_group_id: group.id },
+  const [page, setPage] = React.useState(1);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [typingUsers, setTypingUsers] = React.useState<Record<number, { name: string, lastTyped: number }>>({});
+  const [onlineUserIds, setOnlineUserIds] = React.useState<Set<number>>(new Set());
+
+  const { data: messagesData, isLoading, refetch, isFetching } = useGetChatMessagesQuery(
+    { chat_group_id: group.id, page },
     { 
       skip: !group.id,
-      pollingInterval: 3000, // Poll every 3 seconds while in chat for real-time feel
+      // Removed pollingInterval: 3000 in favor of real-time Echo listeners
     }
   );
   
@@ -33,6 +39,10 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const [togglePin] = useToggleChatGroupPinMutation();
   const [updateMessage] = useUpdateChatMessageMutation();
   const [deleteMessage] = useDeleteChatMessageMutation();
+  const [reactToMessage] = useReactToMessageMutation();
+  const [setFocus] = useSetChatFocusMutation();
+
+  const dispatch = useDispatch<any>();
 
   const { data: membersData } = useGetChatGroupMembersQuery(
     { chat_group_id: group.id },
@@ -42,6 +52,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const members = React.useMemo(() => membersData?.data.members || [], [membersData]);
 
   const messages = React.useMemo(() => messagesData?.data.messages || [], [messagesData]);
+  const hasMore = messagesData?.data.pagination.has_more || false;
   
   const [selectedMessage, setSelectedMessage] = React.useState<ChatMessage | null>(null);
   const [showActionMenu, setShowActionMenu] = React.useState(false);
@@ -101,12 +112,172 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     return () => backHandler.remove();
   }, [isUploading]);
 
+  // Typing indicator cleanup
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTypingUsers(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(id => {
+          if (now - next[Number(id)].lastTyped > 3000) {
+            delete next[Number(id)];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Real-time Echo listeners
+  React.useEffect(() => {
+    if (!group.id) return;
+
+    console.log(`🔌 Setting up Echo listeners for group ${group.id}`);
+    
+    RealTimeNotificationService.subscribeToGroup(Number(group.id), {
+      onMessageSent: (newMessage) => {
+        console.log("⚡ Real-time: New message received:", newMessage.id, newMessage.content);
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+            // Deduplicate
+            if (!draft.data.messages.find(m => m.id === newMessage.id)) {
+              console.log("✅ Adding new message to list");
+              draft.data.messages.unshift(newMessage);
+            }
+          })
+        );
+      },
+      onMessageUpdated: (updatedMessage) => {
+        console.log("⚡ Real-time: Message updated:", updatedMessage.id, "Reactions:", updatedMessage.reactions?.length);
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+            const index = draft.data.messages.findIndex(m => m.id === updatedMessage.id);
+            if (index !== -1) {
+              console.log("✅ Updating message in list", updatedMessage.id);
+              draft.data.messages[index] = { ...draft.data.messages[index], ...updatedMessage };
+            } else {
+              console.log("⚠️ Message not found in current cache for update", updatedMessage.id);
+            }
+          })
+        );
+      },
+      onMessageDeleted: (data) => {
+        console.log("⚡ Real-time: Message deleted:", data.id);
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+            draft.data.messages = draft.data.messages.filter(m => m.id !== data.id);
+          })
+        );
+      },
+      onTyping: (data) => {
+        if (data.user_id === user?.id) return;
+        console.log("⚡ Real-time: Typing whisper received:", data.user_name);
+        setTypingUsers(prev => ({
+          ...prev,
+          [data.user_id]: { name: data.user_name, lastTyped: Date.now() }
+        }));
+      },
+      onPresenceChange: (users) => {
+        console.log("👥 Real-time: Presence update:", users.length, "users online");
+        setOnlineUserIds(new Set(users.map(u => u.id)));
+      }
+    });
+
+    return () => {
+      console.log(`🔌 Unsubscribing from Echo group ${group.id}`);
+      RealTimeNotificationService.unsubscribeFromGroup(Number(group.id));
+    };
+  }, [group.id, dispatch]);
+
   // Mark as read when opening
   React.useEffect(() => {
     if (group.id) {
       markRead({ chat_group_id: group.id });
     }
   }, [group.id, messagesData]);
+
+  // Focus tracking (Heartbeat for push notification suppression)
+  React.useEffect(() => {
+    if (!group.id) return;
+
+    const sendFocus = async (focusedGroupId: number | null) => {
+      try {
+        await setFocus({ chat_group_id: focusedGroupId }).unwrap();
+      } catch (error) {
+        // Silent fail for focus, not critical enough to alert user
+        console.warn("Failed to set chat focus:", error);
+      }
+    };
+
+    // Initial focus on mount
+    sendFocus(Number(group.id));
+
+    // Heartbeat every 30 seconds
+    const interval = setInterval(() => {
+      sendFocus(Number(group.id));
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      // Clear focus on unmount
+      sendFocus(null);
+    };
+  }, [group.id]);
+
+  const handleToggleReaction = async (message: ChatMessage, emoji: string) => {
+    // Optimistic update
+    const patchResult = dispatch(
+      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+        const msgIndex = draft.data.messages.findIndex(m => m.id === message.id);
+        if (msgIndex !== -1) {
+          const msg = draft.data.messages[msgIndex];
+          const reactions = [...(msg.reactions || [])];
+          const reactionIndex = reactions.findIndex(r => r.emoji === emoji);
+          
+          if (reactionIndex !== -1) {
+            const reaction = { ...reactions[reactionIndex] };
+            const userIndex = reaction.user_ids.indexOf(currentUserId);
+            
+            if (userIndex !== -1) {
+              // Remove our reaction
+              reaction.user_ids = reaction.user_ids.filter(id => id !== currentUserId);
+              reaction.count--;
+              if (reaction.count <= 0) {
+                reactions.splice(reactionIndex, 1);
+              } else {
+                reactions[reactionIndex] = reaction;
+              }
+            } else {
+              // Add our reaction
+              reaction.user_ids.push(currentUserId);
+              reaction.count++;
+              reactions[reactionIndex] = reaction;
+            }
+          } else {
+            // New emoji reaction
+            reactions.push({
+              emoji,
+              count: 1,
+              user_ids: [currentUserId]
+            });
+          }
+          
+          draft.data.messages[msgIndex].reactions = reactions;
+        }
+      })
+    );
+
+    try {
+      await reactToMessage({ message_id: message.id, emoji }).unwrap();
+    } catch (error) {
+      console.error("Failed to toggle reaction:", error);
+      patchResult.undo();
+      Alert.alert("Error", "Failed to update reaction.");
+    }
+  };
 
   const handleSendMessage = async (text: string) => {
     try {
@@ -123,9 +294,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           content: text,
         }).unwrap();
         
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        // No need to scroll to end with inverted list, new message is at index 0 (bottom)
       }
     } catch (error) {
       console.error("Failed to send/update message:", error);
@@ -157,10 +326,6 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       }).unwrap();
 
       console.log("✅ Message sent successfully:", response);
-      
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
     } catch (error: any) {
       console.error("❌ Failed to send attachment:", error);
       const errorMsg = error?.data?.message || error.message || "Unknown error";
@@ -168,37 +333,17 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     }
   };
 
-  const sendSampleImage = async () => {
-    try {
-      Alert.alert(
-        "Debug",
-        "Sending a test message with a sample image to verify display...",
-        [
-          {
-            text: "Cancel",
-            style: "cancel"
-          },
-          {
-            text: "Send",
-            onPress: async () => {
-              await sendMessage({
-                chat_group_id: group.id,
-                type: "image",
-                content: "Sample Image Test",
-                attachment_url: "https://picsum.photos/800/600",
-                metadata: {
-                  original_filename: "sample.jpg",
-                  size: 1024,
-                  mime_type: "image/jpeg",
-                }
-              }).unwrap();
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      console.error("Failed to send sample image:", error);
+  const handleLoadMore = () => {
+    if (hasMore && !isFetching) {
+      setPage(prev => prev + 1);
     }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setPage(1);
+    await refetch();
+    setIsRefreshing(false);
   };
 
   const handleMessageLongPress = (message: ChatMessage) => {
@@ -267,7 +412,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             )}
           </View>
         </TouchableOpacity>
-
+ 
         <TouchableOpacity 
           className="p-2" 
           activeOpacity={0.7}
@@ -286,7 +431,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             style={group.is_pinned ? { transform: [{ rotate: '45deg' }] } : {}}
           />
         </TouchableOpacity>
-
+ 
         <TouchableOpacity 
           className="p-2" 
           activeOpacity={0.7}
@@ -295,24 +440,35 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           <MaterialIcons name="info-outline" size={24} color="#6b7280" />
         </TouchableOpacity>
       </View>
-
+ 
       {/* Message List */}
       <View className="flex-1 bg-[#EEF2F6]">
         <FlatList
           ref={flatListRef}
           data={messages}
+          inverted={true}
           keyExtractor={(item) => item.id.toString()}
           refreshControl={
-            <RefreshControl refreshing={isLoading} onRefresh={refetch} />
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
           }
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={isFetching && page > 1 ? (
+            <View className="py-4">
+              <ActivityIndicator color="#2563eb" />
+            </View>
+          ) : null}
           renderItem={({ item, index }) => {
-            const prevMessage = messages[index - 1];
-            const showSenderName = !prevMessage || prevMessage.sender_id !== item.sender_id;
+            // In inverted FlatList, messages[index + 1] is effectively the "previous" message in chronological order
+            // which appears above the current message.
+            const nextChronologicalMessage = messages[index + 1];
+            const showSenderName = !nextChronologicalMessage || nextChronologicalMessage.sender_id !== item.sender_id;
             
             return (
               <MessageBubble
                 message={item}
                 isMe={String(item.sender_id) === String(currentUserId)}
+                currentUserId={currentUserId}
                 showSenderName={showSenderName}
                 canViewReceipts={isAdmin}
                 onShowReceipts={(msg) => {
@@ -320,6 +476,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
                   setShowReceiptsModal(true);
                 }}
                 onLongPress={handleMessageLongPress}
+                onReactionPress={(emoji) => handleToggleReaction(item, emoji)}
                 onDelete={(msg) => {
                   Alert.alert(
                     "Delete Message",
@@ -334,8 +491,6 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             );
           }}
           contentContainerStyle={{ paddingVertical: 16 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
       </View>
 
@@ -348,19 +503,35 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           <View className="bg-white rounded-t-[32px] p-6 pb-12 shadow-2xl">
             <View className="w-12 h-1.5 bg-gray-200 rounded-full self-center mb-6" />
             
+            {/* Reactions Picker */}
+            <View className="flex-row justify-around py-2 border-b border-gray-50 mb-4">
+              {['👍', '❤️', '😂', '😮', '😢', '🔥'].map(emoji => (
+                <TouchableOpacity 
+                  key={emoji}
+                  className="p-2"
+                  onPress={() => {
+                    if (selectedMessage) handleToggleReaction(selectedMessage, emoji);
+                    setShowActionMenu(false);
+                  }}
+                >
+                  <Text className="text-2xl">{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* Media Actions - View/Download */}
             {(selectedMessage?.type === 'image' || selectedMessage?.type === 'file') && (
               <>
                 <TouchableOpacity 
                   className="flex-row items-center py-4 border-b border-gray-50 active:bg-gray-50 rounded-xl px-2"
                   onPress={() => {
-                    if (selectedMessage.content) Linking.openURL(selectedMessage.content);
+                    if (selectedMessage?.content) Linking.openURL(selectedMessage.content);
                     setShowActionMenu(false);
                   }}
                 >
                   <MaterialIcons name="visibility" size={22} color="#4b5563" />
                   <Text className="text-gray-700 font-semibold ml-4">
-                    View {selectedMessage.type === 'image' ? 'Image' : 'Document'}
+                    View {selectedMessage?.type === 'image' ? 'Image' : 'Document'}
                   </Text>
                 </TouchableOpacity>
 
@@ -463,6 +634,14 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             </TouchableOpacity>
           </View>
         )}
+        {/* Typing Indicator */}
+        {Object.keys(typingUsers).length > 0 && (
+          <View className="px-4 py-1">
+            <Text className="text-[10px] text-gray-400 italic">
+              {Object.values(typingUsers).map(u => u.name).join(', ')} {Object.keys(typingUsers).length > 1 ? 'are' : 'is'} typing...
+            </Text>
+          </View>
+        )}
         <ChatInputBar 
           onSendMessage={handleSendMessage} 
           onSendAttachment={handleSendAttachment as any}
@@ -470,6 +649,9 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           isDisabled={group.is_disabled && !isAdmin}
           isUploading={isUploading}
           uploadProgress={uploadProgress}
+          onTyping={() => {
+            RealTimeNotificationService.sendTypingIndicator(Number(group.id), user?.full_name || 'Someone');
+          }}
         />
       </View>
       <MessageReceiptsModal 
@@ -484,23 +666,33 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           <View className="bg-white p-6 rounded-3xl w-[80%] items-center shadow-xl">
             <ActivityIndicator size="large" color="#2563eb" />
             <Text className="text-gray-900 font-bold text-lg mt-4 text-center">
-              Uploading Attachment
+              {uploadProgress === 0 ? "Preparing Attachment..." : "Uploading Attachment..."}
             </Text>
             <Text className="text-gray-500 text-sm mt-1 text-center">
               Please don't close the chat
             </Text>
             
-            {/* Detailed Progress Bar */}
-            <View className="w-full h-2 bg-gray-100 rounded-full mt-6 overflow-hidden">
-              <View 
-                className="h-full bg-blue-600" 
-                style={{ width: `${uploadProgress * 100}%` }} 
-              />
-            </View>
+            {/* Detailed Progress Bar - Only show when we have progress */}
+            {uploadProgress > 0 && (
+              <>
+                <View className="w-full h-2 bg-gray-100 rounded-full mt-6 overflow-hidden">
+                  <View 
+                    className="h-full bg-blue-600" 
+                    style={{ width: `${uploadProgress * 100}%` }} 
+                  />
+                </View>
+                
+                <Text className="text-blue-600 font-bold text-xs mt-2">
+                  {Math.round(uploadProgress * 100)}% COMPLETE
+                </Text>
+              </>
+            )}
             
-            <Text className="text-blue-600 font-bold text-xs mt-2">
-              {Math.round(uploadProgress * 100)}% COMPLETE
-            </Text>
+            {uploadProgress === 0 && (
+              <Text className="text-gray-400 text-xs mt-6 italic">
+                Gathering file info...
+              </Text>
+            )}
           </View>
         </View>
       )}

@@ -23,6 +23,13 @@ export interface ChatMessage {
   is_read?: boolean;
   read_at?: string;
   read_count?: number;
+  reactions?: MessageReaction[];
+}
+
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  user_ids: (string | number)[];
 }
 
 export type GroupCategory = 
