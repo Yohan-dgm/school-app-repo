@@ -125,10 +125,14 @@ class RealTimeNotificationService {
           headers: {
             Authorization: `Bearer ${authToken}`,
             Accept: "application/json",
+            "X-Requested-With": "XMLHttpRequest", // Explicitly identify as AJAX
           },
+          // CRITICAL: Ensure cookies (like t_session) are sent with the auth request
+          withCredentials: true,
         },
+
         // Additional configuration for React Native
-        authEndpoint: `${process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 || "http://172.16.20.149:9999"}/broadcasting/auth`,
+        authEndpoint: reverbConfig.authEndpoint,
       });
 
       // Setup connection event listeners
@@ -156,15 +160,44 @@ class RealTimeNotificationService {
   }
 
   /**
-   * Get Reverb configuration from environment variables
+   * Get Reverb configuration from environment variables with intelligent fallbacks
    */
   private getReverbConfig() {
+    // 1. Get base API info (This is our source of truth for remote vs local)
+    const apiBaseUrl = process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 || "https://school-app.toyar.lk";
+    const isApiRemote = apiBaseUrl.includes("https://") || (!apiBaseUrl.includes("127.0.0.1") && !apiBaseUrl.includes("localhost") && !apiBaseUrl.includes("172.") && !apiBaseUrl.includes("192."));
+    const apiHost = apiBaseUrl.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+
+    // 2. Initial values from .env
+    const pusherKey = process.env.EXPO_PUBLIC_REVERB_KEY || "ftlvjzbndng2pip2xruw";
+    let reverbHost = process.env.EXPO_PUBLIC_REVERB_HOST || apiHost;
+    let reverbPort = parseInt(process.env.EXPO_PUBLIC_REVERB_PORT || "8080");
+    let reverbScheme = process.env.EXPO_PUBLIC_REVERB_SCHEME || "http";
+
+    // 3. SMART RESOLUTION:
+    // If we're talking to a remote API, but Reverb is configured as local,
+    // we MUST override Reverb to use the remote API's domain and standard ports.
+    if (isApiRemote && (reverbHost.includes('172.') || reverbHost.includes('192.') || reverbHost === 'localhost' || reverbHost === '0.0.0.0')) {
+      console.warn(`🌐 RealTimeService - Overriding local Reverb config (${reverbHost}) for remote API environment`);
+      reverbHost = apiHost;
+      reverbPort = 443;
+      reverbScheme = "https";
+    }
+
+    // 4. Resolve authEndpoint
+    // Use the main API URL as the base for broadcasting auth
+    const authEndpoint = `${apiBaseUrl.replace(/\/$/, '')}/api/broadcasting/auth`;
+
+    console.log(`🔌 WebSocket Resolving: ${reverbScheme}://${reverbHost}:${reverbPort}`);
+    console.log(`🔐 Auth Endpoint: ${authEndpoint}`);
+
     return {
-      key: process.env.EXPO_PUBLIC_REVERB_KEY || "ftlvjzbndng2pip2xruw",
-      host: process.env.EXPO_PUBLIC_REVERB_HOST || "172.16.20.149",
-      port: parseInt(process.env.EXPO_PUBLIC_REVERB_PORT || "8080"),
-      scheme: process.env.EXPO_PUBLIC_REVERB_SCHEME || "http",
-      cluster: process.env.EXPO_PUBLIC_REVERB_CLUSTER,
+      key: pusherKey,
+      host: reverbHost,
+      port: reverbPort,
+      scheme: reverbScheme,
+      authEndpoint,
+      cluster: process.env.EXPO_PUBLIC_REVERB_CLUSTER || "mt1",
     };
   }
 
@@ -179,7 +212,7 @@ class RealTimeNotificationService {
 
     if (pusher && pusher.connection) {
       pusher.connection.bind("connected", () => {
-        console.log("✅ WebSocket connected successfully");
+        console.log("🟢 RealTimeService - WebSocket connected successfully!");
         this.connected = true;
         this.reconnectAttempts = 0;
         this.callbacks.onConnectionStateChange?.(true);
@@ -195,8 +228,20 @@ class RealTimeNotificationService {
       pusher.connection.bind("error", (error: any) => {
         console.error("❌ WebSocket error:", error);
         this.connected = false;
+        
+        // Log detailed error information for authorization failures
+        if (error?.error?.data?.code === 403 || error?.type === 'AuthError') {
+          console.error("⛔ Authorization failed for WebSocket. Token might be invalid, expired, or the auth endpoint is incorrect.");
+          console.error("Auth Details:", {
+            endpoint: this.echo?.options?.authEndpoint,
+            userId: this.userId,
+            hasAuthToken: !!this.authToken
+          });
+        }
+        
         this.callbacks.onError?.(error);
         this.callbacks.onConnectionStateChange?.(false);
+        this.handleReconnection(); // Try to reconnect on error too
       });
 
       pusher.connection.bind("state_change", (states: any) => {
@@ -385,11 +430,13 @@ class RealTimeNotificationService {
    */
   subscribeToGroup(groupId: number, handlers: {
     onMessageSent?: (message: any) => void;
-    onMessageUpdated?: (message: any) => void;
+    onMessageUpdated?: (data: any) => void;
     onMessageDeleted?: (data: { id: number; chat_group_id: number }) => void;
-    onTyping?: (data: { user_id: number; user_name: string }) => void;
+    onTyping?: (data: { user_id: number; user_name: string; is_typing: boolean }) => void;
     onPresenceChange?: (users: any[]) => void;
     onGroupDeleted?: (data: { chat_group_id: number }) => void;
+    onGroupUpdated?: (data: any) => void;
+    onMessageRead?: (data: { user_id: number; message_ids: number[]; read_at: string }) => void;
   }): void {
     if (!this.echo) return;
 
@@ -397,21 +444,41 @@ class RealTimeNotificationService {
     console.log("📡 Subscribing to group Presence channel:", channelName);
 
     try {
+      console.log(`📡 RealTimeService - Attempting to JOIN presence channel: ${channelName}`);
       const channel = this.echo.join(channelName);
 
-      channel.here((users: any[]) => {
-        console.log("👥 Presence: Users in group:", users.length);
-        if (handlers.onPresenceChange) handlers.onPresenceChange(users);
+      // ADD ROBUST ERROR LISTENERS
+      channel.error((error: any) => {
+        console.error(`❌ Presence Error joining ${channelName}:`, error);
       });
 
-      channel.joining((user: any) => {
+      // Low level subscription failure (auth failure etc)
+      // Note: Pusher-js event name is 'pusher:subscription_error'
+      const pusherChannel = channel.connector.pusher.channel(channelName);
+      if (pusherChannel) {
+        pusherChannel.bind('pusher:subscription_error', (status: any) => {
+          console.error(`❌ Subscription Error on ${channelName}: Status:`, status);
+          if (status === 403) console.error("⚠️ [403 Access Denied] Check channels.php authorization or session cookie!");
+        });
+      }
+
+      channel.here((users: any[]) => {
+        console.log("👥 Presence: Successfully joined group channel. Users online:", users.length);
+        if (handlers.onPresenceChange) handlers.onPresenceChange(users);
+      })
+      .joining((user: any) => {
         console.log("👋 Presence: User joining:", user.name);
         // Echo.join result doesn't provide the full list in joining(), so we might need a local state or fetch
         // But for now, we'll let the component handle it if needed
-      });
-
-      channel.leaving((user: any) => {
+      })
+      .leaving((user: any) => {
         console.log("🚶 Presence: User leaving:", user.name);
+      })
+      .error((error: any) => {
+        console.error("❌ RealTimeService - Error joining presence channel:", error);
+        if (error?.status === 403) {
+          console.error("🚫 Access Denied: You might not be a member of this group or session cookie is missing/invalid.");
+        }
       });
 
       if (handlers.onMessageSent) {
@@ -441,11 +508,22 @@ class RealTimeNotificationService {
         });
       }
 
+      if (handlers.onMessageRead) {
+        channel.listen(".message.read", (data: any) => {
+          console.log("👁️ RealTimeService - Group message read:", data);
+          handlers.onMessageRead!(data);
+        });
+      }
+
       if (handlers.onGroupDeleted) {
         channel.listen(".group.deleted", (data: any) => {
-          console.log("🚫 RealTimeService - Group DELETED:", data);
-          handlers.onGroupDeleted!(data);
-        });
+        console.log("🔄 RealTimeService - Chat group deleted:", data);
+        handlers.onGroupDeleted?.(data);
+      })
+      .listen(".group.updated", (data: any) => {
+        console.log("🔄 RealTimeService - Chat group updated:", data);
+        handlers.onGroupUpdated?.(data);
+      });
       }
 
       this.channels.set(channelName, channel);
@@ -555,7 +633,10 @@ class RealTimeNotificationService {
 
     try {
       console.log("🔄 Attempting to reconnect WebSocket...");
-      this.echo.connector.pusher.connect();
+      if (this.echo && this.echo.connector && this.echo.connector.pusher) {
+        this.echo.connector.pusher.disconnect(); // Clear existing connection state
+        this.echo.connector.pusher.connect();
+      }
     } catch (error) {
       console.error("❌ Failed to reconnect WebSocket:", error);
       this.callbacks.onError?.(error);

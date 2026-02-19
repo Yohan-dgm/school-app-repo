@@ -4,22 +4,22 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
-    },
-    "production-apk": {
-      "distribution": "store",
-      "android": {
-        "buildType": "apk"
-      },
-      "ios": {
-        "simulator": false
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "staging"
       }
     },
     "production": {

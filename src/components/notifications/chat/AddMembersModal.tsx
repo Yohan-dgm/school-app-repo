@@ -24,8 +24,7 @@ interface AddMembersModalProps {
 
 const FILTERS: { label: string; value: any }[] = [
   { label: "All", value: "all" },
-  { label: "Educator", value: "teacher" },
-  { label: "Student", value: "student" },
+  { label: "Educator", value: "teacher" }, 
   { label: "Parent", value: "parent" },
   { label: "Management", value: "management" },
 ];

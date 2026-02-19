@@ -18,7 +18,7 @@ import StudentSelector from "../../announcements/StudentSelector";
 interface CreateGroupModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess: (data: { name: string; description: string; category: GroupCategory, selectionData?: any }) => void;
+  onSuccess: (data: { name: string; description: string; category: GroupCategory, selectionData?: any, is_disabled?: boolean }) => void;
 }
 
 interface GroupTypeOption {
@@ -79,6 +79,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
   const [selectedType, setSelectedType] = useState<GroupCategory | null>(null);
   const [groupName, setGroupName] = useState("");
   const [description, setDescription] = useState("");
+  const [is_disabled, setIsDisabled] = useState(true); // Default to true as per request
 
   // New Selection State
   const [selectedGradeLevelId, setSelectedGradeLevelId] = useState<number | null>(null);
@@ -92,6 +93,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
       setSelectedType(null);
       setGroupName("");
       setDescription("");
+      setIsDisabled(true);
       setSelectedGradeLevelId(null);
       setSelectedClassId(null);
       setSelectedStudentIds([]);
@@ -162,6 +164,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
         description: description,
         category: selectedType,
         selectionData,
+        is_disabled,
       });
     }
   };
@@ -310,6 +313,20 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
             value={description}
             onChangeText={setDescription}
           />
+        </View>
+
+        {/* Admin Only Toggle */}
+        <View className="mt-6 flex-row items-center justify-between bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+          <View className="flex-1 mr-4">
+            <Text className="text-[15px] font-bold text-blue-700 mb-1">Message Admin Only</Text>
+            <Text className="text-xs text-blue-500">Only admins can send messages to this group by default</Text>
+          </View>
+          <TouchableOpacity 
+            onPress={() => setIsDisabled(!is_disabled)}
+            className={`w-12 h-6 rounded-full items-center justify-center ${is_disabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+          >
+            <View className={`w-4 h-4 bg-white rounded-full absolute ${is_disabled ? 'right-1' : 'left-1'}`} />
+          </TouchableOpacity>
         </View>
       </View>
 

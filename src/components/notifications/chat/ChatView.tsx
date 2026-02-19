@@ -43,10 +43,18 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const [setFocus] = useSetChatFocusMutation();
 
   const dispatch = useDispatch<any>();
+  
+  // Local state for the current group to handle real-time setting updates (like is_disabled)
+  const [currentGroup, setCurrentGroup] = React.useState<ChatGroup>(group);
+
+  // Sync with prop when it changes
+  React.useEffect(() => {
+    setCurrentGroup(group);
+  }, [group]);
 
   const { data: membersData } = useGetChatGroupMembersQuery(
-    { chat_group_id: group.id },
-    { skip: !group.id || group.type !== 'group' }
+    { chat_group_id: currentGroup.id },
+    { skip: !currentGroup.id || currentGroup.type !== 'group' }
   );
   
   const members = React.useMemo(() => membersData?.data.members || [], [membersData]);
@@ -58,10 +66,10 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const [showActionMenu, setShowActionMenu] = React.useState(false);
   const [editingMessage, setEditingMessage] = React.useState<ChatMessage | null>(null);
   const [showReceiptsModal, setShowReceiptsModal] = React.useState(false);
-  
+
   const isAdmin = React.useMemo(() => {
-    return group.current_user_role === 'admin' || user?.role === 'admin';
-  }, [group.current_user_role, user?.role]);
+    return currentGroup.current_user_role === 'admin' || user?.role === 'admin';
+  }, [currentGroup.current_user_role, user?.role]);
 
   const { uploadFile, isUploading, progress: uploadProgress } = useChunkedUpload();
   
@@ -133,23 +141,48 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
 
   // Real-time Echo listeners
   React.useEffect(() => {
-    if (!group.id) return;
+    if (!currentGroup.id) return;
 
-    console.log(`🔌 Setting up Echo listeners for group ${group.id}`);
+    console.log(`🔌 [ChatView] Setting up Echo listeners for group ${currentGroup.id}`);
     
-    RealTimeNotificationService.subscribeToGroup(Number(group.id), {
+    RealTimeNotificationService.subscribeToGroup(Number(currentGroup.id), {
+      onGroupUpdated: (updatedGroup) => {
+        console.log("⚡ Real-time: Group updated:", updatedGroup.id, "Settings:", updatedGroup.is_disabled);
+        dispatch(
+          chatApi.util.updateQueryData('getChatThreads', { page: 1 }, (draft) => {
+            const index = draft.data.threads.findIndex(t => String(t.id) === String(updatedGroup.id));
+            if (index !== -1) {
+              draft.data.threads[index] = { ...draft.data.threads[index], ...updatedGroup };
+            }
+          })
+        );
+        
+        if (String(currentGroup.id) === String(updatedGroup.id)) {
+           setCurrentGroup(prev => ({ ...prev, ...updatedGroup }));
+        }
+      },
       onGroupDeleted: () => {
         Alert.alert("Group Deleted", "This group has been deleted by the administrator.");
         onBack();
       },
       onMessageSent: (newMessage) => {
-        console.log("⚡ Real-time: New message received:", newMessage.id, newMessage.content);
+        console.log("⚡ [ChatView] Real-time message received callback triggered!", {
+          id: newMessage.id,
+          sender: newMessage.sender_name,
+          currentGroupId: group.id
+        });
+        
+        // Optimistic update to ALL cached pages for this group, as they share the same key due to serializeQueryArgs
+        // We use { page: 1 } as the primary lookup, but since they share cache, it updates the unified list.
         dispatch(
           chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
-            // Deduplicate
-            if (!draft.data.messages.find(m => m.id === newMessage.id)) {
-              console.log("✅ Adding new message to list");
+            // Deduplicate to prevent double messages (one from mutation, one from real-time)
+            const exists = draft.data.messages.some(m => String(m.id) === String(newMessage.id));
+            if (!exists) {
+              console.log("✅ Adding new message to cache (RT)");
               draft.data.messages.unshift(newMessage);
+            } else {
+              console.log("ℹ️ Message already exists in cache, skipping (RT)");
             }
           })
         );
@@ -197,6 +230,23 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       onPresenceChange: (users) => {
         console.log("👥 Real-time: Presence update:", users.length, "users online");
         setOnlineUserIds(new Set(users.map(u => u.id)));
+      },
+      onMessageRead: (data) => {
+        console.log("⚡ Real-time: Messages read by:", data.user_id, "IDs:", data.message_ids);
+        if (data.user_id === user?.id) return; // Ignore own read receipts (already updated locally)
+
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+            data.message_ids.forEach(id => {
+              const index = draft.data.messages.findIndex(m => String(m.id) === String(id));
+              if (index !== -1) {
+                // Increment read count or update specific read status
+                // Since this is real-time, we just know it's been read by another person
+                draft.data.messages[index].read_count = (draft.data.messages[index].read_count || 0) + 1;
+              }
+            });
+          })
+        );
       }
     });
 
@@ -244,7 +294,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const handleToggleReaction = async (message: ChatMessage, emoji: string) => {
     // Optimistic update
     const patchResult = dispatch(
-      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: currentGroup.id, page: 1 }, (draft) => {
         const msgIndex = draft.data.messages.findIndex(m => m.id === message.id);
         if (msgIndex !== -1) {
           const msg = draft.data.messages[msgIndex];
@@ -303,7 +353,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         setEditingMessage(null);
       } else {
         await sendMessage({
-          chat_group_id: group.id,
+          chat_group_id: currentGroup.id,
           type: "text",
           content: text,
         }).unwrap();
@@ -327,7 +377,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       console.log("✅ Upload successful, sending message with media:", mediaData);
       
       const response = await sendMessage({
-        chat_group_id: group.id,
+        chat_group_id: currentGroup.id,
         type: type === "image" ? "image" : "file",
         attachment_url: mediaData.url,
         metadata: {
@@ -432,7 +482,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           activeOpacity={0.7}
           onPress={async () => {
             try {
-              await togglePin({ chat_group_id: group.id }).unwrap();
+              await togglePin({ chat_group_id: currentGroup.id }).unwrap();
             } catch (error) {
               console.error("Failed to toggle pin:", error);
             }
@@ -441,8 +491,8 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           <MaterialIcons 
             name="push-pin" 
             size={22} 
-            color={group.is_pinned ? "#3b82f6" : "#6b7280"} 
-            style={group.is_pinned ? { transform: [{ rotate: '45deg' }] } : {}}
+            color={currentGroup.is_disabled ? "#3b82f6" : "#6b7280"} 
+            style={currentGroup.is_disabled ? { transform: [{ rotate: '45deg' }] } : {}}
           />
         </TouchableOpacity>
  
@@ -660,11 +710,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           onSendMessage={handleSendMessage} 
           onSendAttachment={handleSendAttachment as any}
           initialValue={editingMessage?.content}
-          isDisabled={group.is_disabled && !isAdmin}
+          isDisabled={currentGroup.is_disabled && !isAdmin}
           isUploading={isUploading}
           uploadProgress={uploadProgress}
           onTyping={() => {
-            RealTimeNotificationService.sendTypingIndicator(Number(group.id), user?.full_name || 'Someone');
+            RealTimeNotificationService.sendTypingIndicator(Number(currentGroup.id), user?.full_name || 'Someone');
           }}
         />
       </View>

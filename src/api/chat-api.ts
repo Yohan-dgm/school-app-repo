@@ -218,9 +218,9 @@ export const chatApi = apiServer1.injectEndpoints({
         method: "POST",
         body: params,
       }),
-      // Cache by chat_group_id only to allow merging paginated results
+      // Cache by normalized chat_group_id to allow merging regardless of string/number type
       serializeQueryArgs: ({ endpointName, queryArgs }) => {
-        return `${endpointName}-${queryArgs.chat_group_id}`;
+        return `${endpointName}-${String(queryArgs.chat_group_id)}`;
       },
       // Merge results when page changes
       merge: (currentCache, newItems, { arg }) => {
@@ -255,7 +255,7 @@ export const chatApi = apiServer1.injectEndpoints({
         return currentArg?.page !== previousArg?.page || currentArg?.page === 1;
       },
       providesTags: (result, error, arg) => [
-        { type: "ChatMessages", id: arg.chat_group_id },
+        { type: "ChatMessages", id: String(arg.chat_group_id) },
       ],
     }),
 
@@ -462,7 +462,7 @@ export const chatApi = apiServer1.injectEndpoints({
     }),
     setChatFocus: builder.mutation<any, { chat_group_id: number | null }>({
       query: (payload) => ({
-        url: "/chats/focus",
+        url: "api/communication-management/chats/focus",
         method: "POST",
         body: payload,
       }),

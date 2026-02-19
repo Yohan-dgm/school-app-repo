@@ -209,7 +209,7 @@ export default function UniversalNotificationSystem({
   const [markChatAsRead] = useMarkChatAsReadMutationChat();
   const [createChatGroup, { isLoading: isCreatingGroup }] = useCreateNewChatGroupMutation();
 
-  const handleCreateGroup = async (data: { name: string; description: string; category: string, selectionData?: any }) => {
+  const handleCreateGroup = async (data: { name: string; description: string; category: string, selectionData?: any, is_disabled?: boolean }) => {
     try {
       apiLogger.info("Attempting to create chat group", data);
       
@@ -217,6 +217,7 @@ export default function UniversalNotificationSystem({
         name: data.name,
         type: "group",
         category: data.category,
+        is_disabled: data.is_disabled,
         ...data.selectionData,
       };
 
@@ -445,10 +446,9 @@ export default function UniversalNotificationSystem({
     // initializePushService();
     initializeRealTime();
 
-    // Cleanup on unmount
+    // Cleanup on unmount - Lifecycle is managed by BackgroundNotificationService
     return () => {
-      apiLogger.info("Cleaning up real-time notification listeners");
-      RealTimeNotificationService.disconnect();
+      apiLogger.info("Unmounting UniversalNotificationSystem - keeping real-time connection alive");
     };
   }, [token, userId, dispatch]);
 

@@ -10,6 +10,7 @@ interface ChatInputBarProps {
   onSendAttachment: (type: "image" | "file", file: any) => void;
   initialValue?: string;
   isDisabled?: boolean;
+  isAdmin?: boolean;
   isUploading?: boolean;
   uploadProgress?: number;
   onTyping?: () => void;
@@ -20,6 +21,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   onSendAttachment,
   initialValue = "",
   isDisabled = false,
+  isAdmin = false,
   isUploading = false,
   uploadProgress = 0,
   onTyping
@@ -102,12 +104,12 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     if (!showAttachments) Keyboard.dismiss();
   };
 
-  if (isDisabled) {
+  if (isDisabled && !isAdmin) {
     return (
       <View className="bg-gray-50 px-6 py-8 pb-28 border-t border-gray-100 items-center justify-center">
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="lock" size={14} color="#6b7280" />
-          <Text className="text-gray-500 text-xs font-bold ml-2">Chat is disabled by owner</Text>
+          <Text className="text-gray-500 text-xs font-bold ml-2">Only admins can send messages</Text>
         </View>
       </View>
     );

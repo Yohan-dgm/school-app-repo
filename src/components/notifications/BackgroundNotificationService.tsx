@@ -1,5 +1,5 @@
 import React from "react";
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../state-store/store";
 import { apiServer1 } from "../../api/api-server-1";
@@ -27,13 +27,13 @@ const apiLogger = {
  * Handles real-time notifications and push notifications regardless of current screen
  */
 export const BackgroundNotificationService: React.FC = () => {
+  // 1. CALL HOOKS AT TOP LEVEL (REQUIRED BY REACT RULES)
+  const dispatch = useDispatch();
+  const { user, token } = useSelector((state: RootState) => state.app);
+  const userId = user?.id;
+
   // IMMEDIATE DEBUG - Check if component mounts at all
   console.log("🟦 [MOUNT DEBUG] BackgroundNotificationService component mounting...");
-  
-  try {
-    const dispatch = useDispatch();
-    const { user, token } = useSelector((state: RootState) => state.app);
-    const userId = user?.id;
   
   // DEBUG - Check Redux state immediately
   console.log("🟦 [MOUNT DEBUG] Redux state check:", {
@@ -96,12 +96,6 @@ export const BackgroundNotificationService: React.FC = () => {
     const initializeRealTime = async () => {
       try {
         console.log("🌐 [DEBUG] Starting RealTimeNotificationService initialization...");
-        console.log("🌐 [DEBUG] Auth details:", { 
-          hasToken: !!token, 
-          tokenLength: token?.length,
-          userId: userId.toString(),
-          userIdType: typeof userId
-        });
         
         // Add WebSocket environment check
         console.log("🌐 [WEBSOCKET DEBUG] Environment variables:", {
@@ -115,138 +109,28 @@ export const BackgroundNotificationService: React.FC = () => {
         await RealTimeNotificationService.initialize(token, userId.toString(), {
           onNotificationCreated: (notification: any) => {
             console.log("🚀 [DEBUG] Real-time notification callback triggered!");
-            console.log("📥 [DEBUG] Notification data received:", {
-              fullNotification: notification,
-              hasTitle: !!notification?.title,
-              hasMessage: !!notification?.message,
-              hasBody: !!notification?.body,
-              titleValue: notification?.title,
-              messageValue: notification?.message,
-              bodyValue: notification?.body
-            });
-            
-            // Also use apiLogger for regular logging
-            apiLogger.info("Real-time notification received", { 
-              notification,
-              hasTitle: !!notification?.title,
-              hasMessage: !!notification?.message,
-              hasBody: !!notification?.body
-            });
+            apiLogger.info("Real-time notification received", { notification });
             
             // Invalidate ALL notification cache entries to update all components
             dispatch(apiServer1.util.invalidateTags(["Notifications"]));
             console.log("✅ [DEBUG] Cache invalidation triggered");
-
-            // DISABLED: Push notification popup functionality
-            // Keeping code for future re-enabling
-            /*
-            // Check PushNotificationService state before attempting to use it
-            const serviceStatus = PushNotificationService.getServiceStatus();
-            console.log("🔍 [DEBUG] PushNotificationService status:", serviceStatus);
-
-            // Show push notification popup for new notifications
-            // Note: Real-time notifications use 'message' field, not 'body'
-            const title = notification?.title;
-            const body = notification?.body || notification?.message; // Real-time uses 'message'
-
-            console.log("🎯 [DEBUG] Extracted notification content:", {
-              title,
-              body,
-              titleType: typeof title,
-              bodyType: typeof body,
-              titleLength: title?.length,
-              bodyLength: body?.length
-            });
-
-            if (title && body) {
-              console.log("💡 [DEBUG] Starting push notification process...");
-
-              // Check if service is available
-              const isAvailable = PushNotificationService.isLocalNotificationAvailable();
-              console.log("📲 [DEBUG] Local notification available:", isAvailable);
-
-              const notificationPayload = {
-                id: `realtime-${notification?.id || Date.now()}`,
-                title: title,
-                body: body,
-                data: notification?.data || {
-                  type: "realtime",
-                  notification_id: notification?.id,
-                  recipient_id: notification?.recipient_id
-                },
-                priority: notification?.priority || "normal"
-              };
-
-              console.log("📤 [DEBUG] Sending push notification with payload:", notificationPayload);
-
-              PushNotificationService.sendLocalNotification(notificationPayload)
-                .then((notificationId) => {
-                  console.log("✅ [DEBUG] Push notification sent successfully! ID:", notificationId);
-                  apiLogger.success("Push notification sent successfully", { notificationId });
-                })
-                .catch((error) => {
-                  console.error("❌ [DEBUG] Push notification failed:", error);
-                  console.error("❌ [DEBUG] Error details:", {
-                    message: error?.message,
-                    stack: error?.stack,
-                    code: error?.code,
-                    notification: notificationPayload
-                  });
-                  apiLogger.error("Failed to show push notification", {
-                    error: error.message || error,
-                    notification: { title, body, id: notification?.id }
-                  });
-
-                  // Show an alert as fallback for debugging
-                  if (__DEV__) {
-                    setTimeout(() => {
-                      alert(`Push notification failed: ${error?.message || 'Unknown error'}`);
-                    }, 100);
-                  }
-                });
-            } else {
-              console.warn("⚠️ [DEBUG] Cannot show push notification - missing title or body");
-              console.warn("⚠️ [DEBUG] Missing data details:", {
-                title,
-                body,
-                titleIsMissing: !title,
-                bodyIsMissing: !body,
-                originalNotification: notification
-              });
-
-              apiLogger.warn("Cannot show push notification - missing title or body", {
-                title,
-                body,
-                originalNotification: notification
-              });
-
-              // Show debug alert
-              if (__DEV__) {
-                setTimeout(() => {
-                  alert(`Missing notification data - Title: ${!!title}, Body: ${!!body}`);
-                }, 100);
-              }
-            }
-            */
           },
           onChatMessage: (message: any) => {
             console.log("💬 [DEBUG] Real-time chat message received:", message);
             // Invalidate chat-related tags to trigger refetch
             dispatch(apiServer1.util.invalidateTags(["ChatThreads"]));
             if (message.chat_group_id) {
-              dispatch(apiServer1.util.invalidateTags([{ type: "ChatMessages", id: message.chat_group_id.toString() }]));
+              dispatch(apiServer1.util.invalidateTags([{ type: "ChatMessages", id: String(message.chat_group_id) }]));
             }
           },
           onNotificationRead: (data: any) => {
             console.log("✅ [DEBUG] Real-time notification read event:", data);
             apiLogger.info("Real-time notification read", { data });
-            // Invalidate ALL notification cache entries to update all components
             dispatch(apiServer1.util.invalidateTags(["Notifications"]));
           },
           onStatsUpdated: (stats: any) => {
             console.log("📊 [DEBUG] Real-time stats updated:", stats);
             apiLogger.info("Real-time stats updated", { stats });
-            // Could update a badge count here if needed
           },
           onConnectionStateChange: (connected: boolean) => {
             console.log("🔗 [DEBUG] Real-time connection state changed:", connected);
@@ -260,10 +144,6 @@ export const BackgroundNotificationService: React.FC = () => {
         
         console.log("🌐 [DEBUG] RealTimeNotificationService initialized successfully");
         
-        // Check connection status
-        const rtStatus = RealTimeNotificationService.getStatus();
-        console.log("🌐 [DEBUG] Real-time service status:", rtStatus);
-        
       } catch (error) {
         console.error("❌ [DEBUG] RealTimeNotificationService initialization failed:", error);
         apiLogger.error("Failed to initialize real-time notifications", {
@@ -274,7 +154,6 @@ export const BackgroundNotificationService: React.FC = () => {
 
     // Initialize services
     console.log("🔄 [DEBUG] Initializing notification services...");
-    // DISABLED: Push notification service
     initializePushService();
     initializeRealTime();
 
@@ -286,25 +165,26 @@ export const BackgroundNotificationService: React.FC = () => {
     };
   }, [token, userId, dispatch, user?.user_category, user?.full_name]);
 
+  // Foreground Resynchronization logic
+  React.useEffect(() => {
+    if (!token || !userId) return;
 
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        console.log("🌅 [BackgroundNotificationService] App returned to foreground. Refreshing chat data...");
+        // Invalidate tags to trigger refetches for active components
+        dispatch(apiServer1.util.invalidateTags(["ChatThreads", "ChatMessages"]));
+        dispatch(apiServer1.util.invalidateTags(["Notifications"]));
+      }
+    });
 
+    return () => {
+      subscription.remove();
+    };
+  }, [token, userId, dispatch]);
 
-
-    // This component renders nothing - it just runs background services
-    return null;
-  } catch (error) {
-    console.error("❌ [MOUNT DEBUG] BackgroundNotificationService crashed:", error);
-    
-    // Show crash info in development
-    if (__DEV__) {
-      setTimeout(() => {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        alert(`BackgroundNotificationService crashed: ${errorMessage}`);
-      }, 100);
-    }
-    
-    return null;
-  }
+  // This component renders nothing - it just runs background services
+  return null;
 };
 
 export default BackgroundNotificationService;

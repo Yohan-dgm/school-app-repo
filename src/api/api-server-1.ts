@@ -43,6 +43,7 @@ export const apiServer1 = createApi({
   baseQuery: fetchBaseQuery({
     baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
     timeout: 60000, // 60 seconds timeout for file uploads
+    credentials: "include", // CRITICAL: Move here from prepareHeaders
     prepareHeaders: (headers, api: any) => {
       const token = api.getState().app.token;
       const isAuthenticated = api.getState().app.isAuthenticated;
@@ -101,14 +102,11 @@ export const apiServer1 = createApi({
         );
       }
 
-      headers.set("credentials", "include");
-
       console.log("📤 API Server 1 - Final headers:", {
         "X-Requested-With": "XMLHttpRequest",
         "Content-Type": headers.get("Content-Type") || "AUTO (for FormData)",
         Accept: "application/json",
         Authorization: token ? "Bearer [REDACTED]" : "None",
-        credentials: "include",
         endpoint: api.endpoint,
         method: api.type,
         isFormDataRequest: isFormDataRequest,
@@ -116,6 +114,7 @@ export const apiServer1 = createApi({
 
       return headers;
     },
+
     // prepareHeaders: async (headers) => {
     //   // const user = await AsyncStorageService.getStoredData();
     //   // const hasUser = !!user && !!user!.userToken;
