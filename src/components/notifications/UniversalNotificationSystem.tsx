@@ -65,7 +65,7 @@ export default function UniversalNotificationSystem({
   const [refreshing, setRefreshing] = React.useState(false);
   const [showDebugPanel] = React.useState(false);
   const [filter, setFilter] = React.useState<
-    "all" | "unread" | "read" | "school" | "class" | "student" | "chats"
+    "all" | "unread" | "read" | "chats" | "notifications"
   >("all");
   const [selectedNotification, setSelectedNotification] =
     React.useState<BaseNotification | null>(null);
@@ -209,7 +209,7 @@ export default function UniversalNotificationSystem({
   const [markChatAsRead] = useMarkChatAsReadMutationChat();
   const [createChatGroup, { isLoading: isCreatingGroup }] = useCreateNewChatGroupMutation();
 
-  const handleCreateGroup = async (data: { name: string; description: string; category: string, selectionData?: any, is_disabled?: boolean }) => {
+  const handleCreateGroup = async (data: { name: string; description: string; category: string, selectionData?: any, only_admins_can_message?: boolean }) => {
     try {
       apiLogger.info("Attempting to create chat group", data);
       
@@ -217,7 +217,8 @@ export default function UniversalNotificationSystem({
         name: data.name,
         type: "group",
         category: data.category,
-        is_disabled: data.is_disabled,
+        only_admins_can_message: data.only_admins_can_message,
+        is_disabled: false,
         ...data.selectionData,
       };
 
@@ -870,26 +871,9 @@ export default function UniversalNotificationSystem({
         // Show only read notifications
         return validNotifications.filter((n) => n.is_read ?? n.isRead);
 
-      case "school":
-        // Show school/broadcast notifications (all read statuses)
-        return validNotifications.filter((n) => {
-          const targetType = (n.target_type || "").toLowerCase();
-          return targetType.includes("school") || targetType === "broadcast";
-        });
-
-      case "class":
-        // Show class/grade notifications (all read statuses)
-        return validNotifications.filter((n) => {
-          const targetType = (n.target_type || "").toLowerCase();
-          return targetType.includes("class") || targetType.includes("grade");
-        });
-
-      case "student":
-        // Show student/user notifications (all read statuses)
-        return validNotifications.filter((n) => {
-          const targetType = (n.target_type || "").toLowerCase();
-          return targetType.includes("user") || targetType.includes("student");
-        });
+      case "notifications":
+        // Show all notifications
+        return validNotifications;
 
       default:
         return validNotifications;
@@ -920,7 +904,7 @@ export default function UniversalNotificationSystem({
 
     // 2. Map real announcements
     // Only show announcements if filter is 'all' or 'school' or 'unread' (if unread)
-    const showAnnouncements = ["all", "school"].includes(filter) || (filter === "unread");
+    const showAnnouncements = ["all", "notifications", "read", "unread"].includes(filter);
     const mappedAnnouncements: ChatGroup[] = showAnnouncements 
       ? (realAnnouncementsData?.announcements || []).map(item => ({
           id: `announcement-${item.id}`,
@@ -944,7 +928,7 @@ export default function UniversalNotificationSystem({
 
     // 3. Real chat threads
     // Only show if filter is 'all' or 'chats'
-    const showChats = ["all", "chats"].includes(filter);
+    const showChats = ["all", "chats", "read", "unread"].includes(filter);
     const realChatThreads: ChatGroup[] = showChats
       ? (chatThreadsData?.data?.threads || []).map(chat => ({
           ...chat,
@@ -1031,6 +1015,8 @@ export default function UniversalNotificationSystem({
         chats={combinedChats}
         refreshing={refreshing}
         onRefresh={handleRefresh}
+        activeFilter={filter}
+        onFilterChange={setFilter as any}
         onChatPress={(chat) => {
           if (chat.type === 'system') {
             const chatIdStr = chat.id.toString();

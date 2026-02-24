@@ -18,7 +18,7 @@ import StudentSelector from "../../announcements/StudentSelector";
 interface CreateGroupModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess: (data: { name: string; description: string; category: GroupCategory, selectionData?: any, is_disabled?: boolean }) => void;
+  onSuccess: (data: { name: string; description: string; category: GroupCategory, selectionData?: any, only_admins_can_message?: boolean }) => void;
 }
 
 interface GroupTypeOption {
@@ -65,13 +65,13 @@ const GROUP_TYPES: GroupTypeOption[] = [
     icon: "meeting-room",
     color: "#8b5cf6",
   },
-  {
-    id: "student",
-    name: "Student",
-    description: "Select specific students",
-    icon: "groups",
-    color: "#ef4444",
-  },
+  // {
+  //   id: "student",
+  //   name: "Student",
+  //   description: "Select specific students",
+  //   icon: "groups",
+  //   color: "#ef4444",
+  // },
 ];
 
 const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, onSuccess }) => {
@@ -79,7 +79,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
   const [selectedType, setSelectedType] = useState<GroupCategory | null>(null);
   const [groupName, setGroupName] = useState("");
   const [description, setDescription] = useState("");
-  const [is_disabled, setIsDisabled] = useState(true); // Default to true as per request
+  const [only_admins_can_message, setOnlyAdminsCanMessage] = useState(true); // Default to true as per request
 
   // New Selection State
   const [selectedGradeLevelId, setSelectedGradeLevelId] = useState<number | null>(null);
@@ -93,7 +93,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
       setSelectedType(null);
       setGroupName("");
       setDescription("");
-      setIsDisabled(true);
+      setOnlyAdminsCanMessage(true);
       setSelectedGradeLevelId(null);
       setSelectedClassId(null);
       setSelectedStudentIds([]);
@@ -164,7 +164,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
         description: description,
         category: selectedType,
         selectionData,
-        is_disabled,
+        only_admins_can_message,
       });
     }
   };
@@ -322,10 +322,10 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ visible, onClose, o
             <Text className="text-xs text-blue-500">Only admins can send messages to this group by default</Text>
           </View>
           <TouchableOpacity 
-            onPress={() => setIsDisabled(!is_disabled)}
-            className={`w-12 h-6 rounded-full items-center justify-center ${is_disabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+            onPress={() => setOnlyAdminsCanMessage(!only_admins_can_message)}
+            className={`w-12 h-6 rounded-full items-center justify-center ${only_admins_can_message ? 'bg-blue-600' : 'bg-gray-300'}`}
           >
-            <View className={`w-4 h-4 bg-white rounded-full absolute ${is_disabled ? 'right-1' : 'left-1'}`} />
+            <View className={`w-4 h-4 bg-white rounded-full absolute ${only_admins_can_message ? 'right-1' : 'left-1'}`} />
           </TouchableOpacity>
         </View>
       </View>

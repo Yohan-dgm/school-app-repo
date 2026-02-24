@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler } from "react-native";
+import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler, AppState, AppStateStatus } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup, ChatMessage } from "./ChatTypes";
@@ -139,6 +139,27 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Helper to handle new messages from any real-time source (Presence or User channel)
+  const handleNewMessage = React.useCallback((msg: ChatMessage) => {
+    // Ensure the message belongs to THIS group
+    if (String(msg.chat_group_id) !== String(group.id)) {
+      return;
+    }
+
+    dispatch(
+      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+        // Deduplicate: Don't add if it already exists (prevents doubles from multiple channels)
+        const exists = draft.data.messages.some(m => String(m.id) === String(msg.id));
+        if (!exists) {
+          console.log("✅ [ChatView] New message received & inserted into list:", msg.id);
+          draft.data.messages.unshift(msg);
+        } else {
+          console.log("ℹ️ [ChatView] Message already in list, skipping:", msg.id);
+        }
+      })
+    );
+  }, [group.id, dispatch]);
+
   // Real-time Echo listeners
   React.useEffect(() => {
     if (!currentGroup.id) return;
@@ -166,26 +187,8 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         onBack();
       },
       onMessageSent: (newMessage) => {
-        console.log("⚡ [ChatView] Real-time message received callback triggered!", {
-          id: newMessage.id,
-          sender: newMessage.sender_name,
-          currentGroupId: group.id
-        });
-        
-        // Optimistic update to ALL cached pages for this group, as they share the same key due to serializeQueryArgs
-        // We use { page: 1 } as the primary lookup, but since they share cache, it updates the unified list.
-        dispatch(
-          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
-            // Deduplicate to prevent double messages (one from mutation, one from real-time)
-            const exists = draft.data.messages.some(m => String(m.id) === String(newMessage.id));
-            if (!exists) {
-              console.log("✅ Adding new message to cache (RT)");
-              draft.data.messages.unshift(newMessage);
-            } else {
-              console.log("ℹ️ Message already exists in cache, skipping (RT)");
-            }
-          })
-        );
+        console.log("⚡ [ChatView] Presence Channel message received");
+        handleNewMessage(newMessage);
       },
       onMessageUpdated: (updatedMessage) => {
         console.log("⚡ Real-time: Message updated event received!", {
@@ -254,7 +257,32 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       console.log(`🔌 Unsubscribing from Echo group ${group.id}`);
       RealTimeNotificationService.unsubscribeFromGroup(Number(group.id));
     };
-  }, [group.id, dispatch]);
+  }, [group.id, dispatch, handleNewMessage]);
+
+  // ROBUST FALLBACK: Listen to the User Channel too
+  // This channel is working reliably even when presence channels fail.
+  React.useEffect(() => {
+    console.log("📡 [ChatView] Registering User Channel fallback listener");
+    
+    const removeListener = RealTimeNotificationService.addChatMessageListener((data) => {
+      if (data.event === 'sent') {
+        console.log("⚡ [ChatView] Global User Channel fallback message received");
+        handleNewMessage(data.message as ChatMessage);
+      } else if (data.event === 'deleted') {
+        console.log("⚡ [ChatView] Global User Channel fallback message deleted:", data.message.id);
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+            draft.data.messages = draft.data.messages.filter(m => m.id !== data.message.id);
+          })
+        );
+      }
+    });
+
+    return () => {
+      console.log("📡 [ChatView] Removing User Channel fallback listener");
+      removeListener();
+    };
+  }, [handleNewMessage]);
 
   // Mark as read when opening
   React.useEffect(() => {
@@ -262,6 +290,34 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       markRead({ chat_group_id: group.id });
     }
   }, [group.id, messagesData]);
+
+  // Robust connection state & foreground recovery
+  React.useEffect(() => {
+    console.log("📡 [ChatView] Setting up connection resilience hooks");
+    
+    // 1. WebSocket Reconnection recovery
+    const removeConnectionListener = RealTimeNotificationService.addConnectionStateListener((isConnected) => {
+      // If we go from disconnected to connected, refetch to catch up on missed messages
+      if (isConnected) {
+        console.log("🔄 [ChatView] WebSocket connected/reconnected - refetching messages");
+        refetch();
+      }
+    });
+
+    // 2. App State Foreground recovery
+    const appStateSubscription = AppState.addEventListener("change", (nextAppState: AppStateStatus) => {
+      if (nextAppState === "active") {
+        console.log("📱 [ChatView] App returned to active foreground - refetching messages");
+        refetch();
+      }
+    });
+
+    return () => {
+      console.log("📡 [ChatView] Tearing down connection resilience hooks");
+      removeConnectionListener();
+      appStateSubscription.remove();
+    };
+  }, [refetch]);
 
   // Focus tracking (Heartbeat for push notification suppression)
   React.useEffect(() => {
@@ -706,21 +762,26 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             </Text>
           </View>
         )}
-        <ChatInputBar 
-          onSendMessage={handleSendMessage} 
-          onSendAttachment={handleSendAttachment as any}
-          initialValue={editingMessage?.content}
-          isDisabled={currentGroup.is_disabled && !isAdmin}
-          isUploading={isUploading}
-          uploadProgress={uploadProgress}
-          onTyping={() => {
-            RealTimeNotificationService.sendTypingIndicator(Number(currentGroup.id), user?.full_name || 'Someone');
-          }}
-        />
+        {/* Chat Input Area */}
+        {currentGroup.type !== 'system' && (
+          <ChatInputBar
+            onSendMessage={handleSendMessage}
+            onSendAttachment={handleSendAttachment}
+            initialValue={editingMessage?.content}
+            isDisabled={currentGroup.is_disabled}
+            isAdminsOnly={currentGroup.only_admins_can_message}
+            isAdmin={isAdmin}
+            isUploading={isUploading}
+            uploadProgress={uploadProgress}
+            onTyping={() => {
+              RealTimeNotificationService.sendTypingIndicator(Number(currentGroup.id), user?.full_name || 'Someone');
+            }}
+          />
+        )}
       </View>
-      <MessageReceiptsModal 
-        visible={showReceiptsModal} 
-        onClose={() => setShowReceiptsModal(false)} 
+      <MessageReceiptsModal
+        visible={showReceiptsModal}
+        onClose={() => setShowReceiptsModal(false)}
         message={selectedMessage}
       />
 

@@ -11,6 +11,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -516,7 +518,7 @@ class PushNotificationService {
           console.warn("💡 Local notifications will still work fine without backend registration");
         } else if (error.response?.status === 422) {
           console.warn("🔧 Validation error (422) - check device data format:");
-          console.warn("📋 Registration data sent:", registrationData);
+          console.warn("📋 Registration data sent: Check payload sent to server");
         } else if (error.response?.status === 401) {
           console.warn("🔧 Authentication error (401) - token might be invalid for this endpoint");
         }
@@ -603,6 +605,36 @@ class PushNotificationService {
 
       return false;
     }
+  }
+
+  /**
+   * Disconnect service on logout
+   */
+  async disconnect(): Promise<void> {
+    console.log("🔌 Disconnecting PushNotificationService...");
+    try {
+      // Clear token from backend first
+      if (this.authToken && this.isRegisteredWithBackend) {
+        await this.removeTokenFromBackend();
+      }
+    } catch (e) {
+      console.warn("⚠️ Failed to remove token during disconnect:", e);
+    }
+    
+    // Clear credentials
+    this.authToken = null;
+    this.userId = null;
+    this.isRegisteredWithBackend = false;
+    
+    // Cancel local notifications
+    try {
+      await this.cancelAllNotifications();
+      await this.clearBadge();
+    } catch (e) {
+      // Ignore
+    }
+    
+    console.log("✅ PushNotificationService disconnected");
   }
 
   /**

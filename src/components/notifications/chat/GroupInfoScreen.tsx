@@ -18,6 +18,7 @@ import {
   useRemoveChatGroupMemberMutation,
   useDeleteChatGroupMutation 
 } from "../../../api/chat-api";
+import { useSelector } from "react-redux";
 
 interface GroupInfoScreenProps {
   chat: ChatGroup;
@@ -51,8 +52,17 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
   const hasMore = membersData?.data?.pagination?.has_more ?? false;
   const totalMembers = membersData?.data?.pagination?.total ?? chat.members_count ?? 0;
   
-  const isOwner = chat.created_by?.toString() === currentUserId?.toString();
-  const isAdmin = isOwner || chat.current_user_role === 'admin';
+  const globalUser = useSelector((state: any) => state.app.user);
+
+  // Stricter checks to avoid undefined === undefined evaluating to true
+  const isOwner = Boolean(
+    chat.created_by && 
+    currentUserId && 
+    chat.created_by.toString() === currentUserId.toString()
+  );
+  
+  // A user is an admin of the group if they created it, were explicitly made a group admin, or are a global app admin
+  const isAdmin = isOwner || chat.current_user_role === 'admin' || globalUser?.role === 'admin';
 
   const handleRemoveMember = (member: ChatMember) => {
     if (!isAdmin) return;

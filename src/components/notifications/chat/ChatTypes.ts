@@ -3,6 +3,7 @@ export type MessageType = "text" | "image" | "file" | "system";
 export interface ChatMessage {
   id: string | number;
   chatGroupId?: string | number;
+  chat_group_id?: string | number;
   user_id?: string | number; // Backend uses user_id
   sender_id?: string | number; // For consistency
   sender_name: string;
@@ -66,6 +67,7 @@ export interface ChatGroup {
   updated_at?: string;
   members_count?: number;
   is_disabled?: boolean;
+  only_admins_can_message?: boolean;
   is_pinned?: boolean;
   members?: ChatMember[];
 }

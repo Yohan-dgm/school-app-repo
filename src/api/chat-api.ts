@@ -64,12 +64,13 @@ export interface SendMessageResponse {
 export interface CreateChatGroupRequest {
   name?: string;
   type: "direct" | "group";
-  user_ids?: (string | number)[];
-  avatar_url?: string;
+  user_ids?: number[];
   category?: string;
-  grade_level_id?: number | null;
-  grade_level_class_id?: number | null;
+  grade_level_id?: number;
+  grade_level_class_id?: number;
   student_ids?: number[];
+  is_disabled?: boolean;
+  only_admins_can_message?: boolean;
 }
 
 export interface MarkAsReadRequest {
@@ -106,10 +107,11 @@ export interface FinishUploadRequest {
 }
 
 export interface UpdateChatGroupRequest {
-  chat_group_id: string | number;
+  chat_group_id: number | string;
   name?: string;
   avatar_url?: string;
   is_disabled?: boolean;
+  only_admins_can_message?: boolean;
 }
 
 export interface AddChatGroupMembersRequest {

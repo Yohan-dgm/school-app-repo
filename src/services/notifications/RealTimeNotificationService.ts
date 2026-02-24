@@ -65,6 +65,7 @@ class RealTimeNotificationService {
   private maxReconnectAttempts = 5;
   private reconnectInterval: NodeJS.Timeout | null = null;
   private chatListeners: Set<(message: any) => void> = new Set();
+  private connectionListeners: Set<(connected: boolean) => void> = new Set();
 
   static getInstance(): RealTimeNotificationService {
     if (!RealTimeNotificationService.instance) {
@@ -251,6 +252,9 @@ class RealTimeNotificationService {
         if (this.connected !== isConnected) {
           this.connected = isConnected;
           this.callbacks.onConnectionStateChange?.(isConnected);
+          
+          // Notify registered components of connection state changes
+          this.connectionListeners.forEach(listener => listener(isConnected));
         }
       });
     }
@@ -410,13 +414,13 @@ class RealTimeNotificationService {
       channel.listen(".message.sent", (data: any) => {
         console.log("💬 RealTimeService - New chat message received (Global):", data);
         if (this.callbacks.onChatMessage) this.callbacks.onChatMessage(data);
-        this.chatListeners.forEach(listener => listener({ type: 'sent', ...data }));
+        this.chatListeners.forEach(listener => listener({ event: 'sent', message: data }));
       });
 
       channel.listen(".message.deleted", (data: any) => {
         console.log("🗑️ RealTimeService - Message deleted (Global):", data);
         if (this.callbacks.onMessageDeleted) this.callbacks.onMessageDeleted(data);
-        this.chatListeners.forEach(listener => listener({ type: 'deleted', ...data }));
+        this.chatListeners.forEach(listener => listener({ event: 'deleted', message: data }));
       });
 
       this.channels.set(channelName, channel);
@@ -663,6 +667,23 @@ class RealTimeNotificationService {
    */
   removeChatMessageListener(listener: (message: any) => void): void {
     this.chatListeners.delete(listener);
+  }
+
+  /**
+   * Add a connection state listener (helps components like ChatView refetch on reconnect)
+   */
+  addConnectionStateListener(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener);
+    // Immediately call it with the current state just in case we're already connected
+    listener(this.connected);
+    return () => this.connectionListeners.delete(listener);
+  }
+
+  /**
+   * Remove a connection state listener
+   */
+  removeConnectionStateListener(listener: (connected: boolean) => void): void {
+    this.connectionListeners.delete(listener);
   }
 
   /**

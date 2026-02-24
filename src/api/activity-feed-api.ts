@@ -1083,11 +1083,24 @@ export const activityFeedApi = apiServer1
             },
           };
         },
-        invalidatesTags: (result, error, { student_id }) => [
-          { type: "StudentPosts", id: `STUDENT_${student_id}` },
-          { type: "StudentPosts", id: "LIST" },
-          { type: "ActivityFeed", id: "LIST" },
-        ],
+        invalidatesTags: (result, error, { student_id, student_ids }) => {
+          const tags: any[] = [
+            { type: "StudentPosts", id: "LIST" },
+            { type: "ActivityFeed", id: "LIST" },
+          ];
+
+          if (student_id) {
+            tags.push({ type: "StudentPosts", id: `STUDENT_${student_id}` });
+          }
+
+          if (student_ids && Array.isArray(student_ids)) {
+            student_ids.forEach((id) => {
+              tags.push({ type: "StudentPosts", id: `STUDENT_${id}` });
+            });
+          }
+
+          return tags;
+        },
         transformResponse: (response: any) => {
           console.log("👨‍🎓 Student Post Creation Response:", response);
           return response;

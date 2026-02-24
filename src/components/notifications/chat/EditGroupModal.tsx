@@ -26,6 +26,9 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
   const [name, setName] = useState(chat.name);
   const [description, setDescription] = useState(chat.description || "");
   const [is_disabled, setIsDisabled] = useState(chat.is_disabled || false);
+  const [only_admins_can_message, setOnlyAdminsCanMessage] = useState(
+    chat.only_admins_can_message !== undefined ? chat.only_admins_can_message : true
+  );
   const [updateGroup, { isLoading }] = useUpdateChatGroupMutation();
 
   const handleToggleDisabled = (value: boolean) => {
@@ -49,12 +52,14 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
         chat_group_id: chat.id,
         name,
         is_disabled,
+        only_admins_can_message,
       }).unwrap();
       
       onUpdate({
         name,
         description,
         is_disabled,
+        only_admins_can_message,
       });
       onClose();
     } catch (error) {
@@ -107,10 +112,23 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
               <View className="mt-8 space-y-4">
                 <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 ml-1">Permissions</Text>
                 
+                <View className="flex-row items-center justify-between py-2 border-b border-gray-50 pb-4 mb-4">
+                  <View className="flex-1 mr-4">
+                    <Text className="text-gray-900 font-semibold">Only Admins Can Message</Text>
+                    <Text className="text-gray-400 text-[11px] mt-1">If enabled, regular members cannot send messages to this group.</Text>
+                  </View>
+                  <Switch
+                    value={only_admins_can_message}
+                    onValueChange={setOnlyAdminsCanMessage}
+                    trackColor={{ false: "#e5e7eb", true: "#bfdbfe" }}
+                    thumbColor={only_admins_can_message ? "#3b82f6" : "#f3f4f6"}
+                  />
+                </View>
+
                 <View className="flex-row items-center justify-between py-2 border-b border-gray-50 pb-4">
                   <View className="flex-1 mr-4">
-                    <Text className="text-blue-600 font-semibold">Message Admin Only</Text>
-                    <Text className="text-gray-400 text-[11px]">Only admins can send messages to this group</Text>
+                    <Text className="text-red-600 font-semibold">Disable Group Chat completely</Text>
+                    <Text className="text-gray-400 text-[11px] mt-1">Nobody (even admins) can send messages. Read-only strictly.</Text>
                   </View>
                   <Switch
                     value={is_disabled}

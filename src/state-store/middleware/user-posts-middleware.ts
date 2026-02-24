@@ -18,6 +18,7 @@ import {
   clearData as clearStudentPostsData,
 } from "../slices/school-life/student-posts-slice";
 import PushNotificationService from "../../services/notifications/PushNotificationService";
+import NotificationManager from "../../services/notifications/NotificationManager";
 
 /**
  * Middleware to handle user-specific post state management
@@ -50,9 +51,14 @@ export const userPostsMiddleware: Middleware =
 
     // Handle logout with posts cleanup
     if (logoutWithPostsCleanup.match(action)) {
-      // 1. Clear push token from backend
-      PushNotificationService.removeTokenFromBackend().catch((err) => {
-        console.warn("⚠️ Push Notification Service - Failed to remove token from backend during logout:", err);
+      // 1. Thoroughly disconnect Push Notifications (removes token from backend and clears local storage/listeners)
+      PushNotificationService.disconnect().catch((err) => {
+        console.warn("⚠️ Push Notification Service - Failed to fully disconnect during logout:", err);
+      });
+
+      // 1b. Disconnect WebSockets and empty caches
+      NotificationManager.disconnect().catch((err) => {
+        console.warn("⚠️ Notification Manager - Failed to disconnect during logout:", err);
       });
 
       // 2. Clear all post slices data

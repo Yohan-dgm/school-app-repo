@@ -10,6 +10,7 @@ interface ChatInputBarProps {
   onSendAttachment: (type: "image" | "file", file: any) => void;
   initialValue?: string;
   isDisabled?: boolean;
+  isAdminsOnly?: boolean;
   isAdmin?: boolean;
   isUploading?: boolean;
   uploadProgress?: number;
@@ -21,6 +22,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   onSendAttachment,
   initialValue = "",
   isDisabled = false,
+  isAdminsOnly = false,
   isAdmin = false,
   isUploading = false,
   uploadProgress = 0,
@@ -104,13 +106,27 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     if (!showAttachments) Keyboard.dismiss();
   };
 
-  if (isDisabled && !isAdmin) {
+  if (isDisabled) {
     return (
       <View className="bg-gray-50 px-6 py-8 pb-28 border-t border-gray-100 items-center justify-center">
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="lock" size={14} color="#6b7280" />
-          <Text className="text-gray-500 text-xs font-bold ml-2">Only admins can send messages</Text>
+          <Text className="text-gray-500 text-xs font-bold ml-2">Chat disabled completely</Text>
         </View>
+      </View>
+    );
+  }
+
+  if (isAdminsOnly && !isAdmin) {
+    return (
+      <View className="bg-gray-50 px-6 py-8 pb-28 border-t border-gray-100 items-center justify-center">
+        <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
+          <MaterialIcons name="campaign" size={16} color="#3b82f6" />
+          <Text className="text-blue-600 text-xs font-bold ml-2">Admins Only</Text>
+        </View>
+        <Text className="text-gray-400 text-[11px] mt-2 text-center px-4">
+          Only administrators can send messages to this group.
+        </Text>
       </View>
     );
   }
@@ -142,6 +158,16 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
             </View>
             <Text className="text-[10px] text-gray-600">Document</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Admin Indicator Banner */}
+      {isAdminsOnly && isAdmin && (
+        <View className="bg-blue-50 py-1.5 px-4 flex-row justify-center items-center border-t border-blue-100">
+          <MaterialIcons name="info-outline" size={14} color="#3b82f6" />
+          <Text className="text-blue-600 text-[10px] font-bold ml-1.5 uppercase">
+            Only Admins Can Message
+          </Text>
         </View>
       )}
 

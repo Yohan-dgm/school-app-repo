@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, RefreshControl } from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, RefreshControl, ScrollView } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup } from "./ChatTypes";
 import ChatListItem from "./ChatListItem";
@@ -12,6 +12,8 @@ interface ChatListViewProps {
   chats: ChatGroup[];
   refreshing?: boolean;
   onRefresh?: () => void;
+  activeFilter?: "all" | "unread" | "read" | "chats" | "notifications";
+  onFilterChange?: (filter: "all" | "unread" | "read" | "chats" | "notifications") => void;
 }
 
 const ChatListView: React.FC<ChatListViewProps> = ({ 
@@ -20,10 +22,15 @@ const ChatListView: React.FC<ChatListViewProps> = ({
   onCreateAnnouncement,
   chats = [],
   refreshing = false,
-  onRefresh
+  onRefresh,
+  activeFilter: externalFilter,
+  onFilterChange: setExternalFilter
 }) => {
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [activeFilter, setActiveFilter] = React.useState<"all" | "chats" | "read" | "unread">("all");
+  const [internalFilter, setInternalFilter] = React.useState<"all" | "unread" | "read" | "chats" | "notifications">("all");
+  
+  const activeFilter = externalFilter !== undefined ? externalFilter : internalFilter;
+  const setActiveFilter = setExternalFilter || setInternalFilter;
   const [togglePin] = useToggleChatGroupPinMutation();
 
   const handlePin = async (chatId: string | number) => {
@@ -108,11 +115,14 @@ const ChatListView: React.FC<ChatListViewProps> = ({
         </View>
 
         {/* Filter Chips */}
-        <View className="flex-row items-center">
-          <FilterChip label="All" value="all" />
-          <FilterChip label="Chats" value="chats" />
-          <FilterChip label="Read" value="read" />
-          <FilterChip label="Unread" value="unread" />
+        <View className="mb-1">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            <FilterChip label="All" value="all" />
+            <FilterChip label="Chats" value="chats" />
+            <FilterChip label="Notifications" value="notifications" />
+            <FilterChip label="Unread" value="unread" />
+            <FilterChip label="Read" value="read" />
+          </ScrollView>
         </View>
       </View>
 

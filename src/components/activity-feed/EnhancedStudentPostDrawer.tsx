@@ -53,18 +53,20 @@ interface EnhancedStudentPostDrawerProps {
 const StudentSelectionStep: React.FC<{
   selectedGrade: GradeLevelWithClasses | null;
   selectedClass: GradeLevelClass | null;
-  selectedStudent: StudentDetails | null;
+  selectedStudents: StudentDetails[];
   onGradeSelect: (grade: GradeLevelWithClasses | null) => void;
   onClassSelect: (classItem: GradeLevelClass | null) => void;
   onStudentSelect: (student: StudentDetails) => void;
+  onSelectAll: (students: StudentDetails[]) => void;
   onNext: () => void;
 }> = ({
   selectedGrade,
   selectedClass,
-  selectedStudent,
+  selectedStudents,
   onGradeSelect,
   onClassSelect,
   onStudentSelect,
+  onSelectAll,
   onNext,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -214,7 +216,28 @@ const StudentSelectionStep: React.FC<{
         {/* Student Selection */}
         {selectedClass && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Select Student</Text>
+            <View style={styles.studentHeader}>
+              <Text style={styles.sectionTitle}>Select Students</Text>
+              <TouchableOpacity
+                onPress={() => onSelectAll(students)}
+                style={styles.selectAllButton}
+              >
+                <MaterialIcons
+                  name={
+                    selectedStudents.length === students.length && students.length > 0
+                      ? "check-box"
+                      : "check-box-outline-blank"
+                  }
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.selectAllText}>
+                  {selectedStudents.length === students.length && students.length > 0
+                    ? "Deselect All"
+                    : "Select All"}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Search */}
             <View style={styles.searchContainer}>
@@ -249,7 +272,7 @@ const StudentSelectionStep: React.FC<{
                     key={student.id}
                     style={[
                       styles.studentItem,
-                      selectedStudent?.id === student.id &&
+                      selectedStudents.some((s) => s.id === student.id) &&
                         styles.selectedStudentItem,
                     ]}
                     onPress={() => onStudentSelect(student)}
@@ -262,7 +285,7 @@ const StudentSelectionStep: React.FC<{
                         {student.admission_number} • {selectedClass.name}
                       </Text>
                     </View>
-                    {selectedStudent?.id === student.id && (
+                    {selectedStudents.some((s) => s.id === student.id) && (
                       <MaterialIcons
                         name="check-circle"
                         size={20}
@@ -278,7 +301,7 @@ const StudentSelectionStep: React.FC<{
       </ScrollView>
 
       {/* Fixed Bottom Button - Always Visible */}
-      {selectedStudent && (
+      {selectedStudents.length > 0 && (
         <View style={styles.fixedBottomButton}>
           <TouchableOpacity style={styles.nextButton} onPress={onNext}>
             <LinearGradient
@@ -286,7 +309,7 @@ const StudentSelectionStep: React.FC<{
               style={styles.nextButtonGradient}
             >
               <Text style={styles.nextButtonText}>
-                Continue to Post Details
+                {`Continue (${selectedStudents.length} Selected)`}
               </Text>
               <MaterialIcons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
@@ -299,14 +322,14 @@ const StudentSelectionStep: React.FC<{
 
 // Post creation form component
 const PostCreationForm: React.FC<{
-  selectedStudent: StudentDetails;
+  selectedStudents: StudentDetails[];
   onBack: () => void;
   onSubmit: (postData: any) => void;
   isSubmitting: boolean;
   uploadStep?: string;
   uploadProgress?: { current: number; total: number };
 }> = ({
-  selectedStudent,
+  selectedStudents,
   onBack,
   onSubmit,
   isSubmitting,
@@ -595,7 +618,9 @@ const PostCreationForm: React.FC<{
       <View style={styles.studentInfoBanner}>
         <MaterialIcons name="person" size={16} color="#920734" />
         <Text style={styles.studentInfoText}>
-          Posting for: {selectedStudent.student_calling_name}
+          {selectedStudents.length === 1
+            ? `Posting for: ${selectedStudents[0].student_calling_name}`
+            : `Posting for: ${selectedStudents.length} Students`}
         </Text>
       </View>
 
@@ -824,9 +849,7 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
   const [selectedClass, setSelectedClass] = useState<GradeLevelClass | null>(
     null
   );
-  const [selectedStudent, setSelectedStudent] = useState<StudentDetails | null>(
-    null
-  );
+  const [selectedStudents, setSelectedStudents] = useState<StudentDetails[]>([]);
 
   const { sessionData } = useSelector((state: any) => state.app);
 
@@ -840,16 +863,30 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
       setCurrentStep("selection");
       setSelectedGrade(null);
       setSelectedClass(null);
-      setSelectedStudent(null);
+      setSelectedStudents([]);
     }
   }, [visible]);
 
   const handleStudentSelect = (student: StudentDetails) => {
-    setSelectedStudent(student);
+    setSelectedStudents((prev) => {
+      const exists = prev.find((s) => s.id === student.id);
+      if (exists) {
+        return prev.filter((s) => s.id !== student.id);
+      }
+      return [...prev, student];
+    });
+  };
+
+  const handleSelectAll = (students: StudentDetails[]) => {
+    if (selectedStudents.length === students.length) {
+      setSelectedStudents([]);
+    } else {
+      setSelectedStudents(students);
+    }
   };
 
   const handleNext = () => {
-    if (selectedStudent) {
+    if (selectedStudents.length > 0) {
       setCurrentStep("form");
     }
   };
@@ -863,10 +900,10 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
     setIsSubmitting(true);
     setUploadStep("validating");
 
-    if (!selectedStudent) {
+    if (selectedStudents.length === 0) {
       setIsSubmitting(false);
       setUploadStep("");
-      Alert.alert("Error", "No student selected");
+      Alert.alert("Error", "No students selected");
       return;
     }
 
@@ -964,8 +1001,8 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
         title: postData.title,
         content: postData.content,
         category: postData.category,
-        student_id: selectedStudent.id,
-        class_id: selectedStudent.grade_level_class_id,
+        student_ids: selectedStudents.map((s) => s.id),
+        class_id: selectedClass?.id,
         school_id: 1,
         hashtags: postData.hashtags,
         media: mediaUrls,
@@ -976,7 +1013,9 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
 
       Alert.alert(
         "Success",
-        `Student post created successfully for ${selectedStudent.student_calling_name}!`,
+        selectedStudents.length === 1
+          ? `Student post created successfully for ${selectedStudents[0].student_calling_name}!`
+          : `Student posts created successfully for ${selectedStudents.length} students!`,
         [
           {
             text: "OK",
@@ -1055,16 +1094,17 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
             <StudentSelectionStep
               selectedGrade={selectedGrade}
               selectedClass={selectedClass}
-              selectedStudent={selectedStudent}
+              selectedStudents={selectedStudents}
               onGradeSelect={setSelectedGrade}
               onClassSelect={setSelectedClass}
               onStudentSelect={handleStudentSelect}
+              onSelectAll={handleSelectAll}
               onNext={handleNext}
             />
           ) : (
-            selectedStudent && (
+            selectedStudents.length > 0 && (
               <PostCreationForm
-                selectedStudent={selectedStudent}
+                selectedStudents={selectedStudents}
                 onBack={handleBack}
                 onSubmit={handleSubmit}
                 isSubmitting={isSubmitting || isCreating}
@@ -1225,6 +1265,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#4CAF50",
     textAlign: "center",
+  },
+  studentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  selectAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    padding: 4,
+  },
+  selectAllText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.colors.primary,
   },
   searchContainer: {
     flexDirection: "row",
