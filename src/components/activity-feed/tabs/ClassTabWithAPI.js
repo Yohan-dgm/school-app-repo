@@ -138,8 +138,8 @@ const ClassTabWithAPI = ({ filters, userCategory, isConnected }) => {
     likedPosts = {},
   } = schoolPostsState;
 
-  // Get selected student from global state
-  const { selectedStudent } = useSelector((state) => state.app);
+  // Get current user and selected student from global state
+  const { user: currentUser, selectedStudent } = useSelector((state) => state.app);
 
   // API hooks - using dedicated class posts API
   const [getClassPosts] = useLazyGetClassPostsQuery();
@@ -547,7 +547,7 @@ const ClassTabWithAPI = ({ filters, userCategory, isConnected }) => {
                 );
 
                 const response = await deleteClassPost({
-                  post_id: postId,
+                  id: postId,
                 }).unwrap();
 
                 if (response.success) {
@@ -669,8 +669,8 @@ const ClassTabWithAPI = ({ filters, userCategory, isConnected }) => {
             </Text>
           </View>
 
-          {/* Delete Button - Hidden per user request */}
-          {false && (
+          {/* Delete Button - Visible only to post creator */}
+          {currentUser?.id === post.created_by && (
             <TouchableOpacity
               style={styles.deleteButton}
               onPress={() => handleDeletePost(post.id)}

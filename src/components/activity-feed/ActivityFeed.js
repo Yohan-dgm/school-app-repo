@@ -67,6 +67,8 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
         return classPosts || []; // TODO: Add allPosts for class and student tabs
       case "Student":
         return studentPosts || [];
+      case "MyPosts":
+        return studentPosts || [];
       default:
         return [];
     }
@@ -181,6 +183,14 @@ const ActivityFeed = ({ userCategory = USER_CATEGORIES.PARENT }) => {
             userCategory={userCategory}
             isConnected={isConnected}
             filters={filters}
+          />
+        )}
+        {activeTab === "MyPosts" && (
+          <StudentTabWithAPI
+            userCategory={userCategory}
+            isConnected={isConnected}
+            filters={filters}
+            mode="personal"
           />
         )}
       </View>

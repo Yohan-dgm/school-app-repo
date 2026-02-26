@@ -201,13 +201,13 @@ export const sanitizeFilename = (filename) => {
  * @returns {Object} { isValid, error, fileSize, sizeInMB }
  */
 export const validateVideoSize = (fileSize, fileName = "video file") => {
-  const FIVE_MB = 5 * 1024 * 1024; // 5MB in bytes
+  const FIFTY_MB = 50 * 1024 * 1024; // 50MB in bytes
 
   console.log(`🎥 Video size validation for ${fileName}:`, {
     fileSizeBytes: fileSize,
     fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
-    limitMB: 5,
-    isOverLimit: fileSize > FIVE_MB,
+    limitMB: 50,
+    isOverLimit: fileSize > FIFTY_MB,
     platform: Platform.OS,
   });
 
@@ -227,15 +227,15 @@ export const validateVideoSize = (fileSize, fileName = "video file") => {
       };
     }
 
-    if (fileSize > FIVE_MB) {
+    if (fileSize > FIFTY_MB) {
       const sizeInMB = (fileSize / (1024 * 1024)).toFixed(1);
       console.warn(
-        `❌ Video ${fileName} is too large: ${sizeInMB}MB (limit: 5MB)`,
+        `❌ Video ${fileName} is too large: ${sizeInMB}MB (limit: 50MB)`,
       );
 
       return {
         isValid: false,
-        error: `Video "${fileName}" is ${sizeInMB}MB. Please select a video under 5MB.\n\nTip: You can compress the video using your phone's video editor or a video compression app.`,
+        error: `Video "${fileName}" is ${sizeInMB}MB. Please select a video under 50MB.\n\nTip: Please contact the IT team for assistance with larger files.`,
         fileSize: fileSize,
         sizeInMB: parseFloat(sizeInMB),
       };

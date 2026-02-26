@@ -18,16 +18,33 @@ export const activityFeedApi = apiServer1
             filters,
           });
 
+          // Build search filter list for backend
+          const search_filter_list = [];
+          if (filters.category && filters.category !== "all") {
+            search_filter_list.push({ type: "category", value: filters.category });
+          }
+          if (filters.dateFrom || filters.date_from) {
+            search_filter_list.push({
+              type: "date_from",
+              value: filters.dateFrom || filters.date_from,
+            });
+          }
+          if (filters.dateTo || filters.date_to) {
+            search_filter_list.push({
+              type: "date_to",
+              value: filters.dateTo || filters.date_to,
+            });
+          }
+          if (filters.hashtags && filters.hashtags.length > 0) {
+            search_filter_list.push({ type: "hashtags", value: filters.hashtags });
+          }
+
           // Map frontend filter names to backend expected names
           const body = {
             page,
             page_size: limit, // Backend expects 'page_size' not 'limit'
             search_phrase: filters.search || "", // Backend expects 'search_phrase' not 'search'
-            search_filter_list: [], // Backend expects this parameter
-            category: filters.category || "",
-            date_from: filters.dateFrom || filters.date_from || "", // Support both dateFrom and date_from
-            date_to: filters.dateTo || filters.date_to || "", // Support both dateTo and date_to
-            hashtags: filters.hashtags || [],
+            search_filter_list, // Backend expects this parameter
           };
 
           console.log("📤 School Posts API Request Body:", body);
@@ -78,16 +95,33 @@ export const activityFeedApi = apiServer1
       // ===== CLASS POSTS API =====
       getClassPosts: build.query({
         query: ({ class_id, page = 1, limit = 10, filters = {} }) => {
+          // Build search filter list for backend
+          const search_filter_list = [];
+          if (filters.category && filters.category !== "all") {
+            search_filter_list.push({ type: "category", value: filters.category });
+          }
+          if (filters.dateFrom || filters.date_from) {
+            search_filter_list.push({
+              type: "date_from",
+              value: filters.dateFrom || filters.date_from,
+            });
+          }
+          if (filters.dateTo || filters.date_to) {
+            search_filter_list.push({
+              type: "date_to",
+              value: filters.dateTo || filters.date_to,
+            });
+          }
+          if (filters.hashtags && filters.hashtags.length > 0) {
+            search_filter_list.push({ type: "hashtags", value: filters.hashtags });
+          }
+
           const body = {
             class_id,
             page,
             page_size: limit, // Backend expects 'page_size' not 'limit'
             search_phrase: filters.search || "", // Backend expects 'search_phrase'
-            search_filter_list: [], // Backend expects this parameter
-            category: filters.category || "",
-            date_from: filters.dateFrom || filters.date_from || "", // Support both dateFrom and date_from
-            date_to: filters.dateTo || filters.date_to || "", // Support both dateTo and date_to
-            hashtags: filters.hashtags || [],
+            search_filter_list, // Backend expects this parameter
           };
 
           console.log("📤 Class Posts API Request Body:", body);
@@ -124,17 +158,41 @@ export const activityFeedApi = apiServer1
 
       // ===== STUDENT POSTS API =====
       getStudentPosts: build.query({
-        query: ({ student_id, page = 1, limit = 10, filters = {} }) => {
+        query: ({
+          student_id,
+          created_by_me = false,
+          page = 1,
+          limit = 10,
+          filters = {},
+        }) => {
+          // Build search filter list for backend
+          const search_filter_list = [];
+          if (filters.category && filters.category !== "all") {
+            search_filter_list.push({ type: "category", value: filters.category });
+          }
+          if (filters.dateFrom || filters.date_from) {
+            search_filter_list.push({
+              type: "date_from",
+              value: filters.dateFrom || filters.date_from,
+            });
+          }
+          if (filters.dateTo || filters.date_to) {
+            search_filter_list.push({
+              type: "date_to",
+              value: filters.dateTo || filters.date_to,
+            });
+          }
+          if (filters.hashtags && filters.hashtags.length > 0) {
+            search_filter_list.push({ type: "hashtags", value: filters.hashtags });
+          }
+
           const body = {
             student_id,
+            created_by_me,
             page,
             page_size: limit, // Backend expects 'page_size' not 'limit'
             search_phrase: filters.search || "", // Backend expects 'search_phrase'
-            search_filter_list: [], // Backend expects this parameter
-            category: filters.category || "",
-            date_from: filters.dateFrom || filters.date_from || "", // Support both dateFrom and date_from
-            date_to: filters.dateTo || filters.date_to || "", // Support both dateTo and date_to
-            hashtags: filters.hashtags || [],
+            search_filter_list, // Backend expects this parameter
           };
 
           console.log("📤 Student Posts API Request Body:", body);
@@ -216,42 +274,42 @@ export const activityFeedApi = apiServer1
 
       // ===== DELETE POST APIs =====
       deleteSchoolPost: build.mutation({
-        query: ({ post_id }) => ({
+        query: ({ id }) => ({
           url: "/api/activity-feed-management/school-posts/delete",
-          method: "DELETE",
+          method: "POST",
           body: {
-            post_id,
+            id,
           },
         }),
-        invalidatesTags: (result, error, { post_id }) => [
-          { type: "SchoolPosts", id: post_id },
+        invalidatesTags: (result, error, { id }) => [
+          { type: "SchoolPosts", id },
           { type: "SchoolPosts", id: "LIST" },
         ],
       }),
 
       deleteClassPost: build.mutation({
-        query: ({ post_id }) => ({
+        query: ({ id }) => ({
           url: "/api/activity-feed-management/class-posts/delete",
-          method: "DELETE",
+          method: "POST",
           body: {
-            post_id,
+            id,
           },
         }),
-        invalidatesTags: (result, error, { post_id }) => [
-          { type: "ClassPosts", id: post_id },
+        invalidatesTags: (result, error, { id }) => [
+          { type: "ClassPosts", id },
         ],
       }),
 
       deleteStudentPost: build.mutation({
-        query: ({ post_id }) => ({
+        query: ({ id }) => ({
           url: "/api/activity-feed-management/student-posts/delete",
-          method: "DELETE",
+          method: "POST",
           body: {
-            post_id,
+            id,
           },
         }),
-        invalidatesTags: (result, error, { post_id }) => [
-          { type: "StudentPosts", id: post_id },
+        invalidatesTags: (result, error, { id }) => [
+          { type: "StudentPosts", id },
         ],
       }),
 
@@ -496,7 +554,7 @@ export const activityFeedApi = apiServer1
 
             // ===== CRITICAL FIX: HANDLE ALL NESTED FILES =====
             // First, flatten any nested uploaded_files arrays to ensure ALL files are processed
-            const flattenedMediaArray = [];
+            const flattenedMediaArray: any[] = [];
 
             mediaArray.forEach((media, originalIndex) => {
               console.log(
@@ -517,7 +575,7 @@ export const activityFeedApi = apiServer1
 
                 // ❌ OLD BEHAVIOR: Only process uploaded_files[0]
                 // ✅ NEW BEHAVIOR: Process ALL files in uploaded_files array
-                media.uploaded_files.forEach((uploadedFile, fileIndex) => {
+                media.uploaded_files.forEach((uploadedFile: any, fileIndex: number) => {
                   console.log(
                     `📎 📁 Processing uploaded_files[${fileIndex}]:`,
                     JSON.stringify(uploadedFile, null, 2),
@@ -841,9 +899,9 @@ export const activityFeedApi = apiServer1
             validatedMedia.forEach((media, index) => {
               console.log(`📎 Media ${index} structure for post creation:`, {
                 hasUrl: !!media.url,
-                hasUri: !!media.uri,
+                hasUri: !!(media as any).uri,
                 hasFilename: !!media.filename,
-                hasName: !!media.name,
+                hasName: !!(media as any).name,
                 filename: media.filename,
                 original_user_filename: media.original_user_filename,
                 backend_filename: media.backend_filename,
@@ -851,7 +909,7 @@ export const activityFeedApi = apiServer1
                 type: media.type,
                 size: media.size,
                 postCreationDetection:
-                  media.url && !media.uri ? "UPLOADED MEDIA" : "RAW MEDIA",
+                  media.url && !(media as any).uri ? "UPLOADED MEDIA" : "RAW MEDIA",
                 userFilenameAvailable: !!media.original_user_filename,
                 note: "This will be passed to createPostData() - user filename preserved for user intent",
               });
@@ -1106,6 +1164,39 @@ export const activityFeedApi = apiServer1
           return response;
         },
       }),
+
+      // ===== CHUNKED MEDIA UPLOAD API =====
+      initChunkedUpload: build.mutation({
+        query: ({ filename, total_size, mime_type }) => ({
+          url: "api/activity-feed-management/media/chunked/init",
+          method: "POST",
+          body: { filename, total_size, mime_type },
+        }),
+      }),
+
+      pushUploadChunk: build.mutation({
+        query: ({ upload_id, chunk, offset }) => {
+          const formData = new FormData();
+          formData.append("upload_id", upload_id);
+          formData.append("chunk", chunk);
+          formData.append("offset", offset);
+
+          return {
+            url: "api/activity-feed-management/media/chunked/push",
+            method: "POST",
+            body: formData,
+            formData: true,
+          };
+        },
+      }),
+
+      finishChunkedUpload: build.mutation({
+        query: ({ upload_id }) => ({
+          url: "api/activity-feed-management/media/chunked/finish",
+          method: "POST",
+          body: { upload_id },
+        }),
+      }),
     }),
   });
 
@@ -1126,6 +1217,9 @@ export const {
   useGetPostDetailsQuery,
   useLazyGetPostDetailsQuery,
   useUploadMediaMutation,
+  useInitChunkedUploadMutation,
+  usePushUploadChunkMutation,
+  useFinishChunkedUploadMutation,
   useCreateSchoolPostMutation,
   useCreateClassPostMutation,
   useCreateStudentPostMutation,

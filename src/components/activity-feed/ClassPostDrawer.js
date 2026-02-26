@@ -30,8 +30,12 @@ import {
 import {
   validateMediaFiles,
   convertTagsToHashtags,
+  generateIdempotencyKey,
 } from "../../utils/postSubmissionUtils";
 import { processMediaForUpload } from "../../utils/imageUtils";
+import { useActivityFeedChunkedUpload } from "../../hooks/useChunkedUpload";
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const dispatch = useDispatch();
@@ -45,10 +49,22 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const [uploadStep, setUploadStep] = useState("");
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [cachedFileUris, setCachedFileUris] = useState([]); // Track cached files for cleanup
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+
+  // Generate idempotency key when drawer opens
+  React.useEffect(() => {
+    if (visible && !idempotencyKey) {
+      const key = generateIdempotencyKey();
+      console.log("🔑 Generated idempotency key for class post:", key);
+      setIdempotencyKey(key);
+    } else if (!visible) {
+      setIdempotencyKey("");
+    }
+  }, [visible]);
 
   // API hooks
   const [createClassPost] = useCreateClassPostMutation();
-  const [uploadMedia] = useUploadMediaMutation();
+  const { uploadFile, isUploading: isMediaUploading, progress: mediaProgress } = useActivityFeedChunkedUpload();
 
   // Get global state
   const { sessionData, user } = useSelector((state) => state.app);
@@ -674,273 +690,42 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
       // Step 1: Upload media files if any exist
       if (selectedMedia && selectedMedia.length > 0) {
-        const validation = validateMediaFiles(selectedMedia);
-        if (!validation.isValid) {
-          setIsSubmitting(false);
-          setUploadStep("");
-          setUploadProgress({ current: 0, total: 0 });
-          Alert.alert("Media Validation Failed", validation.error);
-          return;
-        }
-        console.log(
-          "📁 Media validation passed for",
-          selectedMedia.length,
-          "files"
-        );
-
         setUploadStep("uploading");
-        setUploadProgress({ current: 0, total: selectedMedia.length });
+        console.log("📎 Starting chunked upload for multiple media files");
 
-        // Create FormData with post_type field for class posts
-        const formData = createMediaUploadFormData(
-          selectedMedia,
-          "class-posts"
-        );
-        console.log("📎 Uploading media files with FormData for class-posts");
+        for (let i = 0; i < selectedMedia.length; i++) {
+          const item = selectedMedia[i];
+          setUploadProgress({ current: i + 1, total: selectedMedia.length });
 
-        try {
-          const uploadResponse = await uploadMedia(formData).unwrap();
-          console.log("📎 ✅ Media upload successful:", uploadResponse);
-
-          // Update progress to show all files uploaded
-          setUploadProgress({ current: selectedMedia.length, total: selectedMedia.length });
-
-          if (uploadResponse.success && uploadResponse.data) {
-            uploadedMedia = uploadResponse.data;
-            console.log("📎 Uploaded media URLs:", uploadedMedia);
-
-            // ===== CRITICAL UPLOAD COMPLETION VALIDATION =====
-            console.log("📎 🔍 ===== UPLOAD COMPLETION VALIDATION =====");
-            console.log(`📎 📊 File Count Tracking:`);
-            console.log(`  - Selected by user: ${selectedMedia.length} files`);
-            console.log(
-              `  - Returned by backend: ${uploadedMedia.length} files`,
+          // 50MB Check
+          if (item.size > MAX_FILE_SIZE) {
+            console.warn(`❌ File too large: ${item.name} (${item.size} bytes)`);
+            setIsSubmitting(false);
+            setUploadStep("");
+            Alert.alert(
+              "File Too Large",
+              "The file you're trying to upload exceeds the 50MB limit. Please contact the IT team for assistance with larger files."
             );
-
-            // Validate all files uploaded successfully
-            const uploadComplete = uploadedMedia.length === selectedMedia.length;
-            const allHaveUrls = uploadedMedia.every(m => m.url && m.url.trim() !== '');
-
-            console.log(
-              `  - Count match: ${uploadComplete ? "✅ SUCCESS" : "❌ MISMATCH"}`,
-            );
-            console.log(
-              `  - All have URLs: ${allHaveUrls ? "✅ SUCCESS" : "❌ INCOMPLETE"}`,
-            );
-
-            if (!uploadComplete) {
-              console.error(
-                "📎 ❌ CRITICAL ISSUE: File count mismatch detected!",
-              );
-              console.error(
-                `📎 Expected: ${selectedMedia.length}, Got: ${uploadedMedia.length}`,
-              );
-
-              setIsSubmitting(false);
-              setUploadStep("");
-              setUploadProgress({ current: 0, total: 0 });
-
-              Alert.alert(
-                "Upload Incomplete",
-                `Only ${uploadedMedia.length} of ${selectedMedia.length} files were uploaded. Please try again.`,
-                [{ text: "OK", style: "default" }],
-              );
-              return;
-            }
-
-            if (!allHaveUrls) {
-              console.error("📎 ❌ CRITICAL ISSUE: Some files missing URLs!");
-
-              setIsSubmitting(false);
-              setUploadStep("");
-              setUploadProgress({ current: 0, total: 0 });
-
-              Alert.alert(
-                "Upload Incomplete",
-                "Some files failed to upload completely. Please try again.",
-                [{ text: "OK", style: "default" }],
-              );
-              return;
-            }
-
-            console.log(
-              "📎 🎉 SUCCESS: All selected files were uploaded successfully with valid URLs!",
-            );
-
-            // ===== COMPREHENSIVE UPLOAD RESPONSE DEBUG =====
-            console.log("📎 ===== UPLOAD RESPONSE DEBUG ANALYSIS =====");
-            console.log(
-              "📎 Full upload result object:",
-              JSON.stringify(uploadResponse, null, 2)
-            );
-            console.log("📎 Upload result type:", typeof uploadResponse);
-            console.log(
-              "📎 Upload result keys:",
-              Object.keys(uploadResponse || {})
-            );
-            console.log(
-              "📎 Upload result.data type:",
-              typeof uploadResponse?.data
-            );
-            console.log(
-              "📎 Upload result.data isArray:",
-              Array.isArray(uploadResponse?.data)
-            );
-            console.log(
-              "📎 Upload result.data length:",
-              uploadResponse?.data?.length || "N/A"
-            );
-            console.log("📎 Upload result.success:", uploadResponse?.success);
-            console.log("📎 Upload result.message:", uploadResponse?.message);
-
-            console.log("📎 uploadedMedia type:", typeof uploadedMedia);
-            console.log(
-              "📎 uploadedMedia isArray:",
-              Array.isArray(uploadedMedia)
-            );
-            console.log(
-              "📎 uploadedMedia length:",
-              uploadedMedia?.length || "N/A"
-            );
-            console.log(
-              "📎 Raw uploadedMedia:",
-              JSON.stringify(uploadedMedia, null, 2)
-            );
-
-            if (Array.isArray(uploadedMedia) && uploadedMedia.length > 0) {
-              console.log("📎 ===== INDIVIDUAL MEDIA ITEM ANALYSIS =====");
-              uploadedMedia.forEach((media, index) => {
-                console.log(`📎 Media item ${index}:`, {
-                  fullObject: JSON.stringify(media, null, 2),
-                  type: typeof media,
-                  keys: Object.keys(media || {}),
-                  hasUrl: !!media?.url,
-                  urlValue: media?.url,
-                  urlType: typeof media?.url,
-                  urlTrimmed: media?.url?.trim?.(),
-                  urlLength: media?.url?.length || 0,
-                  hasFilename: !!media?.filename,
-                  filenameValue: media?.filename,
-                  hasName: !!media?.name,
-                  nameValue: media?.name,
-                  hasType: !!media?.type,
-                  typeValue: media?.type,
-                  allUrlFields: {
-                    url: media?.url,
-                    path: media?.path,
-                    file_url: media?.file_url,
-                    file_path: media?.file_path,
-                    storage_path: media?.storage_path,
-                    full_path: media?.full_path,
-                    public_path: media?.public_path,
-                    temp_path: media?.temp_path,
-                  },
-                });
-              });
-            }
-
-            // Additional validation of upload response
-            if (!Array.isArray(uploadedMedia) || uploadedMedia.length === 0) {
-              console.error(
-                "❌ VALIDATION FAILED: Upload response validation failed"
-              );
-              console.error(
-                "  - uploadedMedia is array:",
-                Array.isArray(uploadedMedia)
-              );
-              console.error(
-                "  - uploadedMedia length:",
-                uploadedMedia?.length || 0
-              );
-              console.error(
-                "  - Full result:",
-                JSON.stringify(uploadResponse, null, 2)
-              );
-              throw new Error("Upload response contains no media data");
-            }
-
-            // Check if all uploaded media has URLs
-            console.log("📎 ===== URL VALIDATION CHECK =====");
-            const missingUrls = uploadedMedia.filter(
-              (media) => !media.url || media.url.trim() === ""
-            );
-            console.log("📎 Missing URLs check:", {
-              totalItems: uploadedMedia.length,
-              missingUrlsCount: missingUrls.length,
-              missingUrlsItems: missingUrls.map((media, idx) => ({
-                index: idx,
-                hasUrl: !!media.url,
-                urlValue: media.url,
-                urlTrimmed: media.url?.trim?.(),
-                possibleAlternativeUrls: {
-                  path: media.path,
-                  file_url: media.file_url,
-                  file_path: media.file_path,
-                  storage_path: media.storage_path,
-                  full_path: media.full_path,
-                  public_path: media.public_path,
-                  temp_path: media.temp_path,
-                },
-              })),
-            });
-
-            if (missingUrls.length > 0) {
-              console.error("❌ URL VALIDATION FAILED:");
-              console.error("  - Missing URLs count:", missingUrls.length);
-              console.error(
-                "  - Items with missing URLs:",
-                JSON.stringify(missingUrls, null, 2)
-              );
-              console.error(
-                "  - This suggests the transformResponse in upload API may not be working correctly"
-              );
-              throw new Error(
-                `${missingUrls.length} uploaded file(s) are missing URLs`
-              );
-            }
-
-            console.log(
-              "📎 ✅ URL validation passed - all media items have URLs"
-            );
-
-            // Debug: Log each uploaded media item's filename for consistency tracking
-            uploadedMedia.forEach((media, index) => {
-              console.log(
-                `📎 🔍 Class Post - Upload API returned media ${index}:`,
-                {
-                  filename: media.filename,
-                  url: media.url,
-                  type: media.type,
-                  size: media.size,
-                  hasBackendFilename: media.filename?.includes("temp-")
-                    ? "✅ YES"
-                    : "❌ NO",
-                  filenameSource: media.filename?.includes("temp-")
-                    ? "Backend Generated"
-                    : "Fallback/User",
-                  consistencyNote:
-                    "This filename will be preserved exactly in post creation",
-                }
-              );
-
-              // Warn if no backend filename found
-              if (!media.filename?.includes("temp-")) {
-                console.warn(
-                  `⚠️ Media ${index}: No backend temp filename found. URL consistency may be affected.`
-                );
-              }
-            });
-          } else {
-            throw new Error("Media upload failed - no data received");
+            return;
           }
-        } catch (uploadError) {
-          console.error("❌ Media upload failed:", uploadError);
-          Alert.alert(
-            "Upload Failed",
-            "Failed to upload media files. Please try again."
-          );
-          return;
+
+          try {
+            console.log(`📎 Uploading file ${i + 1}/${selectedMedia.length}: ${item.name}`);
+            const result = await uploadFile(item.uri, item.name, item.mimeType);
+            uploadedMedia.push(result);
+          } catch (uploadError) {
+            console.error(`❌ Failed to upload file ${i + 1}:`, uploadError);
+            setIsSubmitting(false);
+            setUploadStep("");
+            Alert.alert(
+              "Upload Failed",
+              `Failed to upload ${item.name}. ${uploadError.message || "Please try again."}`
+            );
+            return;
+          }
         }
+        
+        console.log("📎 ✅ All media files uploaded successfully:", uploadedMedia);
       }
 
       setUploadStep("posting");
@@ -955,6 +740,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
         author_id:
           sessionData?.user_id || sessionData?.data?.user_id || user?.id,
         hashtags: convertTagsToHashtags(selectedTags, availableTags),
+        idempotency_key: idempotencyKey,
       };
 
       // Create JSON payload with uploaded media URLs (two-step)

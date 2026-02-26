@@ -654,6 +654,14 @@ export const createPostData = createPostDataFromUtils;
 // Re-export the URL formatting utility from postUtils
 export { formatMediaStorageUrl } from "./postUtils.js";
 
+/**
+ * Generates a unique idempotency key for post creation
+ * @returns {string} Unique key
+ */
+export const generateIdempotencyKey = () => {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}-${Math.random().toString(36).substring(2, 11)}`;
+};
+
 export default {
   createSchoolPostPayload,
   createClassPostPayload,
@@ -664,4 +672,5 @@ export default {
   convertTagsToHashtags, // Two-step process
   validatePostForSubmission,
   validateMediaFiles,
+  generateIdempotencyKey,
 };

@@ -88,6 +88,8 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
         return classPosts || [];
       case "Student":
         return studentPosts || [];
+      case "MyPosts":
+        return studentPosts || []; // Or could be filtered to just my posts if needed for hashtag/category extraction
       case "Sports":
         return []; // TODO: Add all sports posts
       default:
@@ -153,13 +155,22 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
       case USER_CATEGORIES.MANAGEMENT:
       case USER_CATEGORIES.ADMIN:
       case USER_CATEGORIES.COUNSELOR:
-        tabs.push({
-          name: "Class",
-          component: ClassTabWithAPI,
-          icon: "users",
-          label: "Class",
-          description: "Class management and academic updates",
-        });
+        tabs.push(
+          {
+            name: "Class",
+            component: ClassTabWithAPI,
+            icon: "users",
+            label: "Class",
+            description: "Class management and academic updates",
+          },
+          {
+            name: "MyPosts",
+            component: StudentTabWithAPI,
+            icon: "file-text",
+            label: "My Posts",
+            description: "Student posts created by you",
+          },
+        );
         break;
 
       case USER_CATEGORIES.SPORT_COACH:
@@ -308,6 +319,14 @@ const UniversalActivityFeed: React.FC<UniversalActivityFeedProps> = ({
             userCategory={userCategory}
             isConnected={isConnected}
             filters={filters}
+          />
+        )}
+        {activeTab === "MyPosts" && (
+          <StudentTabWithAPI
+            userCategory={userCategory}
+            isConnected={isConnected}
+            filters={filters}
+            mode="personal"
           />
         )}
         {activeTab === "Sports" && (

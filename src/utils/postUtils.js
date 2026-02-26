@@ -254,6 +254,7 @@ export const createPostData = (postData, selectedMedia = []) => {
     content: postData.content || "",
     author_id: postData.author_id || null,
     hashtags: postData.hashtags || [],
+    idempotency_key: postData.idempotency_key || null,
   };
 
   // Add media array for backend compatibility

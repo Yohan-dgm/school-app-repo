@@ -40,8 +40,12 @@ import {
 import {
   validateMediaFiles,
   convertTagsToHashtags,
+  generateIdempotencyKey,
 } from "../../utils/postSubmissionUtils";
 import { processMediaForUpload } from "../../utils/imageUtils";
+import { useActivityFeedChunkedUpload } from "../../hooks/useChunkedUpload";
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 interface EnhancedStudentPostDrawerProps {
   visible: boolean;
@@ -462,7 +466,7 @@ const PostCreationForm: React.FC<{
                 // Copy to cache directory for Android
                 const fileName =
                   asset.fileName ||
-                  asset.name ||
+                  (asset as any).name ||
                   `media_${Date.now()}_${i}.${asset.type === "video" ? "mp4" : "jpg"}`;
                 const cacheUri = `${FileSystem.cacheDirectory}${fileName}`;
 
@@ -497,7 +501,7 @@ const PostCreationForm: React.FC<{
             // Enhanced filename capture
             let originalUserFilename =
               processableAsset.fileName ||
-              processableAsset.name ||
+              (processableAsset as any).name ||
               `media_${Date.now()}_${i}.${asset.type === "video" ? "mp4" : "jpg"}`;
 
             const processResult = await processMediaForUpload(
@@ -536,7 +540,7 @@ const PostCreationForm: React.FC<{
             console.error(`❌ Failed to process asset ${i}:`, error);
             // Enhanced fallback
             const fallbackFilename =
-              asset.fileName || asset.name || `media_${Date.now()}_${i}.jpg`;
+              asset.fileName || (asset as any).name || `media_${Date.now()}_${i}.jpg`;
 
             processedMedia.push({
               id: Date.now() + Math.random() + i,
@@ -595,10 +599,7 @@ const PostCreationForm: React.FC<{
       return;
     }
 
-    if (!postContent.trim()) {
-      Alert.alert("Error", "Please enter some content for your post");
-      return;
-    }
+    // postContent is now optional
 
     onSubmit({
       title: postTitle,
@@ -644,7 +645,7 @@ const PostCreationForm: React.FC<{
               onPress={() => setSelectedCategory(category.id)}
             >
               <MaterialIcons
-                name={category.icon}
+                name={category.icon as any}
                 size={16}
                 color={
                   selectedCategory === category.id ? "white" : category.color
@@ -850,12 +851,25 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
     null
   );
   const [selectedStudents, setSelectedStudents] = useState<StudentDetails[]>([]);
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+
+  // Generate idempotency key when drawer opens
+  useEffect(() => {
+    if (visible && !idempotencyKey) {
+      const key = generateIdempotencyKey();
+      console.log("🔑 Generated idempotency key for student post:", key);
+      setIdempotencyKey(key);
+    } else if (!visible) {
+      setIdempotencyKey("");
+    }
+  }, [visible, idempotencyKey]);
 
   const { sessionData } = useSelector((state: any) => state.app);
 
   const [createPost, { isLoading: isCreating }] =
     useCreateStudentPostMutation();
-  const [uploadMedia] = useUploadMediaMutation();
+  
+  const { uploadFile, isUploading: isMediaUploading, progress: mediaProgress } = useActivityFeedChunkedUpload();
 
   // Reset state when modal closes
   useEffect(() => {
@@ -912,86 +926,42 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
 
       // Upload media if any
       if (postData.media && postData.media.length > 0) {
-        console.log("📎 Uploading media files with FormData");
         setUploadStep("uploading");
-        setUploadProgress({ current: 0, total: postData.media.length });
+        console.log("📎 Starting chunked upload for multiple media files");
 
-        // Use utility function with post_type field for student-posts
-        const formData = createMediaUploadFormData(
-          postData.media,
-          "student-posts"
-        );
-        console.log("📎 FormData created for student-posts");
+        for (let i = 0; i < postData.media.length; i++) {
+          const item = postData.media[i];
+          setUploadProgress({ current: i + 1, total: postData.media.length });
 
-        const uploadResult = await uploadMedia(formData).unwrap();
-        console.log("📎 ✅ Media upload successful:", uploadResult);
-
-        // Update progress to show all files uploaded
-        setUploadProgress({
-          current: postData.media.length,
-          total: postData.media.length,
-        });
-
-        if (uploadResult.success && uploadResult.data) {
-          mediaUrls = uploadResult.data;
-          console.log("📎 Uploaded media URLs:", mediaUrls);
-
-          // ===== CRITICAL UPLOAD COMPLETION VALIDATION =====
-          console.log("📎 🔍 ===== UPLOAD COMPLETION VALIDATION =====");
-          console.log(`📎 📊 File Count Tracking:`);
-          console.log(`  - Selected by user: ${postData.media.length} files`);
-          console.log(`  - Returned by backend: ${mediaUrls.length} files`);
-
-          // Validate all files uploaded successfully
-          const uploadComplete = mediaUrls.length === postData.media.length;
-          const allHaveUrls = mediaUrls.every(
-            (m: any) => m.url && m.url.trim() !== ""
-          );
-
-          console.log(
-            `  - Count match: ${uploadComplete ? "✅ SUCCESS" : "❌ MISMATCH"}`
-          );
-          console.log(
-            `  - All have URLs: ${allHaveUrls ? "✅ SUCCESS" : "❌ INCOMPLETE"}`
-          );
-
-          if (!uploadComplete) {
-            console.error(
-              "📎 ❌ CRITICAL ISSUE: File count mismatch detected!"
-            );
-            console.error(
-              `📎 Expected: ${postData.media.length}, Got: ${mediaUrls.length}`
-            );
-
+          // 50MB Check
+          if (item.size > MAX_FILE_SIZE) {
+            console.warn(`❌ File too large: ${item.name} (${item.size} bytes)`);
             setIsSubmitting(false);
             setUploadStep("");
-            setUploadProgress({ current: 0, total: 0 });
-
             Alert.alert(
-              "Upload Incomplete",
-              `Only ${mediaUrls.length} of ${postData.media.length} files were uploaded. Please try again.`
+              "File Too Large",
+              "The file you're trying to upload exceeds the 50MB limit. Please contact the IT team for assistance with larger files."
             );
             return;
           }
 
-          if (!allHaveUrls) {
-            console.error("📎 ❌ CRITICAL ISSUE: Some files missing URLs!");
-
+          try {
+            console.log(`📎 Uploading file ${i + 1}/${postData.media.length}: ${item.name}`);
+            const result = await uploadFile(item.uri, item.name, item.mimeType);
+            mediaUrls.push(result);
+          } catch (uploadError: any) {
+            console.error(`❌ Failed to upload file ${i + 1}:`, uploadError);
             setIsSubmitting(false);
             setUploadStep("");
-            setUploadProgress({ current: 0, total: 0 });
-
             Alert.alert(
-              "Upload Incomplete",
-              "Some files failed to upload completely. Please try again."
+              "Upload Failed",
+              `Failed to upload ${item.name}. ${uploadError.message || "Please try again."}`
             );
             return;
           }
-
-          console.log(
-            "📎 🎉 SUCCESS: All selected files were uploaded successfully with valid URLs!"
-          );
         }
+        
+        console.log("📎 ✅ All media files uploaded successfully:", mediaUrls);
       }
 
       setUploadStep("posting");
@@ -1006,6 +976,7 @@ const EnhancedStudentPostDrawer: React.FC<EnhancedStudentPostDrawerProps> = ({
         school_id: 1,
         hashtags: postData.hashtags,
         media: mediaUrls,
+        idempotency_key: idempotencyKey,
       }).unwrap();
 
       setIsSubmitting(false);

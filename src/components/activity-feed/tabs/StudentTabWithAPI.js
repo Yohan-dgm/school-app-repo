@@ -112,7 +112,12 @@ const transformMediaData = (mediaArray) => {
     .filter(Boolean); // Remove null values
 };
 
-const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
+const StudentTabWithAPI = ({
+  userCategory,
+  isConnected,
+  filters,
+  mode = "standard",
+}) => {
   const dispatch = useDispatch();
 
   // Debug filters being passed to component
@@ -130,8 +135,8 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     likedPosts = {},
   } = schoolPostsState;
 
-  // Get selected student from global state
-  const { selectedStudent } = useSelector((state) => state.app);
+  // Get current user and selected student from global state
+  const { user: currentUser, selectedStudent } = useSelector((state) => state.app);
 
   // API hooks - using dedicated student posts API
   const [getStudentPosts] = useLazyGetStudentPostsQuery();
@@ -159,7 +164,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
         );
 
         // Check if we have selected student with student_id
-        if (!selectedStudent?.student_id) {
+        if (mode !== "personal" && !selectedStudent?.student_id) {
           console.log("❌ No selected student available");
           dispatch(setError("No student selected"));
           dispatch(setLoading(false));
@@ -169,7 +174,8 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
 
         // Load student posts using dedicated API with pagination
         const response = await getStudentPosts({
-          student_id: selectedStudent.student_id,
+          student_id: mode === "personal" ? null : selectedStudent.student_id,
+          created_by_me: mode === "personal",
           page: pageNum,
           limit: 10, // Load 10 posts per page for optimization
           filters: {
@@ -324,20 +330,19 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     dispatch(clearFilters());
   }, [dispatch]);
 
-  // Load student posts when selectedStudent.student_id changes
+  // Load student posts when selectedStudent.student_id changes or mode changes
   useEffect(() => {
-    if (selectedStudent?.student_id) {
+    if (mode === "personal" || selectedStudent?.student_id) {
       console.log(
-        "🔄 Student Tab - Loading posts for student_id:",
-        selectedStudent.student_id,
+        `🔄 Student Tab - Loading posts (mode: ${mode}, student_id: ${selectedStudent?.student_id})`,
       );
-      // Reset pagination when student changes
+      // Reset pagination when student or mode changes
       setCurrentPage(1);
       setHasMoreData(true);
       setAllPostsLocal([]);
       loadPosts(1, false);
     }
-  }, [selectedStudent?.student_id, loadPosts]);
+  }, [mode, selectedStudent?.student_id, loadPosts]);
 
   // Debug allPostsLocal changes
   useEffect(() => {
@@ -395,13 +400,13 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
 
   // Handle refresh - reload first page
   const handleRefresh = useCallback(() => {
-    if (selectedStudent?.student_id) {
+    if (mode === "personal" || selectedStudent?.student_id) {
       setCurrentPage(1);
       setHasMoreData(true);
       setAllPostsLocal([]); // Clear current posts
       loadPosts(1, false); // Reload first page
     }
-  }, [selectedStudent?.student_id, loadPosts]);
+  }, [mode, selectedStudent?.student_id, loadPosts]);
 
   // Handle load more - fetch next page
   const handleLoadMore = useCallback(() => {
@@ -409,7 +414,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
       hasMoreData &&
       !isLoadingMore &&
       !loading &&
-      selectedStudent?.student_id
+      (mode === "personal" || selectedStudent?.student_id)
     ) {
       const nextPage = currentPage + 1;
       console.log(`📄 Student Tab - Loading more posts - page ${nextPage}`);
@@ -420,6 +425,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
     isLoadingMore,
     loading,
     currentPage,
+    mode,
     selectedStudent?.student_id,
     loadPosts,
   ]);
@@ -446,7 +452,7 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
                 );
 
                 const response = await deleteStudentPost({
-                  post_id: postId,
+                  id: postId,
                 }).unwrap();
 
                 if (response.success) {
@@ -542,13 +548,15 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
 
     return (
       <View style={styles.postContainer}>
-        {/* Student indicator */}
-        <View style={styles.studentIndicator}>
-          <Text style={styles.studentText}>
-            Student: {selectedStudent?.student_calling_name || "Unknown"} (ID:{" "}
-            {selectedStudent?.student_id || "N/A"})
-          </Text>
-        </View>
+        {/* Student indicator - Show only in My Posts mode */}
+        {mode === "personal" && (
+          <View style={styles.studentIndicator}>
+            <Text style={styles.studentText}>
+              Student: {post.student_name || selectedStudent?.student_calling_name || "Unknown"} (ID:{" "}
+              {post.student_admission_number || selectedStudent?.student_id || "N/A"})
+            </Text>
+          </View>
+        )}
 
         {/* Post Header */}
         <View style={styles.postHeader}>
@@ -567,8 +575,8 @@ const StudentTabWithAPI = ({ userCategory, isConnected, filters }) => {
             </Text>
           </View>
 
-          {/* Delete Button - Hidden per user request */}
-          {false && (
+          {/* Delete Button - Visible only to post creator */}
+          {currentUser?.id === post.created_by && (
             <TouchableOpacity
               style={styles.deleteButton}
               onPress={() => handleDeletePost(post.id)}

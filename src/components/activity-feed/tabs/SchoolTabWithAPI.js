@@ -120,7 +120,8 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
     console.log("🎯 SchoolTabWithAPI - Filters received:", filters);
   }, [filters]);
 
-  // Redux state with safe defaults
+  // Get current user from global state
+  const { user: currentUser } = useSelector((state) => state.app);
   const schoolPostsState = useSelector((state) => state.schoolPosts || {});
   const {
     posts = [],
@@ -547,7 +548,7 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
                 );
 
                 const response = await deleteSchoolPost({
-                  post_id: postId,
+                  id: postId,
                 }).unwrap();
 
                 if (response.success) {
@@ -660,8 +661,8 @@ const SchoolTabWithAPI = ({ filters, userCategory, isConnected }) => {
             </Text>
           </View>
 
-          {/* Delete Button - Hidden per user request */}
-          {false && (
+          {/* Delete Button - Visible only to post creator */}
+          {currentUser?.id === post.created_by && (
             <TouchableOpacity
               style={styles.deleteButton}
               onPress={() => handleDeletePost(post.id)}

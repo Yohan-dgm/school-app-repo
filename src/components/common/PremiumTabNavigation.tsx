@@ -6,7 +6,6 @@ import {
   Animated,
   Dimensions,
   Platform,
-  HapticFeedback,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -81,6 +80,14 @@ const PremiumTabNavigation: React.FC<PremiumTabNavigationProps> = ({
     // Only parents can see the Student tab
     if (userCategory === USER_CATEGORIES.PARENT) {
       baseTabs.push({ name: "Student", icon: "user", label: "Student" });
+    }
+
+    // Educators and Principals can see the "My Posts" tab
+    if (
+      userCategory === USER_CATEGORIES.EDUCATOR ||
+      userCategory === USER_CATEGORIES.PRINCIPAL
+    ) {
+      baseTabs.push({ name: "MyPosts", icon: "file-text", label: "My Posts" });
     }
 
     return baseTabs;
@@ -178,11 +185,6 @@ const PremiumTabNavigation: React.FC<PremiumTabNavigationProps> = ({
   }, [activeTab, activeIndex, tabWidth, filteredTabs]);
 
   const handleTabPress = (tabName: string) => {
-    // Add haptic feedback for iOS
-    if (Platform.OS === "ios" && HapticFeedback) {
-      HapticFeedback.impact(HapticFeedback.ImpactFeedbackStyle.Light);
-    }
-
     // Add micro-interaction animation
     const animations = tabAnims[tabName];
     if (animations) {
@@ -205,14 +207,17 @@ const PremiumTabNavigation: React.FC<PremiumTabNavigationProps> = ({
   };
 
   // Dynamic gradient colors based on active tab
-  const getGradientColors = () => {
-    const gradients = {
+  const getGradientColors = (): [string, string, ...string[]] => {
+    const gradients: Record<string, [string, string, ...string[]]> = {
       School: ["#920734", "#B8094A"],
       Class: ["#6D051F", "#920734"],
       Student: ["#920734", "#D40A5C"],
+      MyPosts: ["#B8094A", "#D40A5C"],
       Sports: ["#920734", "#B8094A"],
     };
-    return gradients[activeTab as keyof typeof gradients] || gradients.School;
+    return (
+      gradients[activeTab as keyof typeof gradients] || ["#920734", "#B8094A"]
+    );
   };
 
   return (
@@ -332,16 +337,6 @@ const PremiumTabNavigation: React.FC<PremiumTabNavigationProps> = ({
                 >
                   {tab.label}
                 </Animated.Text>
-
-                {/* Active indicator dot */}
-                {/* {isActive && (
-                  <Animated.View style={styles.activeDot}>
-                    <LinearGradient
-                      colors={["#FFFFFF", "rgba(255,255,255,0.8)"]}
-                      style={styles.dotGradient}
-                    />
-                  </Animated.View>
-                )} */}
               </TouchableOpacity>
             </Animated.View>
           );

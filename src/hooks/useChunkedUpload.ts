@@ -1,24 +1,34 @@
 import { useState, useCallback } from "react";
 import * as FileSystem from "expo-file-system";
 import { 
-  useInitChunkedUploadMutation, 
-  usePushUploadChunkMutation, 
-  useFinishChunkedUploadMutation 
+  useInitChunkedUploadMutation as useChatInit, 
+  usePushUploadChunkMutation as useChatPush, 
+  useFinishChunkedUploadMutation as useChatFinish 
 } from "../api/chat-api";
+import {
+  useInitChunkedUploadMutation as useActivityInit,
+  usePushUploadChunkMutation as useActivityPush,
+  useFinishChunkedUploadMutation as useActivityFinish
+} from "../api/activity-feed-api";
 
 interface UseChunkedUploadProps {
   onSuccess?: (mediaData: any) => void;
   onError?: (error: string) => void;
 }
 
+interface ChunkedUploadMutations {
+  init: any;
+  push: any;
+  finish: any;
+}
+
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk for better reliability
 const MAX_RETRIES = 2; // Simple retry logic
 
-export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps = {}) => {
-  const [initUpload] = useInitChunkedUploadMutation();
-  const [pushChunk] = usePushUploadChunkMutation();
-  const [finishUpload] = useFinishChunkedUploadMutation();
-
+const useChunkedUploadBase = (
+  { init, push, finish }: ChunkedUploadMutations,
+  { onSuccess, onError }: UseChunkedUploadProps = {}
+) => {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -35,7 +45,7 @@ export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps =
       const totalSize = fileInfo.size;
       
       // 1. Initialize Upload
-      const initResponse = await initUpload({
+      const initResponse = await init({
         filename,
         total_size: totalSize,
         mime_type: mimeType,
@@ -72,7 +82,7 @@ export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps =
           
           while (retryCount <= MAX_RETRIES && !chunkSent) {
             try {
-              const pushResponse = await pushChunk({
+              const pushResponse = await push({
                 upload_id: uploadId,
                 chunk: {
                   uri: chunkUri,
@@ -105,7 +115,7 @@ export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps =
       }
 
       // 3. Finish Upload
-      const finishResponse = await finishUpload({
+      const finishResponse = await finish({
         upload_id: uploadId,
       }).unwrap();
 
@@ -124,7 +134,7 @@ export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps =
       onError?.(errorMsg);
       throw error;
     }
-  }, [initUpload, pushChunk, finishUpload, onSuccess, onError]);
+  }, [init, push, finish, onSuccess, onError]);
 
   return {
     uploadFile,
@@ -132,3 +142,24 @@ export const useChunkedUpload = ({ onSuccess, onError }: UseChunkedUploadProps =
     progress,
   };
 };
+
+// Hook for Chat module
+export const useChatChunkedUpload = (props: UseChunkedUploadProps = {}) => {
+  const [init] = useChatInit();
+  const [push] = useChatPush();
+  const [finish] = useChatFinish();
+  
+  return useChunkedUploadBase({ init, push, finish }, props);
+};
+
+// Hook for Activity Feed module
+export const useActivityFeedChunkedUpload = (props: UseChunkedUploadProps = {}) => {
+  const [init] = useActivityInit();
+  const [push] = useActivityPush();
+  const [finish] = useActivityFinish();
+  
+  return useChunkedUploadBase({ init, push, finish }, props);
+};
+
+// Default export/backward compatibility
+export const useChunkedUpload = useChatChunkedUpload;
