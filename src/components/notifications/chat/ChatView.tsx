@@ -22,6 +22,13 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const currentUserId = user?.id;
   
   const [page, setPage] = React.useState(1);
+  const pageRef = React.useRef(1);
+  
+  // Keep ref in sync with state
+  React.useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [typingUsers, setTypingUsers] = React.useState<Record<number, { name: string, lastTyped: number }>>({});
   const [onlineUserIds, setOnlineUserIds] = React.useState<Set<number>>(new Set());
@@ -139,26 +146,65 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Polling fallback to ensure we never miss messages if Echo fails
+  React.useEffect(() => {
+    if (!group.id) return;
+    const interval = setInterval(() => {
+      dispatch(chatApi.endpoints.getChatMessages.initiate({ chat_group_id: Number(group.id), page: 1 }, { forceRefetch: true }));
+    }, 5000); // 5 seconds polling fallback
+    return () => clearInterval(interval);
+  }, [group.id, dispatch]);
+
+  const handleRefreshMessages = React.useCallback(() => {
+    if (group.id) {
+       dispatch(chatApi.endpoints.getChatMessages.initiate({ chat_group_id: Number(group.id), page: 1 }, { forceRefetch: true }));
+    }
+  }, [group.id, dispatch]);
+
   // Helper to handle new messages from any real-time source (Presence or User channel)
   const handleNewMessage = React.useCallback((msg: ChatMessage) => {
+    const groupId = Number(group.id);
+    const msgGroupId = Number(msg.chat_group_id);
+
     // Ensure the message belongs to THIS group
-    if (String(msg.chat_group_id) !== String(group.id)) {
+    if (msgGroupId !== groupId) {
+      console.log(`ℹ️ [ChatView] Message for different group (${msgGroupId}), ignoring.`);
       return;
     }
 
+    console.log("⚡ [ChatView] Processing new message:", msg.id);
+
+    // Update the cache for the current page (usually page 1)
+    // We use pageRef.current to avoid the callback closure being stuck on an old page value
     dispatch(
-      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+      chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
         // Deduplicate: Don't add if it already exists (prevents doubles from multiple channels)
         const exists = draft.data.messages.some(m => String(m.id) === String(msg.id));
         if (!exists) {
-          console.log("✅ [ChatView] New message received & inserted into list:", msg.id);
+          console.log("✅ [ChatView] New message inserted into list:", msg.id);
           draft.data.messages.unshift(msg);
         } else {
           console.log("ℹ️ [ChatView] Message already in list, skipping:", msg.id);
         }
       })
     );
-  }, [group.id, dispatch]);
+
+    // Also update page 1 cache if we are currently on a different page, 
+    // to ensure when user scrolls back to top they see it
+    if (pageRef.current !== 1) {
+      dispatch(
+        chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+          const exists = draft.data.messages.some(m => String(m.id) === String(msg.id));
+          if (!exists) {
+            draft.data.messages.unshift(msg);
+          }
+        })
+      );
+    }
+
+    // Force network fetch to guarantee correctness
+    handleRefreshMessages();
+  }, [group.id, dispatch, handleRefreshMessages]);
 
   // Real-time Echo listeners
   React.useEffect(() => {
@@ -197,8 +243,9 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           type: updatedMessage.type
         });
         
+        const groupId = Number(group.id);
         dispatch(
-          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
             console.log("🔍 Checking cache for message ID:", updatedMessage.id, "Cache size:", draft.data.messages.length);
             const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
             if (index !== -1) {
@@ -213,14 +260,40 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             }
           })
         );
+        
+        // Also update page 1 if we're not on it
+        if (pageRef.current !== 1) {
+          dispatch(
+            chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+              const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
+              if (index !== -1) {
+                draft.data.messages[index] = { ...draft.data.messages[index], ...updatedMessage };
+              }
+            })
+          );
+        }
+
+        // Trigger refetch for guaranteed correctness
+        handleRefreshMessages();
       },
       onMessageDeleted: (data) => {
+        const groupId = Number(group.id);
         console.log("⚡ Real-time: Message deleted:", data.id);
         dispatch(
-          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
-            draft.data.messages = draft.data.messages.filter(m => m.id !== data.id);
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
+            draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.id));
           })
         );
+        // Also update page 1 if we're not on it
+        if (pageRef.current !== 1) {
+          dispatch(
+            chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+              draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.id));
+            })
+          );
+        }
+
+        handleRefreshMessages();
       },
       onTyping: (data) => {
         if (data.user_id === user?.id) return;
@@ -238,13 +311,13 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         console.log("⚡ Real-time: Messages read by:", data.user_id, "IDs:", data.message_ids);
         if (data.user_id === user?.id) return; // Ignore own read receipts (already updated locally)
 
+        const groupId = Number(group.id);
         dispatch(
-          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
             data.message_ids.forEach(id => {
               const index = draft.data.messages.findIndex(m => String(m.id) === String(id));
               if (index !== -1) {
                 // Increment read count or update specific read status
-                // Since this is real-time, we just know it's been read by another person
                 draft.data.messages[index].read_count = (draft.data.messages[index].read_count || 0) + 1;
               }
             });
@@ -257,7 +330,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       console.log(`🔌 Unsubscribing from Echo group ${group.id}`);
       RealTimeNotificationService.unsubscribeFromGroup(Number(group.id));
     };
-  }, [group.id, dispatch, handleNewMessage]);
+  }, [group.id, dispatch, handleNewMessage, handleRefreshMessages]);
 
   // ROBUST FALLBACK: Listen to the User Channel too
   // This channel is working reliably even when presence channels fail.
@@ -269,12 +342,20 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         console.log("⚡ [ChatView] Global User Channel fallback message received");
         handleNewMessage(data.message as ChatMessage);
       } else if (data.event === 'deleted') {
-        console.log("⚡ [ChatView] Global User Channel fallback message deleted:", data.message.id);
+        const groupId = Number(group.id);
         dispatch(
-          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: group.id, page: 1 }, (draft) => {
-            draft.data.messages = draft.data.messages.filter(m => m.id !== data.message.id);
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
+            draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.message.id));
           })
         );
+        // Also update page 1
+        if (pageRef.current !== 1) {
+          dispatch(
+            chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+              draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.message.id));
+            })
+          );
+        }
       }
     });
 
