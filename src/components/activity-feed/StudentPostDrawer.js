@@ -15,7 +15,11 @@ import { useSelector, useDispatch } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import * as ImageManipulator from "expo-image-manipulator";
 import { theme } from "../../styles/theme";
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const dispatch = useDispatch();
@@ -142,13 +146,59 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
       });
 
       if (!result.canceled) {
-        const newMedia = result.assets.map((asset) => ({
-          id: Date.now() + Math.random(),
-          type: asset.type,
-          uri: asset.uri,
-          name: asset.fileName || `media_${Date.now()}`,
-        }));
-        setSelectedMedia((prev) => [...prev, ...newMedia]);
+        const validMedia = [];
+        let hasOversizedFiles = false;
+
+        for (const asset of result.assets) {
+          let processableUri = asset.uri;
+          let fileSize = asset.fileSize || asset.size || 0;
+          let mimeType = asset.mimeType || (asset.type === "video" ? "video/mp4" : "image/jpeg");
+          const isVideo = asset.type === "video";
+
+          if (!isVideo) {
+            try {
+              console.log("🖼️ Compressing image before upload...");
+              const compressed = await ImageManipulator.manipulateAsync(
+                asset.uri,
+                [{ resize: { width: 1200 } }],
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+              );
+              processableUri = compressed.uri;
+              mimeType = "image/jpeg";
+              
+              const fileInfo = await FileSystem.getInfoAsync(compressed.uri, { size: true });
+              if (fileInfo.exists && fileInfo.size) {
+                fileSize = fileInfo.size;
+              }
+            } catch (error) {
+              console.error("Error compressing image:", error);
+            }
+          }
+
+          if (fileSize > MAX_FILE_SIZE) {
+            hasOversizedFiles = true;
+          } else {
+            validMedia.push({
+              id: Date.now() + Math.random(),
+              type: isVideo ? "video" : "image",
+              uri: processableUri,
+              name: asset.fileName || asset.name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+              size: fileSize,
+              mimeType: mimeType,
+            });
+          }
+        }
+
+        if (hasOversizedFiles) {
+          Alert.alert(
+            "File Too Large",
+            "One or more selected files exceed the 50MB limit and were not added. Please select smaller files."
+          );
+        }
+
+        if (validMedia.length > 0) {
+          setSelectedMedia((prev) => [...prev, ...validMedia]);
+        }
       }
     } finally {
       setIsLoadingMedia(false);
@@ -166,14 +216,35 @@ const StudentPostDrawer = ({ visible, onClose, onPostCreated }) => {
       });
 
       if (!result.canceled) {
-        const newMedia = result.assets.map((asset) => ({
-          id: Date.now() + Math.random(),
-          type: "document",
-          uri: asset.uri,
-          name: asset.name,
-          size: asset.size,
-        }));
-        setSelectedMedia((prev) => [...prev, ...newMedia]);
+        const validMedia = [];
+        let hasOversizedFiles = false;
+
+        result.assets.forEach((asset) => {
+          const fileSize = asset.size || 0;
+          if (fileSize > MAX_FILE_SIZE) {
+            hasOversizedFiles = true;
+          } else {
+            validMedia.push({
+              id: Date.now() + Math.random(),
+              type: "document",
+              uri: asset.uri,
+              name: asset.name || `doc_${Date.now()}`,
+              size: fileSize,
+              mimeType: asset.mimeType || "application/octet-stream",
+            });
+          }
+        });
+
+        if (hasOversizedFiles) {
+          Alert.alert(
+            "File Too Large",
+            "One or more selected documents exceed the 50MB limit and were not added. Please select smaller files."
+          );
+        }
+
+        if (validMedia.length > 0) {
+          setSelectedMedia((prev) => [...prev, ...validMedia]);
+        }
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick document");
