@@ -183,10 +183,12 @@ class PushNotificationService {
         return this.pushToken;
       }
 
-      // Get project ID from Constants or environment
+      // Get project ID from multiple sources to ensure it works in APK builds
       const projectId =
         Constants.expoConfig?.extra?.eas?.projectId ||
-        process.env.EXPO_PUBLIC_PROJECT_ID;
+        Constants.easConfig?.projectId ||
+        process.env.EXPO_PUBLIC_PROJECT_ID ||
+        "c497b33a-59ce-4ea9-ae5a-ca16190babdd"; // Absolute fallback from app.json
 
       if (!projectId) {
         console.warn(
@@ -204,6 +206,7 @@ class PushNotificationService {
       console.log("📱 Using project ID for push token:", projectId);
 
       // Try to get Expo push token
+      console.log("📱 Requesting Expo push token from Expo servers...");
       const token = await Notifications.getExpoPushTokenAsync({
         projectId: projectId,
       });
