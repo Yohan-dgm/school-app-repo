@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.8</string>
+    <string>1.1.2</string>
     <key>CFBundleSignature</key>
-    <string>3</string>
+    <string>????</string>
     <key>CFBundleURLTypes</key>
     <array>
       <dict>
@@ -33,7 +33,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>26</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>LSMinimumSystemVersion</key>
@@ -50,7 +50,7 @@
       <true/>
       <key>NSExceptionDomains</key>
       <dict>
-        <key>172.16.20.165</key>
+        <key>172.20.10.3</key>
         <dict>
           <key>NSExceptionAllowsInsecureHTTPLoads</key>
           <true/>
