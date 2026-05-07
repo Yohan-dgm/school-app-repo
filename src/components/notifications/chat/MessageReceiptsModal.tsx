@@ -61,33 +61,48 @@ const MessageReceiptsModal: React.FC<MessageReceiptsModalProps> = ({ visible, on
                 data={receipts}
                 keyExtractor={(item) => item.user_id.toString()}
                 contentContainerStyle={{ padding: 20 }}
-                renderItem={({ item }) => (
-                  <View className="flex-row items-center mb-6 last:mb-0">
-                    <View className="relative">
-                      <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center">
-                        <Text className="text-white font-bold text-lg">
-                          {item.user_name.trim().split(' ').length >= 2 
-                            ? (item.user_name.trim().split(' ')[0][0] + item.user_name.trim().split(' ')[1][0]).toUpperCase()
-                            : (item.user_name[0] || '?').toUpperCase()
-                          }
-                        </Text>
+                renderItem={({ item }) => {
+                  const userReactions = message?.reactions?.filter(r => 
+                    r.user_ids.map(id => String(id)).includes(String(item.user_id))
+                  ).map(r => r.emoji) || [];
+
+                  return (
+                    <View className="flex-row items-center mb-6 last:mb-0">
+                      <View className="relative">
+                        <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center">
+                          <Text className="text-white font-bold text-lg">
+                            {item.user_name.trim().split(' ').length >= 2 
+                              ? (item.user_name.trim().split(' ')[0][0] + item.user_name.trim().split(' ')[1][0]).toUpperCase()
+                              : (item.user_name[0] || '?').toUpperCase()
+                            }
+                          </Text>
+                        </View>
+                        <View className="absolute -bottom-1 -right-1 bg-green-500 border-2 border-white w-4 h-4 rounded-full" />
                       </View>
-                      <View className="absolute -bottom-1 -right-1 bg-green-500 border-2 border-white w-4 h-4 rounded-full" />
-                    </View>
-                    <View className="ml-4 flex-1">
-                      <Text className="text-[16px] font-bold text-gray-900">{item.user_name}</Text>
-                      <View className="flex-row items-center mt-0.5">
-                        <MaterialIcons name="visibility" size={12} color="#9ca3af" />
-                        <Text className="text-gray-500 text-xs ml-1">
-                          Seen {format(new Date(item.read_at), "MMM d, h:mm a")}
-                        </Text>
+                      <View className="ml-4 flex-1">
+                        <View className="flex-row items-center">
+                          <Text className="text-[16px] font-bold text-gray-900">{item.user_name}</Text>
+                          {userReactions.length > 0 && (
+                            <View className="flex-row ml-2 bg-gray-50 rounded-full px-1.5 py-0.5 border border-gray-100">
+                              {userReactions.map((emoji, idx) => (
+                                <Text key={idx} className="text-xs mr-0.5 last:mr-0">{emoji}</Text>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                        <View className="flex-row items-center mt-0.5">
+                          <MaterialIcons name="visibility" size={12} color="#9ca3af" />
+                          <Text className="text-gray-500 text-xs ml-1">
+                            Seen {format(new Date(item.read_at), "MMM d, h:mm a")}
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="bg-gray-50 px-3 py-1.5 rounded-full">
+                        <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Read</Text>
                       </View>
                     </View>
-                    <View className="bg-gray-50 px-3 py-1.5 rounded-full">
-                      <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Read</Text>
-                    </View>
-                  </View>
-                )}
+                  );
+                }}
               />
             )}
           </View>

@@ -690,7 +690,7 @@ const UniversalDrawerMenu: React.FC<UniversalDrawerMenuProps> = ({
 
             {/* Footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>School App v1.0.8</Text>
+              <Text style={styles.footerText}>School App v1.1.3</Text>
               <Text style={styles.footerSubtext}>Toyar Technologies</Text>
             </View>
           </ScrollView>

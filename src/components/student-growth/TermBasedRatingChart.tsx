@@ -11,7 +11,7 @@ import { LineChart } from "react-native-chart-kit";
 import { MaterialIcons } from "@expo/vector-icons";
 import { modernColors, maroonTheme } from "../../data/studentGrowthData";
 import { useGetStudentRatingsByTermQuery } from "../../api/educator-feedback-api";
-import YearSelector from "./YearSelector";
+import YearSelector, { getInitialSelectedYear } from "./YearSelector";
 import CategorySelector, {
   CategoryOption,
   DEFAULT_CATEGORIES,
@@ -41,8 +41,7 @@ interface TermData {
 const TermBasedRatingChart: React.FC<TermBasedRatingChartProps> = ({
   studentId,
 }) => {
-  const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedYear, setSelectedYear] = useState(() => getInitialSelectedYear());
   const [selectedCategory, setSelectedCategory] = useState("overall");
 
   // API call to get student ratings by term

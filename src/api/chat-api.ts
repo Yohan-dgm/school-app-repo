@@ -228,10 +228,6 @@ export const chatApi = apiServer1.injectEndpoints({
       merge: (currentCache, newItems, { arg }) => {
         // If it's page 1, it might be a refresh or polling
         if (arg.page === 1 || !arg.page) {
-          // If we have newer messages in the new batch that aren't in currentCache, 
-          // we might want to be careful. But for simplicity, if it's page 1, we often 
-          // just want to ensure we have the latest.
-          // However, if we just want to ADD new messages from polling:
           const existingIds = new Set(currentCache.data.messages.map(m => m.id));
           const newMessages = newItems.data.messages.filter(m => !existingIds.has(m.id));
           
@@ -239,6 +235,19 @@ export const chatApi = apiServer1.injectEndpoints({
             // Prepend new messages (they are newest)
             currentCache.data.messages.unshift(...newMessages);
           }
+          
+          // Update existing messages if they were edited
+          newItems.data.messages.forEach(newItem => {
+            if (existingIds.has(newItem.id)) {
+              const existingIndex = currentCache.data.messages.findIndex(m => m.id === newItem.id);
+              if (existingIndex !== -1) {
+                currentCache.data.messages[existingIndex] = {
+                  ...currentCache.data.messages[existingIndex],
+                  ...newItem,
+                };
+              }
+            }
+          });
           
           // Update pagination info from the latest fetch (usually page 1)
           currentCache.data.pagination = newItems.data.pagination;
@@ -285,10 +294,7 @@ export const chatApi = apiServer1.injectEndpoints({
           body: data,
         };
       },
-      invalidatesTags: (result, error, arg) => [
-        "ChatThreads",
-        { type: "ChatMessages", id: arg.chat_group_id },
-      ],
+      invalidatesTags: ["ChatThreads"],
     }),
 
     createNewChatGroup: builder.mutation<any, CreateChatGroupRequest>({
@@ -315,7 +321,7 @@ export const chatApi = apiServer1.injectEndpoints({
         method: "POST",
         body: data,
       }),
-      invalidatesTags: (result, error, arg) => ["ChatThreads", "ChatMessages"],
+      invalidatesTags: ["ChatThreads"],
     }),
 
     deleteChatMessage: builder.mutation<any, DeleteMessageRequest>({
@@ -324,7 +330,7 @@ export const chatApi = apiServer1.injectEndpoints({
         method: "POST",
         body: data,
       }),
-      invalidatesTags: (result, error, arg) => ["ChatThreads", "ChatMessages"],
+      invalidatesTags: ["ChatThreads"],
     }),
 
     getMessageReadReceipts: builder.query<GetMessageReadReceiptsResponse, GetMessageReadReceiptsRequest>({
@@ -458,9 +464,6 @@ export const chatApi = apiServer1.injectEndpoints({
         method: "POST",
         body: data,
       }),
-      // We don't necessarily need to invalidate ChatMessages if we use real-time updates,
-      // but adding it here as a fallback for the local user.
-      invalidatesTags: (result, error, arg) => ["ChatMessages"],
     }),
     setChatFocus: builder.mutation<any, { chat_group_id: number | null }>({
       query: (payload) => ({

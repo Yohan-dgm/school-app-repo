@@ -4,20 +4,29 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "distribution": "internal",
-      "env": {
-        "NODE_ENV": "development"
-      }
-    },
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production-apk": {
+      "distribution": "store",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      },
       "env": {
-        "NODE_ENV": "staging"
+        "NODE_ENV": "production"
       }
     },
     "production": {
       "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
       "ios": {
         "simulator": false
       },

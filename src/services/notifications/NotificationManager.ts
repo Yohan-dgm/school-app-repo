@@ -94,13 +94,10 @@ class NotificationManager {
 
       let initResults = { push: false, realTime: false };
 
-      // DISABLED: Push notifications initialization
-      // Keeping code for future re-enabling
-      /*
+      // Initialize push notifications
       if (this.config.enablePushNotifications) {
         try {
           await PushNotificationService.initialize(authToken, userId);
-          this.setupPushNotificationListeners();
           initResults.push = true;
           console.log("✅ Push notifications initialized");
         } catch (error) {
@@ -108,9 +105,6 @@ class NotificationManager {
           this.callbacks.onError?.(error);
         }
       }
-      */
-      // Skip push notification initialization
-      console.log("⚠️ Push notifications are disabled")
 
       // Initialize real-time notifications if enabled
       if (this.config.enableRealTime) {
@@ -519,8 +513,8 @@ class NotificationManager {
       notification.read_at = new Date().toISOString();
       this.unreadCount = Math.max(0, this.unreadCount - 1);
 
-      // DISABLED: Update badge count via push notifications
-      // await PushNotificationService.setBadgeCount(this.unreadCount);
+      // Update badge count via push notifications
+      await PushNotificationService.setBadgeCount(this.unreadCount);
 
       // Cache and notify
       this.cacheNotifications();
@@ -553,8 +547,8 @@ class NotificationManager {
 
       this.unreadCount = 0;
 
-      // DISABLED: Update badge count via push notifications
-      // await PushNotificationService.setBadgeCount(0);
+      // Update badge count via push notifications
+      await PushNotificationService.setBadgeCount(0);
 
       // Cache and notify
       this.cacheNotifications();

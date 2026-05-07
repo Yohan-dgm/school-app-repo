@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialIcons";
-import CustomSkeleton from "../../ui/CustomSkeleton";
+import PostSkeleton from "../../ui/PostSkeleton";
 import { theme } from "../../../styles/theme";
 import MediaViewer from "../../media/MediaViewer";
 import Constants from "expo-constants";
@@ -754,7 +754,9 @@ const ClassTabWithAPI = ({ filters, userCategory, isConnected }) => {
   if (loading && (!posts || posts.length === 0)) {
     return (
       <View style={styles.container}>
-        <CustomSkeleton />
+        <PostSkeleton />
+        <PostSkeleton />
+        <PostSkeleton />
       </View>
     );
   }

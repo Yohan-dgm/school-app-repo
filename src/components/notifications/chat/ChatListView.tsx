@@ -4,6 +4,8 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup } from "./ChatTypes";
 import ChatListItem from "./ChatListItem";
 import { useToggleChatGroupPinMutation } from "../../../api/chat-api";
+import { useSelector } from "react-redux";
+import { RootState } from "../../../state-store/store";
 
 interface ChatListViewProps {
   onChatPress: (chat: ChatGroup) => void;
@@ -28,6 +30,8 @@ const ChatListView: React.FC<ChatListViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [internalFilter, setInternalFilter] = React.useState<"all" | "unread" | "read" | "chats" | "notifications">("all");
+  
+  const userCategory = useSelector((state: RootState) => state.app.user?.user_category);
   
   const activeFilter = externalFilter !== undefined ? externalFilter : internalFilter;
   const setActiveFilter = setExternalFilter || setInternalFilter;
@@ -84,22 +88,24 @@ const ChatListView: React.FC<ChatListViewProps> = ({
       <View className="px-4 pt-0 pb-4 border-b border-gray-100">
         <View className="flex-row items-center justify-between mb-3">
           <Text className="text-2xl font-bold text-gray-900">Chats</Text>
-          <View className="flex-row items-center space-x-1">
-            <TouchableOpacity 
-              className="p-2 mr-1 bg-gray-50 rounded-full" 
-              onPress={onCreateAnnouncement}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="campaign" size={22} color="#7c2d3e" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              className="p-2 bg-gray-50 rounded-full" 
-              onPress={onCreateGroup}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="group-add" size={22} color="#2563eb" />
-            </TouchableOpacity>
-          </View>
+          {userCategory === 4 && (
+            <View className="flex-row items-center space-x-1">
+              <TouchableOpacity 
+                className="p-2 mr-1 bg-gray-50 rounded-full" 
+                onPress={onCreateAnnouncement}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="campaign" size={22} color="#7c2d3e" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                className="p-2 bg-gray-50 rounded-full" 
+                onPress={onCreateGroup}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="group-add" size={22} color="#2563eb" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
         
         {/* Search Bar */}

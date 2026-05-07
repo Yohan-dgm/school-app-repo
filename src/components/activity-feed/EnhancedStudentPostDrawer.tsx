@@ -411,14 +411,16 @@ const PostCreationForm: React.FC<{
 
   const pickImage = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Please grant camera roll permissions to add images."
-        );
-        return;
+      if (Platform.OS === "ios") {
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission needed",
+            "Please grant camera roll permissions to add images."
+          );
+          return;
+        }
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({

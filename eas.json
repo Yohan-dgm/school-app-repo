@@ -1,46 +1,57 @@
 {
   "cli": {
     "version": ">= 5.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
-    "preview": {
+    "development": {
       "distribution": "internal",
-      "android": {
-        "buildType": "apk"
+      "env": {
+        "NODE_ENV": "development",
+        "EXPO_PUBLIC_PROJECT_ID": "c497b33a-59ce-4ea9-ae5a-ca16190babdd",
+        "EXPO_PUBLIC_BASE_URL_API_SERVER_1": "https://school-app.toyar.lk",
+        "EXPO_PUBLIC_BASE_URL_STUDENT_IMAGES": "https://nexis-college-sms-staging-b.solovosystems.com"
       }
     },
-    "production-apk": {
-      "distribution": "store",
+    "preview": { 
       "android": {
         "buildType": "apk"
       },
-      "ios": {
-        "simulator": false
-      },
+      "distribution": "internal",
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "staging",
+        "EXPO_PUBLIC_PROJECT_ID": "c497b33a-59ce-4ea9-ae5a-ca16190babdd",
+        "EXPO_PUBLIC_BASE_URL_API_SERVER_1": "https://school-app.toyar.lk",
+        "EXPO_PUBLIC_BASE_URL_STUDENT_IMAGES": "https://nexis-college-sms-staging-b.solovosystems.com"
       }
     },
     "production": {
       "distribution": "store",
-      "android": {
+     "android": {
         "buildType": "app-bundle"
       },
       "ios": {
-        "simulator": false
+        "simulator": false,
+         "image": "latest"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_PROJECT_ID": "c497b33a-59ce-4ea9-ae5a-ca16190babdd",
+        "EXPO_PUBLIC_BASE_URL_API_SERVER_1": "https://school-app.toyar.lk",
+        "EXPO_PUBLIC_BASE_URL_STUDENT_IMAGES": "https://nexis-college-sms-staging-b.solovosystems.com"
       }
     },
     "testFlight": {
       "distribution": "store",
       "ios": {
-        "simulator": false
+        "simulator": false,
+         "image": "latest"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_PROJECT_ID": "c497b33a-59ce-4ea9-ae5a-ca16190babdd",
+        "EXPO_PUBLIC_BASE_URL_API_SERVER_1": "https://school-app.toyar.lk",
+        "EXPO_PUBLIC_BASE_URL_STUDENT_IMAGES": "https://nexis-college-sms-staging-b.solovosystems.com"
       }
     }
   },

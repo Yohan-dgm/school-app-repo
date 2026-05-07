@@ -16,7 +16,10 @@ import { Video, Audio } from "expo-av";
 import { WebView } from "react-native-webview";
 import Icon from "@expo/vector-icons/MaterialIcons";
 import { useSelector } from "react-redux";
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 import { theme } from "../../styles/theme";
+import ImageWithSkeleton from "../ui/ImageWithSkeleton";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -383,7 +386,7 @@ const MediaViewer = ({
             onPress={() => handleImagePress(mediaItem, index)}
             style={style}
           >
-            <Image
+            <ImageWithSkeleton
               source={
                 typeof mediaItem.uri === "string"
                   ? {
@@ -414,7 +417,7 @@ const MediaViewer = ({
                   onPress={() => handleImagePress(mediaItem, imgIndex)}
                   style={styles.multipleImageWrapper}
                 >
-                  <Image
+                  <ImageWithSkeleton
                     source={
                       typeof image === "string"
                         ? {
@@ -447,7 +450,7 @@ const MediaViewer = ({
             style={style}
           >
             <View style={[styles.videoWrapper, customStyles.video]}>
-              <Image
+              <ImageWithSkeleton
                 source={
                   typeof mediaItem.thumbnail === "string"
                     ? {
@@ -491,6 +494,78 @@ const MediaViewer = ({
     }
   };
 
+  // For tracking which image is currently viewed in FlatList
+  const onViewRef = useRef(({ viewableItems }) => {
+    if (viewableItems && viewableItems.length > 0) {
+      setCurrentImageIndex(viewableItems[0].index);
+    }
+  });
+  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 50 });
+
+  const handleDownloadImage = async () => {
+    try {
+      let downloadUri = null;
+      let filename = "download.jpg";
+
+      if (selectedMedia?.type === "multiple_images") {
+        const item = selectedMedia.images[currentImageIndex];
+        downloadUri = typeof item === "string" ? item : item.uri;
+      } else {
+        downloadUri = typeof selectedMedia?.uri === "string" ? selectedMedia.uri : selectedMedia?.uri?.uri;
+      }
+
+      if (!downloadUri) {
+        Alert.alert("Error", "Could not find image to download.");
+        return;
+      }
+
+      // Safely extract and sanitize the filename
+      let extractedFilename = `image_${Date.now()}.jpg`;
+      const match = downloadUri.match(/[?&]filename=([^&]+)/);
+      if (match && match[1]) {
+        extractedFilename = decodeURIComponent(match[1]);
+      } else {
+        extractedFilename = downloadUri.split('/').pop().split('?')[0] || extractedFilename;
+      }
+      // Ensure no slashes or invalid chars make it to the file system path
+      filename = extractedFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      
+      const fileUri = FileSystem.documentDirectory + filename;
+      
+      // On Android 10+ (API 29+), saving to gallery via createAssetAsync()
+      // works without explicit permission — requesting it would inject the
+      // restricted READ_MEDIA_IMAGES permission and violate Play Store policy.
+      // iOS still requires an explicit permission check.
+      if (Platform.OS === "ios") {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Needed", "Please grant photo library access in Settings to save images.");
+          return;
+        }
+      }
+
+      // Download
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const downloadRes = await FileSystem.downloadAsync(downloadUri, fileUri, { headers });
+      
+      if (downloadRes.status !== 200) {
+        throw new Error("Failed to download image from server.");
+      }
+
+      // Save to gallery
+      const asset = await MediaLibrary.createAssetAsync(downloadRes.uri);
+      if (asset) {
+        Alert.alert("Success", "Image saved to gallery.");
+      } else {
+        throw new Error("Failed to save to gallery.");
+      }
+
+    } catch (error) {
+      console.log("Download error:", error);
+      Alert.alert("Error", "Failed to download image.");
+    }
+  };
+
   // Image Modal Component
   const renderImageModal = () => (
     <Modal
@@ -501,12 +576,20 @@ const MediaViewer = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setImageModalVisible(false)}
-          >
-            <Icon name="close" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={styles.modalHeaderActions}>
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={handleDownloadImage}
+            >
+              <Icon name="file-download" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={() => setImageModalVisible(false)}
+            >
+              <Icon name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
 
           {selectedMedia?.type === "multiple_images" ? (
             <FlatList
@@ -515,6 +598,8 @@ const MediaViewer = ({
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               initialScrollIndex={currentImageIndex}
+              onViewableItemsChanged={onViewRef.current}
+              viewabilityConfig={viewConfigRef.current}
               getItemLayout={(data, index) => ({
                 length: screenWidth,
                 offset: screenWidth * index,
@@ -899,6 +984,21 @@ const styles = StyleSheet.create({
     top: 50,
     right: 20,
     zIndex: 1000,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderRadius: 20,
+    padding: 8,
+  },
+
+  modalHeaderActions: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    zIndex: 1000,
+    flexDirection: "row",
+    gap: 12,
+  },
+
+  headerActionButton: {
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 20,
     padding: 8,

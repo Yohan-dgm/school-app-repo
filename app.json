@@ -3,7 +3,7 @@
     "name": "School App",
     "slug": "school-app",
     "scheme": "school-app",
-    "version": "1.0.8",
+    "version": "1.1.3",
     "orientation": "default",
     "icon": "src/assets/SchooSnap_logo.png",
     "userInterfaceStyle": "light",
@@ -25,41 +25,26 @@
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": false,
         "UIStatusBarStyle": "UIStatusBarStyleDefault",
-        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload profile pictures",
-        "NSCameraUsageDescription": "This app needs access to camera to take profile pictures",
+        "NSPhotoLibraryUsageDescription": "Allowing access to your photo library enables you to share photos and documents with your school, such as profile pictures and academic work.",
+        "NSCameraUsageDescription": "Allowing camera access enables you to take profile pictures and scan school-related QR codes.",
         "UIApplicationSupportsIndirectInputEvents": true,
         "UIBackgroundModes": ["remote-notification"],
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
-          "NSAllowsArbitraryLoadsInWebContent": true,
-          "NSAllowsLocalNetworking": true,
-          "NSExceptionDomains": {
-            "172.20.10.3": {
-              "NSExceptionAllowsInsecureHTTPLoads": true,
-              "NSExceptionMinimumTLSVersion": "1.0",
-              "NSIncludesSubdomains": true,
-              "NSExceptionRequiresForwardSecrecy": false
-            },
-            "localhost": {
-              "NSExceptionAllowsInsecureHTTPLoads": true,
-              "NSExceptionMinimumTLSVersion": "1.0",
-              "NSIncludesSubdomains": true,
-              "NSExceptionRequiresForwardSecrecy": false
-            }
-          }
+          "NSAllowsArbitraryLoads": false
         },
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "25",
+      "buildNumber": "26",
       "bundleIdentifier": "lk.toyar.schoolapp"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "src/assets/SchooSnap_logo.png",
         "backgroundColor": "#ffffff"
       },
       "package": "lk.toyar.schoolapp",
-      "versionCode": 11,
+      "versionCode": 511,
       "compileSdkVersion": 35,
       "targetSdkVersion": 35,
       "minSdkVersion": 21,
@@ -69,14 +54,16 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.VIBRATE",
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
         "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.WAKE_LOCK",
         "com.google.android.c2dm.permission.RECEIVE"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "softwareKeyboardLayoutMode": "pan",
       "statusBarStyle": "dark-content",
@@ -96,10 +83,37 @@
     "web": {
       "favicon": "src/assets/favicon.png"
     },
-    "plugins": ["expo-router", "expo-navigation-bar"],
+    "plugins": [
+      "expo-router",
+      "expo-navigation-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./src/assets/icon.png",
+          "color": "#7c2d3e"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allowing access to your photo library enables you to share photos and documents with your school, such as profile pictures and academic work.",
+          "cameraPermission": "Allowing camera access enables you to take profile pictures and scan school-related QR codes.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow School App to save images to your photo library.",
+          "savePhotosPermission": "Allow School App to save downloaded images to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
     "extra": {
       "router": {},
       "expo-navigation-bar": {},
+      
       "eas": {
         "projectId": "c497b33a-59ce-4ea9-ae5a-ca16190babdd"
       }

@@ -311,14 +311,16 @@ const ProfileSection = ({ onClose }) => {
   // Handle image selection from gallery
   const pickImageFromGallery = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Photo library permission is needed to select images.",
-        );
-        return;
+      if (Platform.OS === "ios") {
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission Required",
+            "Photo library permission is needed to select images.",
+          );
+          return;
+        }
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({

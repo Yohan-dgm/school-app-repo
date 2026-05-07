@@ -417,6 +417,12 @@ class RealTimeNotificationService {
         this.chatListeners.forEach(listener => listener({ event: 'sent', message: data }));
       });
 
+      channel.listen(".message.updated", (data: any) => {
+        console.log("🔄 RealTimeService - Message updated (Global):", data);
+        if (this.callbacks.onMessageUpdated) this.callbacks.onMessageUpdated(data);
+        this.chatListeners.forEach(listener => listener({ event: 'updated', message: data }));
+      });
+
       channel.listen(".message.deleted", (data: any) => {
         console.log("🗑️ RealTimeService - Message deleted (Global):", data);
         if (this.callbacks.onMessageDeleted) this.callbacks.onMessageDeleted(data);

@@ -568,9 +568,9 @@ class PushNotificationService {
       console.log("🗑️ Removing push token from backend:", payload);
 
       const baseUrl =
-        process.env.EXPO_PUBLIC_API_BASE_URL ||
         process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 ||
-        "http://172.20.10.3:9999"; // Updated fallback to match new server
+        process.env.EXPO_PUBLIC_API_BASE_URL ||
+        "https://school-app.toyar.lk"; // production fallback
       const response = await axios.post<BackendApiResponse>(
         `${baseUrl}/api/user-management/push-tokens/delete`,
         payload,

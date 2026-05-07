@@ -12,7 +12,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { modernColors, maroonTheme } from "../../data/studentGrowthData";
 
 // Academic year utility function
-const getAcademicYearDisplay = (year: number) => {
+export const getAcademicYearDisplay = (year: number) => {
   const currentDate = new Date();
   const currentMonth = currentDate.getMonth(); // 0-based (0 = January, 8 = September)
   const currentYear = currentDate.getFullYear();
@@ -32,6 +32,20 @@ const getAcademicYearDisplay = (year: number) => {
   }
 };
 
+/**
+ * Returns the first unique academic year value that YearSelector would display.
+ * Use this to initialise selectedYear so the chart loads data immediately on mount.
+ */
+export const getInitialSelectedYear = (): number => {
+  const currentYear = new Date().getFullYear();
+  const rawYears = Array.from({ length: 7 }, (_, index) => currentYear - index);
+  const labelToYear = new Map<string, number>();
+  rawYears.forEach((year) => {
+    labelToYear.set(getAcademicYearDisplay(year), year);
+  });
+  return Array.from(labelToYear.values())[0];
+};
+
 interface YearSelectorProps {
   selectedYear: number;
   onYearChange: (year: number) => void;
@@ -45,9 +59,16 @@ const YearSelector: React.FC<YearSelectorProps> = ({
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Generate last 5 years dynamically
+  // Generate last 5 unique academic years dynamically, keeping the last record for duplicates
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, index) => currentYear - index);
+  const rawYears = Array.from({ length: 7 }, (_, index) => currentYear - index);
+  
+  const labelToYear = new Map<string, number>();
+  rawYears.forEach((year) => {
+    labelToYear.set(getAcademicYearDisplay(year), year);
+  });
+  
+  const years = Array.from(labelToYear.values()).slice(0, 5);
 
   console.log("📅 YearSelector - Available years:", years);
   console.log("📅 YearSelector - Selected year:", selectedYear);

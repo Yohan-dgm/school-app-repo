@@ -151,14 +151,16 @@ const SchoolPostDrawer = ({ visible, onClose, onPostCreated }) => {
     setIsLoadingMedia(true);
 
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        setIsLoadingMedia(false);
-        Alert.alert(
-          "Permission needed",
-          "Please grant camera roll permissions to add media."
-        );
-        return;
+      if (Platform.OS === "ios") {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          setIsLoadingMedia(false);
+          Alert.alert(
+            "Permission needed",
+            "Please grant camera roll permissions to add media."
+          );
+          return;
+        }
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({

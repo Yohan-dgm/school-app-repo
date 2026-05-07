@@ -147,8 +147,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                       ? "border-blue-200 bg-blue-50" 
                       : "border-gray-100 bg-gray-50"
                   }`}
-                  onPress={() => onReactionPress?.(reaction.emoji)}
-                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (reaction.user_ids.map(id => String(id)).includes(String(currentUserId))) {
+                      onReactionPress?.(reaction.emoji);
+                    }
+                  }}
+                  activeOpacity={reaction.user_ids.map(id => String(id)).includes(String(currentUserId)) ? 0.7 : 1}
                 >
                   <Text className="text-xs">{reaction.emoji}</Text>
                   <Text className={`text-[10px] ml-1 font-bold ${

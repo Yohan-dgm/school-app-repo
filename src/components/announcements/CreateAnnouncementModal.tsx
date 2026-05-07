@@ -171,14 +171,14 @@ export default function CreateAnnouncementModal({
       const announcementData: CreateAnnouncementRequest = {
         title: formData.title.trim(),
         content: formData.content.trim(),
-        excerpt: formData.excerpt.trim() || undefined,
+        excerpt: formData.excerpt?.trim() || undefined,
         category_id: formData.category_id,
         priority_level: formData.priority_level,
         status: formData.status,
         target_type: formData.target_type,
         target_data:
           Object.keys(targetData).length > 0 ? targetData : undefined,
-        image_url: formData.image_url.trim() || undefined,
+        image_url: formData.image_url?.trim() || undefined,
         attachment_urls: formData.attachment_urls?.length
           ? formData.attachment_urls
           : undefined,
@@ -190,7 +190,7 @@ export default function CreateAnnouncementModal({
         expires_at: formData.expires_at
           ? new Date(formData.expires_at).toISOString()
           : undefined,
-        tags: formData.tags.trim() || undefined,
+        tags: formData.tags?.trim() || undefined,
         meta_data: formData.meta_data,
       };
 
@@ -585,7 +585,7 @@ export default function CreateAnnouncementModal({
           {renderCategorySelection()}
           {renderBasicInfo()}
           {/* Priority and Status are removed from UI but kept in state */}
-          {renderTargetSelection()}
+          {/* Target Selection removed as per request to always default to 'All' */}
         </ScrollView>
 
         {renderActions()}

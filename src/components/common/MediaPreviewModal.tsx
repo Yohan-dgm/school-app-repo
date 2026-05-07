@@ -3,7 +3,7 @@ import { Modal, View, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Pla
 import { Image } from 'expo-image';
 import { WebView } from 'react-native-webview';
 import { MaterialIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface MediaPreviewModalProps {
   visible: boolean;
@@ -22,6 +22,8 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
 }) => {
   if (!mediaUrl) return null;
 
+  const insets = useSafeAreaInsets();
+
   const isImage = mediaType === 'image' || mediaUrl.match(/\.(jpeg|jpg|gif|png|webp|avif)$/i);
   const isPdf = mediaUrl.toLowerCase().endsWith('.pdf');
 
@@ -33,9 +35,12 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
       onRequestClose={onClose}
     >
       <View className="flex-1 bg-black/95">
-        <SafeAreaView className="flex-1">
+        <View className="flex-1">
           {/* Header */}
-          <View className="flex-row items-center justify-between px-4 py-2 border-b border-white/10">
+          <View 
+            className="flex-row items-center justify-between px-4 pb-3 border-b border-white/10"
+            style={{ paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 48 : 50) }}
+          >
             <View className="flex-1 mr-4">
               <Text className="text-white font-semibold text-lg" numberOfLines={1}>
                 {filename || (isImage ? 'Image Preview' : 'File Preview')}
@@ -96,7 +101,7 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
               </View>
             )}
           </View>
-        </SafeAreaView>
+        </View>
       </View>
     </Modal>
   );

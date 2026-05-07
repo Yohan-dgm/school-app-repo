@@ -28,6 +28,7 @@ import {
   setSessionData,
   setUser,
 } from "@/state-store/slices/app-slice";
+import PushNotificationService from "@/services/notifications/PushNotificationService";
 import { getUserCategoryName } from "@/constants/userCategories";
 
 // PIN mapping configuration
@@ -164,6 +165,43 @@ export default function LoginScreen() {
       // Dispatch authentication state
       dispatch(setIsAuthenticated(true));
       dispatch(setSessionData(enhancedSessionData));
+
+      // ─── Push Token Registration ───────────────────────────────────────────
+      // Kick off push notification initialization immediately with the auth
+      // token from the login response. This is non-blocking — the redirect
+      // still happens after 1s. BackgroundNotificationService handles feedback
+      // toasts (status check, retry logic) separately after initialization.
+      const authToken = response?.data?.token;
+      const loginUserId = response?.data?.id;
+      if (authToken && loginUserId) {
+        console.log("🔔 Login - Triggering push token registration for userId:", loginUserId);
+        PushNotificationService.initialize(String(authToken), String(loginUserId))
+          .then(() => {
+            const pushToken = PushNotificationService.getPushToken();
+            const isRegistered = PushNotificationService.isTokenRegisteredWithBackend();
+            console.log("📊 Login - Push token status after init:", {
+              hasPushToken: !!pushToken,
+              tokenPreview: pushToken ? pushToken.substring(0, 30) + "..." : "none",
+              isRegisteredWithBackend: isRegistered,
+            });
+            if (pushToken && isRegistered) {
+              console.log("✅ Login - Push token confirmed saved to backend successfully");
+            } else if (pushToken && !isRegistered) {
+              console.warn("⚠️ Login - Push token obtained but backend registration pending — BackgroundNotificationService will retry");
+            } else {
+              console.warn("⚠️ Login - No push token obtained — BackgroundNotificationService will diagnose and show user feedback");
+            }
+          })
+          .catch((err) => {
+            console.warn("⚠️ Login - Push init error (non-fatal, will retry):", err?.message || err);
+          });
+      } else {
+        console.warn("⚠️ Login - Could not initialize push notifications: missing token or userId", {
+          hasToken: !!authToken,
+          hasUserId: !!loginUserId,
+        });
+      }
+      // ──────────────────────────────────────────────────────────────────────
 
       console.log(
         "🔄 Public Login - Enhanced session data stored:",

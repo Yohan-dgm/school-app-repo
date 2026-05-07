@@ -176,7 +176,9 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
 
       {/* Member List Header */}
       <View className="mt-4 bg-white border-t border-gray-100 px-4 py-4 flex-row items-center justify-between border-b border-gray-50">
-        <Text className="text-gray-900 font-bold text-base">Members</Text>
+        <Text className="text-gray-900 font-bold text-base">
+          {totalMembers >= 20 ? "Group Admins" : "Members"}
+        </Text>
         {isAdmin && (
           <TouchableOpacity 
             onPress={() => setShowAddMembersModal(true)}
@@ -276,6 +278,10 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
     </View>
   );
 
+  const displayedMembers = totalMembers >= 20
+    ? members.filter((m: ChatMember) => m.id.toString() === chat.created_by?.toString() || m.role === 'admin')
+    : members;
+
   return (
     <View className="flex-1 bg-gray-50">
       {/* Header */}
@@ -287,7 +293,7 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
       </View>
 
       <FlatList
-        data={members}
+        data={displayedMembers}
         renderItem={renderMember}
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={renderHeader}
@@ -299,7 +305,7 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
             </View>
           ) : null
         }
-        onEndReached={loadMore}
+        onEndReached={totalMembers >= 20 ? undefined : loadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
       />

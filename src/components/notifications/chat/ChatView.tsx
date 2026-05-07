@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler, AppState, AppStateStatus } from "react-native";
+import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler, AppState, AppStateStatus, KeyboardAvoidingView, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup, ChatMessage } from "./ChatTypes";
@@ -146,14 +146,8 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Polling fallback to ensure we never miss messages if Echo fails
-  React.useEffect(() => {
-    if (!group.id) return;
-    const interval = setInterval(() => {
-      dispatch(chatApi.endpoints.getChatMessages.initiate({ chat_group_id: Number(group.id), page: 1 }, { forceRefetch: true }));
-    }, 5000); // 5 seconds polling fallback
-    return () => clearInterval(interval);
-  }, [group.id, dispatch]);
+  // Polling fallback removed in favor of robust WebSocket architecture
+  // (Prevents aggressive background API spam)
 
   const handleRefreshMessages = React.useCallback(() => {
     if (group.id) {
@@ -341,6 +335,36 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       if (data.event === 'sent') {
         console.log("⚡ [ChatView] Global User Channel fallback message received");
         handleNewMessage(data.message as ChatMessage);
+      } else if (data.event === 'updated') {
+        const groupId = Number(group.id);
+        const updatedMessage = data.message;
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
+            const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
+            if (index !== -1) {
+              draft.data.messages[index] = { 
+                ...draft.data.messages[index], 
+                ...updatedMessage,
+                reactions: updatedMessage.reactions 
+              };
+            }
+          })
+        );
+        if (pageRef.current !== 1) {
+          dispatch(
+            chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+              const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
+              if (index !== -1) {
+                draft.data.messages[index] = { 
+                  ...draft.data.messages[index], 
+                  ...updatedMessage,
+                  reactions: updatedMessage.reactions 
+                };
+              }
+            })
+          );
+        }
+        handleRefreshMessages();
       } else if (data.event === 'deleted') {
         const groupId = Number(group.id);
         dispatch(
@@ -365,12 +389,12 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     };
   }, [handleNewMessage]);
 
-  // Mark as read when opening
+  // Mark as read when opening the chat room
   React.useEffect(() => {
     if (group.id) {
       markRead({ chat_group_id: group.id });
     }
-  }, [group.id, messagesData]);
+  }, [group.id]);
 
   // Robust connection state & foreground recovery
   React.useEffect(() => {
@@ -487,15 +511,38 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           message_id: editingMessage.id,
           content: text,
         }).unwrap();
+
+        // Pessimistic cache update so sender sees the update instantly
+        const patchCache = (pageToPatch: number) => {
+          dispatch(
+            chatApi.util.updateQueryData('getChatMessages', { chat_group_id: Number(currentGroup.id), page: pageToPatch }, (draft) => {
+              const index = draft.data.messages.findIndex(m => String(m.id) === String(editingMessage.id));
+              if (index !== -1) {
+                draft.data.messages[index] = {
+                  ...draft.data.messages[index],
+                  content: text,
+                };
+              }
+            })
+          );
+        };
+        patchCache(pageRef.current);
+        if (pageRef.current !== 1) {
+          patchCache(1);
+        }
+
         setEditingMessage(null);
       } else {
-        await sendMessage({
+        const response = await sendMessage({
           chat_group_id: currentGroup.id,
           type: "text",
           content: text,
         }).unwrap();
         
-        // No need to scroll to end with inverted list, new message is at index 0 (bottom)
+        // Pessimistic cache update so sender sees the new message instantly without reload jumping
+        if (response?.data?.message) {
+          handleNewMessage(response.data.message);
+        }
       }
     } catch (error) {
       console.error("Failed to send/update message:", error);
@@ -525,6 +572,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           height: mediaData.height,
         }
       }).unwrap();
+
+      // Pessimistic cache update for attachments
+      if (response?.data?.message) {
+        handleNewMessage(response.data.message);
+      }
 
       console.log("✅ Message sent successfully:", response);
     } catch (error: any) {
@@ -558,6 +610,21 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
 
     try {
       await deleteMessage({ message_id: msg.id }).unwrap();
+      
+      // Pessimistic cache update so sender sees the deletion instantly
+      const patchCache = (pageToPatch: number) => {
+        dispatch(
+          chatApi.util.updateQueryData('getChatMessages', { chat_group_id: Number(currentGroup.id), page: pageToPatch }, (draft) => {
+            draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(msg.id));
+          })
+        );
+      };
+      // Apply deletion to both the current viewing page and the first page cache
+      patchCache(pageRef.current);
+      if (pageRef.current !== 1) {
+        patchCache(1);
+      }
+
       setShowActionMenu(false);
       setSelectedMessage(null);
     } catch (error) {
@@ -567,7 +634,10 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   };
 
   return (
-    <View className="flex-1 bg-white">
+    <KeyboardAvoidingView 
+      className="flex-1 bg-white"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
         <TouchableOpacity 
@@ -902,7 +972,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           </View>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
