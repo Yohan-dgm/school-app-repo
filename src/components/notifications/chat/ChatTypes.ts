@@ -1,4 +1,4 @@
-export type MessageType = "text" | "image" | "file" | "system";
+export type MessageType = "text" | "image" | "file" | "video" | "system";
 
 export interface ChatMessage {
   id: string | number;

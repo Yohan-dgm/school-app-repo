@@ -35,14 +35,85 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
   const timestamp = new Date(message.timestamp);
 
+  // Splits a string into alternating plain-text and URL segments
+  const parseMessageWithLinks = (text: string) => {
+    const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+\.[^\s]+)/gi;
+    const parts: { text: string; isLink: boolean }[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = URL_REGEX.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ text: text.slice(lastIndex, match.index), isLink: false });
+      }
+      parts.push({ text: match[0], isLink: true });
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ text: text.slice(lastIndex), isLink: false });
+    }
+
+    return parts;
+  };
+
+  const handleLinkPress = (url: string) => {
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+    Linking.openURL(fullUrl).catch(() =>
+      console.warn("Failed to open URL:", fullUrl)
+    );
+  };
+
   const renderContent = () => {
-    switch (message.type) {
-      case "text":
+    let displayType = message.type;
+    
+    // Catch legacy video messages saved as "file"
+    if (displayType === "file") {
+      const isVideoFile = 
+        message.metadata?.mime_type?.startsWith('video/') || 
+        /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || '');
+      
+      if (isVideoFile) {
+        displayType = "video" as any;
+      }
+    }
+
+    switch (displayType) {
+      case "text": {
+        const parts = parseMessageWithLinks(message.content);
+        const hasLinks = parts.some((p) => p.isLink);
+
+        if (!hasLinks) {
+          // Fast path — no links, plain text as before
+          return (
+            <Text className={`text-[15px] leading-5 ${isMe ? "text-black" : "text-gray-900"}`}>
+              {message.content}
+            </Text>
+          );
+        }
+
         return (
           <Text className={`text-[15px] leading-5 ${isMe ? "text-black" : "text-gray-900"}`}>
-            {message.content}
+            {parts.map((part, index) =>
+              part.isLink ? (
+                <Text
+                  key={index}
+                  style={{
+                    color: isMe ? "#1d4ed8" : "#2563eb",
+                    textDecorationLine: "underline",
+                    textDecorationColor: isMe ? "#1d4ed8" : "#2563eb",
+                  }}
+                  onPress={() => handleLinkPress(part.text)}
+                >
+                  {part.text}
+                </Text>
+              ) : (
+                <Text key={index}>{part.text}</Text>
+              )
+            )}
           </Text>
         );
+      }
       case "image":
         const imageUrl = resolveMediaUrl(message.attachment_url || message.content);
         return (
@@ -79,28 +150,62 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             )}
           </TouchableOpacity>
         );
+      case "video":
+        const videoUrl = resolveMediaUrl(message.attachment_url || message.content);
+        return (
+          <TouchableOpacity 
+            activeOpacity={0.9} 
+            className="rounded-lg overflow-hidden bg-gray-900"
+            style={{ width: 220, height: 160, justifyContent: 'center', alignItems: 'center' }}
+            onLongPress={() => onLongPress?.(message)}
+            delayLongPress={200}
+            onPress={() => setIsPreviewVisible(true)}
+          >
+            {/* Dark background acting as thumbnail placeholder */}
+            <View className="absolute inset-0 bg-black/20" />
+            
+            {/* Play Button Overlay */}
+            <View className="w-12 h-12 rounded-full bg-black/50 items-center justify-center">
+              <MaterialIcons name="play-arrow" size={32} color="white" />
+            </View>
+            
+            {/* Video duration or type indicator could go here */}
+            <View className="absolute bottom-2 left-2 bg-black/60 px-1.5 py-0.5 rounded">
+              <MaterialIcons name="videocam" size={12} color="white" />
+            </View>
+          </TouchableOpacity>
+        );
       case "file":
         const fileUrl = resolveMediaUrl(message.attachment_url || message.content);
         return (
           <TouchableOpacity
-            className={`flex-row items-center p-1 rounded-xl ${isMe ? "bg-white/10" : "bg-gray-50"}`}
+            className={`items-center p-3 rounded-xl ${isMe ? "bg-white/10" : "bg-gray-50"}`}
+            style={{ width: 160 }}
             activeOpacity={0.7}
             onPress={() => setIsPreviewVisible(true)}
             onLongPress={() => onLongPress?.(message)}
             delayLongPress={200}
           >
-            <View className={`w-8 h-8 rounded-lg items-center justify-center ${isMe ? "bg-white/20" : "bg-red-50"}`}>
-              <MaterialIcons name="picture-as-pdf" size={18} color={isMe ? "white" : "#ef4444"} />
+            {/* PDF Icon */}
+            <View className={`w-14 h-14 rounded-2xl items-center justify-center mb-2 ${isMe ? "bg-white/20" : "bg-red-50"}`}>
+              <MaterialIcons name="picture-as-pdf" size={32} color={isMe ? "white" : "#ef4444"} />
             </View>
-            <View className="ml-2 flex-1">
-              <Text className={`text-xs font-bold ${isMe ? "text-black" : "text-gray-900"}`} numberOfLines={1}>
-                {message.metadata?.original_filename || "File"}
-              </Text>
+
+            {/* Filename */}
+            <Text
+              className={`text-xs font-bold text-center ${isMe ? "text-black" : "text-gray-900"}`}
+              numberOfLines={2}
+            >
+              {message.metadata?.original_filename || "File"}
+            </Text>
+
+            {/* Size + open icon row */}
+            <View className="flex-row items-center mt-1">
               <Text className={`text-[9px] ${isMe ? "text-black/70" : "text-gray-500"}`}>
-                {message.metadata?.size ? `${(message.metadata.size / 1024).toFixed(1)} KB` : ""} • PDF
+                {message.metadata?.size ? `${(message.metadata.size / 1024).toFixed(1)} KB · ` : ""}PDF
               </Text>
+              <MaterialIcons name="open-in-new" size={10} color={isMe ? "rgba(0,0,0,0.5)" : "#9ca3af"} style={{ marginLeft: 2 }} />
             </View>
-            <MaterialIcons name="open-in-new" size={16} color={isMe ? "black" : "#9ca3af"} />
           </TouchableOpacity>
         );
       default:
@@ -199,11 +304,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         visible={isPreviewVisible}
         onClose={() => setIsPreviewVisible(false)}
         mediaUrl={
-          message.type === 'image' 
+          message.type === 'image' || message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
             ? resolveMediaUrl(message.attachment_url || message.content)
             : resolveMediaUrl(message.attachment_url)
         }
-        mediaType={message.type as 'image' | 'file'}
+        mediaType={
+          message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
+            ? 'video'
+            : message.type as 'image' | 'file'
+        }
         filename={message.metadata?.original_filename}
       />
     </View>

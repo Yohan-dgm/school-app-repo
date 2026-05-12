@@ -23,6 +23,7 @@ import {
   buildActivityFeedMediaUrl,
   buildVideoThumbnailUrl,
 } from "../../../utils/mediaUtils";
+import { TextWithLinks } from "../../common/TextWithLinks";
 
 // Import API hooks and slice actions
 import {
@@ -682,7 +683,7 @@ const ClassTabWithAPI = ({ filters, userCategory, isConnected }) => {
         </View>
 
         {/* Post Content */}
-        <Text style={styles.postContent}>{post.content}</Text>
+        <TextWithLinks style={styles.postContent}>{post.content}</TextWithLinks>
 
         {/* Media */}
         {post.media && post.media.length > 0 && (

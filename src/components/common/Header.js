@@ -27,6 +27,7 @@ import Constants from "expo-constants";
 import {
   USER_CATEGORIES,
   getUserCategoryDisplayName,
+  getUserCategoryName,
 } from "../../constants/userCategories";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -44,6 +45,7 @@ import {
 } from "../../state-store/slices/app-slice";
 import { useLoginUserMutation } from "../../api/auth-api";
 import { useGetNotificationsQuery } from "../../api/notifications";
+import { useGetChatThreadsQuery } from "../../api/chat-api";
 import { useGetAppUpdateStatusQuery } from "../../api/user-management-api";
 import { BaseNotification } from "../../types/notifications";
 import { useRouter, usePathname } from "expo-router";
@@ -107,6 +109,17 @@ const Header = () => {
         unread_only: false,
       },
     },
+    {
+      skip: !userId || !userToken,
+      refetchOnMountOrArgChange: 30,
+      refetchOnFocus: false,
+      refetchOnReconnect: true,
+    }
+  );
+
+  // Chat API integration for unread chat counts
+  const { data: chatThreadsData } = useGetChatThreadsQuery(
+    { page: 1 },
     {
       skip: !userId || !userToken,
       refetchOnMountOrArgChange: 30,
@@ -356,7 +369,6 @@ const Header = () => {
   //   authHeaders: userProfileImageSource?.headers,
   // });
   const [showStudentSelector, setShowStudentSelector] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showStudentProfile, setShowStudentProfile] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -910,9 +922,16 @@ const Header = () => {
 
   // Simple unread count calculation following UniversalNotificationSystem pattern
   const allNotifications = notificationsData?.data || [];
-  const unreadCount = allNotifications.filter(
+  const unreadPushCount = allNotifications.filter(
     (notification) => !notification.is_read
   ).length;
+
+  const allChatThreads = chatThreadsData?.data?.threads || [];
+  const unreadChatCount = allChatThreads.reduce((total, thread) => {
+    return total + (thread.unread_count || 0);
+  }, 0);
+
+  const unreadCount = unreadPushCount + unreadChatCount;
 
   // Simple debug logging following UniversalNotificationSystem pattern
   React.useEffect(() => {
@@ -934,21 +953,14 @@ const Header = () => {
   };
 
   const handleNotificationPress = () => {
-    console.log("🔔 Header - Notification button pressed");
-    setShowNotifications(true);
-  };
-
-  // Simplified notification handlers - real-time updates handled by UniversalNotificationSystem
-  const handleNotificationItemPress = (notificationId) => {
-    console.log(
-      `🔔 Header - Notification item ${notificationId} pressed, navigating to notifications section`
-    );
-
-    // Close the popup modal
-    setShowNotifications(false);
-
+    console.log("🔔 Header - Notification button pressed, navigating directly to chat section");
+    
     // Navigate to notification section based on user category
-    const notificationRoute = `/authenticated/${userCategory}/notifications`;
+    // Using getUserCategoryName which returns folder-friendly names like 'principal', 'senior_management'
+    const userCategoryName = getUserCategoryName(userCategory);
+    
+    // The folders in src/app/authenticated are named after the category name (e.g. 'parent', 'educator', 'sport_coach')
+    const notificationRoute = `/authenticated/${userCategoryName}/notifications`;
 
     try {
       router.push(notificationRoute);
@@ -959,6 +971,8 @@ const Header = () => {
       router.push("/authenticated/notifications");
     }
   };
+
+  // Note: handleNotificationItemPress has been removed since the popup modal was removed
 
   const handleClosePaymentOverlay = () => {
     console.log("💰 Header - Payment overlay closed by user");
@@ -1071,7 +1085,9 @@ const Header = () => {
           />
           {unreadCount > 0 && (
             <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>{unreadCount}</Text>
+              <Text style={styles.notificationBadgeText}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -1265,117 +1281,6 @@ const Header = () => {
         </Modal>
       )}
 
-      {/* Notification Modal */}
-      <Modal
-        visible={showNotifications}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowNotifications(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => setShowNotifications(false)}
-        >
-          <View style={styles.notificationModalContent}>
-            {/* Simple Header */}
-            <View style={styles.notificationHeader}>
-              <Text style={styles.notificationTitle}>Notifications</Text>
-              <TouchableOpacity
-                onPress={() => setShowNotifications(false)}
-                style={styles.closeModalButton}
-              >
-                <MaterialIcons name="close" size={18} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            {notifications.length > 0 ? (
-              <FlatList
-                data={notifications}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.notificationItem,
-                      !item.read && styles.unreadNotificationItem,
-                    ]}
-                    // onPress={() => handleNotificationItemPress(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.notificationContent}>
-                      <MaterialIcons
-                        name={item.icon || "notifications"}
-                        size={20}
-                        color={!item.read ? "#7c2d3e" : "#999999"}
-                      />
-                      <View style={styles.notificationTextContainer}>
-                        <Text
-                          style={[
-                            styles.notificationItemTitle,
-                            item.read && styles.readNotificationTitle,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.title}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.notificationMessage,
-                            item.read && styles.readNotificationMessage,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.message}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.notificationTime,
-                          item.read && styles.readNotificationTime,
-                        ]}
-                      >
-                        {item.time}
-                      </Text>
-                      {!item.read && <View style={styles.unreadDot} />}
-                    </View>
-                  </TouchableOpacity>
-                )}
-                keyExtractor={(item) => item.id.toString()}
-                style={styles.notificationList}
-                showsVerticalScrollIndicator={false}
-              />
-            ) : (
-              <View style={styles.noNotificationsContainer}>
-                <MaterialIcons
-                  name={
-                    notificationsError ? "error-outline" : "notifications-none"
-                  }
-                  size={32}
-                  color={notificationsError ? "#f44336" : "#ccc"}
-                />
-                <Text style={styles.noNotificationsText}>
-                  {notificationsLoading
-                    ? "Loading..."
-                    : notificationsError
-                      ? "Unable to load notifications"
-                      : "No notifications"}
-                </Text>
-                {notificationsError && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      console.log("🔔 Header - Manual retry requested by user");
-                      setNotificationErrorCount(0); // Reset error count on manual retry
-                      // Note: RTK Query will automatically retry, real-time updates handled by UniversalNotificationSystem
-                    }}
-                    style={styles.retryButton}
-                  >
-                    <Text style={styles.retryButtonText}>Try Again</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
       {/* Student Profile Modal (Only for Parents with Students) */}
       {isParent && hasStudents && (
         <StudentProfileModal
@@ -1456,6 +1361,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    backgroundColor: "#ef4444",
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+    zIndex: 10,
+  },
+  notificationBadgeText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontFamily: theme.fonts.bold,
+    textAlign: "center",
   },
   notificationButtonActive: {
     backgroundColor: "#f3e8ea",

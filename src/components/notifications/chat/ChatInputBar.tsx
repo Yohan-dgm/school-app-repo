@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Platform, Keyboard, Alert } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -7,7 +8,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 
 interface ChatInputBarProps {
   onSendMessage: (text: string) => void;
-  onSendAttachment: (type: "image" | "file", file: any) => void;
+  onSendAttachment: (type: "image" | "file" | "video", file: any) => void;
   initialValue?: string;
   isDisabled?: boolean;
   isAdminsOnly?: boolean;
@@ -28,6 +29,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   uploadProgress = 0,
   onTyping
 }) => {
+  const insets = useSafeAreaInsets();
   const [message, setMessage] = React.useState(initialValue);
   const [showAttachments, setShowAttachments] = React.useState(false);
 
@@ -44,10 +46,10 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     }
   };
 
-  const handlePickImage = async () => {
+  const handlePickMedia = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaTypeOptions.All, // Allow both images and videos
         allowsEditing: true,
         quality: 0.8,
       });
@@ -55,6 +57,29 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         
+        // Handle Video
+        if (asset.type === 'video') {
+          // Check file size (max 50MB)
+          // Note: asset.fileSize is available in newer expo-image-picker versions, 
+          // otherwise we fall back to a reasonable assumption and let backend reject if needed
+          if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
+            Alert.alert("File Too Large", "Please select a video smaller than 50MB.");
+            return;
+          }
+
+          const file = {
+            uri: asset.uri,
+            name: (asset.fileName || `video_${Date.now()}.mp4`).replace(/\.[^/.]+$/, "") + ".mp4",
+            type: "video/mp4",
+            size: asset.fileSize,
+          };
+          
+          onSendAttachment("video", file);
+          setShowAttachments(false);
+          return;
+        }
+        
+        // Handle Image
         // Performance: Compress image before upload
         console.log("🖼️ Compressing image before upload...");
         const compressed = await ImageManipulator.manipulateAsync(
@@ -72,8 +97,8 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
         setShowAttachments(false);
       }
     } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("Error", "Failed to pick image");
+      console.error("Error picking media:", error);
+      Alert.alert("Error", "Failed to pick media");
     }
   };
 
@@ -108,7 +133,10 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
 
   if (isDisabled) {
     return (
-      <View className="bg-gray-50 px-6 py-8 pb-28 border-t border-gray-100 items-center justify-center">
+      <View
+        className="bg-gray-50 px-6 py-8 border-t border-gray-100 items-center justify-center"
+        style={{ paddingBottom: insets.bottom + 90 }}
+      >
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="lock" size={14} color="#6b7280" />
           <Text className="text-gray-500 text-xs font-bold ml-2">Chat disabled completely</Text>
@@ -119,7 +147,10 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
 
   if (isAdminsOnly && !isAdmin) {
     return (
-      <View className="bg-gray-50 px-6 py-8 pb-28 border-t border-gray-100 items-center justify-center">
+      <View
+        className="bg-gray-50 px-6 py-8 border-t border-gray-100 items-center justify-center"
+        style={{ paddingBottom: insets.bottom + 90 }}
+      >
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="campaign" size={16} color="#3b82f6" />
           <Text className="text-blue-600 text-xs font-bold ml-2">Admins Only</Text>
@@ -132,16 +163,13 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-    >
+    <View>
       {/* Attachment Menu */}
       {showAttachments && (
         <View className="flex-row justify-around bg-gray-50 border-t border-gray-100 p-4">
           <TouchableOpacity 
             className="items-center"
-            onPress={handlePickImage}
+            onPress={handlePickMedia}
           >
             <View className="w-12 h-12 bg-blue-500 rounded-full items-center justify-center mb-1">
               <MaterialIcons name="image" size={24} color="white" />
@@ -171,8 +199,12 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
         </View>
       )}
 
-      {/* Input Field - Added pb-8 to lift above nav bar */}
-      <View className="relative bg-white border-t border-gray-100 px-2 pt-3 pb-28">
+      {/* Input Field — padding clears the floating bottom nav bar */}
+      {/* NAV_BAR_HEIGHT ≈ 90: pill content (62px) + extra gap (28px), above safe area inset */}
+      <View
+        className="relative bg-white border-t border-gray-100 px-2 pt-3"
+        style={{ paddingBottom: insets.bottom + 90 }}
+      >
         {/* Upload Progress Bar */}
         {isUploading && (
           <View className="absolute top-0 left-0 right-0 h-1 bg-gray-100 overflow-hidden">
@@ -236,7 +268,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
           </View>
         )}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 

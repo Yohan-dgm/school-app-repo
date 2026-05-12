@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler, AppState, AppStateStatus, KeyboardAvoidingView, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup, ChatMessage } from "./ChatTypes";
@@ -10,6 +11,11 @@ import MessageReceiptsModal from "./MessageReceiptsModal";
 import { useSelector, useDispatch } from "react-redux";
 import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, chatApi } from "../../../api/chat-api";
 import RealTimeNotificationService from "../../../services/notifications/RealTimeNotificationService";
+import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { resolveMediaUrl } from "../../../utils/mediaUtils";
+import MediaPreviewModal from "../../common/MediaPreviewModal";
 
 interface ChatViewProps {
   group: ChatGroup;
@@ -18,11 +24,14 @@ interface ChatViewProps {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
+  const insets = useSafeAreaInsets();
   const user = useSelector((state: any) => state.app.user);
   const currentUserId = user?.id;
   
   const [page, setPage] = React.useState(1);
   const pageRef = React.useRef(1);
+  const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
+  const token = useSelector((state: any) => state.app.token);
   
   // Keep ref in sync with state
   React.useEffect(() => {
@@ -65,6 +74,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   );
   
   const members = React.useMemo(() => membersData?.data.members || [], [membersData]);
+  const totalMembersCount = membersData?.data?.pagination?.total || group.members_count || members.length || 0;
 
   const messages = React.useMemo(() => messagesData?.data.messages || [], [messagesData]);
   const hasMore = messagesData?.data.pagination.has_more || false;
@@ -550,7 +560,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     }
   };
 
-  const handleSendAttachment = async (type: "image" | "file", file?: any) => {
+  const handleSendAttachment = async (type: "image" | "file" | "video", file?: any) => {
     if (!file) return;
 
     try {
@@ -633,11 +643,43 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     }
   };
 
+  const handleDownloadFile = async () => {
+    if (!selectedMessage) return;
+    
+    const mediaUrl = resolveMediaUrl(selectedMessage.attachment_url || selectedMessage.content);
+    const filename = selectedMessage.metadata?.original_filename || (selectedMessage.type === 'image' ? 'image.jpg' : 'document.pdf');
+    
+    try {
+      const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const localUri = `${FileSystem.documentDirectory}${safeName}`;
+      
+      const headers: Record<string, string> | undefined = token ? { Authorization: `Bearer ${token}` } : undefined;
+      
+      const downloadResumable = FileSystem.createDownloadResumable(
+        mediaUrl,
+        localUri,
+        { headers }
+      );
+
+      Alert.alert("Downloading", "Please wait while the file is downloading...");
+      
+      const result = await downloadResumable.downloadAsync();
+      if (!result?.uri) throw new Error('Download failed');
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(result.uri);
+      } else {
+        Alert.alert("Error", "Sharing is not available on this device.");
+      }
+    } catch (error) {
+      console.error("File download failed:", error);
+      Alert.alert("Error", "Failed to download file.");
+    }
+  };
+
   return (
-    <KeyboardAvoidingView 
-      className="flex-1 bg-white"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={{ flex: 1, backgroundColor: 'white' }}>
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
         <TouchableOpacity 
@@ -678,7 +720,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             </View>
             {group.type === 'group' && (
               <Text className="text-xs text-gray-500">
-                {members.length || group.members_count || 0} members
+                {totalMembersCount} members
               </Text>
             )}
           </View>
@@ -711,7 +753,20 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           <MaterialIcons name="info-outline" size={24} color="#6b7280" />
         </TouchableOpacity>
       </View>
- 
+
+      {/*
+        ── Keyboard-aware zone ────────────────────────────────────────────────
+        Header is ABOVE this KAV so it never moves when keyboard opens.
+        With softwareKeyboardLayoutMode="pan" (app.json), the OS does NOT
+        resize/pan the root window — we handle keyboard offset here manually.
+        behavior="padding" works on both iOS and Android in "pan" mode.
+      */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior="padding"
+        keyboardVerticalOffset={0}
+      >
+
       {/* Message List */}
       <View className="flex-1 bg-[#EEF2F6]">
         <FlatList
@@ -796,7 +851,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
                 <TouchableOpacity 
                   className="flex-row items-center py-4 border-b border-gray-50 active:bg-gray-50 rounded-xl px-2"
                   onPress={() => {
-                    if (selectedMessage?.content) Linking.openURL(selectedMessage.content);
+                    setIsPreviewVisible(true);
                     setShowActionMenu(false);
                   }}
                 >
@@ -809,7 +864,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
                 <TouchableOpacity 
                   className="flex-row items-center py-4 border-b border-gray-50 active:bg-gray-50 rounded-xl px-2"
                   onPress={() => {
-                    Alert.alert("Downloading", "The file is being saved to your device...");
+                    handleDownloadFile();
                     setShowActionMenu(false);
                   }}
                 >
@@ -823,10 +878,12 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             {selectedMessage?.type === 'text' && (
               <TouchableOpacity 
                 className="flex-row items-center py-4 border-b border-gray-50 active:bg-gray-50 rounded-xl px-2"
-                onPress={() => {
-                  // In real app use Clipboard.setString(selectedMessage.content);
-                  Alert.alert("Copied", "Message copied to clipboard");
+                onPress={async () => {
+                  if (selectedMessage?.content) {
+                    await Clipboard.setStringAsync(selectedMessage.content);
+                  }
                   setShowActionMenu(false);
+                  Alert.alert("Copied", "Message copied to clipboard");
                 }}
               >
                 <MaterialIcons name="content-copy" size={22} color="#4b5563" />
@@ -936,6 +993,22 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         message={selectedMessage}
       />
 
+      <MediaPreviewModal
+        visible={isPreviewVisible}
+        onClose={() => setIsPreviewVisible(false)}
+        mediaUrl={
+          selectedMessage?.type === 'image' || selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
+            ? resolveMediaUrl(selectedMessage?.attachment_url || selectedMessage?.content)
+            : resolveMediaUrl(selectedMessage?.attachment_url)
+        }
+        mediaType={
+          selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
+            ? 'video'
+            : selectedMessage?.type as 'image' | 'file'
+        }
+        filename={selectedMessage?.metadata?.original_filename}
+      />
+
       {/* Full Screen Upload Progress Overlay */}
       {isUploading && (
         <View className="absolute inset-0 bg-black/40 items-center justify-center z-50">
@@ -972,7 +1045,8 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           </View>
         </View>
       )}
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 

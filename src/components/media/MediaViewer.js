@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Platform,
   Alert,
+  Linking,
 } from "react-native";
 import { Video, Audio } from "expo-av";
 import { WebView } from "react-native-webview";
@@ -18,6 +19,7 @@ import Icon from "@expo/vector-icons/MaterialIcons";
 import { useSelector } from "react-redux";
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 import { theme } from "../../styles/theme";
 import ImageWithSkeleton from "../ui/ImageWithSkeleton";
 
@@ -122,45 +124,91 @@ const MediaViewer = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes" />
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
           <style>
-            body {
-              margin: 0;
-              padding: 0;
-              background: #f5f5f5;
-              height: 100vh;
-              overflow: hidden;
+            body { 
+              margin: 0; 
+              padding: 0; 
+              background-color: #f5f5f5; 
+              display: flex; 
+              flex-direction: column; 
+              align-items: center; 
             }
-            .pdf-container {
-              width: 100%;
-              height: 100vh;
-              display: flex;
-              justify-content: center;
-              align-items: center;
+            canvas { 
+              max-width: 100%; 
+              margin-bottom: 10px; 
+              box-shadow: 0 2px 5px rgba(0,0,0,0.2); 
             }
-            object, iframe {
-              width: 100%;
-              height: 100%;
-              border: none;
+            #pdf-container { 
+              width: 100%; 
+              display: flex; 
+              flex-direction: column; 
+              align-items: center; 
+              padding-top: 10px; 
+              padding-bottom: 20px;
             }
-            .error-message {
-              text-align: center;
-              padding: 20px;
-              color: #666;
+            .loading {
               font-family: Arial, sans-serif;
+              color: #666;
+              padding: 20px;
             }
           </style>
         </head>
         <body>
-          <div class="pdf-container">
-            <object data="data:application/pdf;base64,${base64Data}" type="application/pdf">
-              <iframe src="data:application/pdf;base64,${base64Data}">
-                <div class="error-message">
-                  <p>PDF cannot be displayed</p>
-                </div>
-              </iframe>
-            </object>
+          <div id="pdf-container">
+            <div class="loading">Rendering Document...</div>
           </div>
+          <script>
+            // Set worker URL
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+            
+            try {
+              // Decode base64 to Uint8Array
+              var pdfData = atob('${base64Data}');
+              var uint8Array = new Uint8Array(pdfData.length);
+              for (var i = 0; i < pdfData.length; i++) {
+                uint8Array[i] = pdfData.charCodeAt(i);
+              }
+              
+              // Load PDF
+              var loadingTask = pdfjsLib.getDocument({data: uint8Array});
+              loadingTask.promise.then(function(pdf) {
+                var container = document.getElementById('pdf-container');
+                container.innerHTML = ''; // clear loading text
+                
+                // Render all pages
+                for (var pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                  pdf.getPage(pageNum).then(function(page) {
+                    var scale = 1.5; // Scale for good resolution on mobile
+                    var viewport = page.getViewport({scale: scale});
+                    
+                    // Create canvas
+                    var canvas = document.createElement('canvas');
+                    var context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    // Add to container
+                    container.appendChild(canvas);
+                    
+                    // Render
+                    var renderContext = {
+                      canvasContext: context,
+                      viewport: viewport
+                    };
+                    page.render(renderContext);
+                  });
+                }
+              }).catch(function(reason) {
+                console.error(reason);
+                document.getElementById('pdf-container').innerHTML = '<div class="loading">Error loading PDF: ' + reason.message + '</div>';
+              });
+            } catch (e) {
+              console.error(e);
+              document.getElementById('pdf-container').innerHTML = '<div class="loading">Error initializing PDF: ' + e.message + '</div>';
+            }
+          </script>
         </body>
       </html>
     `;
@@ -566,6 +614,54 @@ const MediaViewer = ({
     }
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      const pdfUri = typeof selectedMedia?.uri === "string" ? selectedMedia.uri : selectedMedia?.uri?.uri;
+      if (!pdfUri) {
+        Alert.alert("Error", "Could not find PDF to download.");
+        return;
+      }
+      
+      // Extract filename from the URL or fallback
+      let filename = "document.pdf";
+      const match = pdfUri.match(/[?&]filename=([^&]+)/);
+      if (match && match[1]) {
+        filename = decodeURIComponent(match[1]);
+      } else {
+        filename = pdfUri.split('/').pop().split('?')[0] || filename;
+        if (!filename.toLowerCase().endsWith('.pdf')) {
+          filename += '.pdf';
+        }
+      }
+      
+      filename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const fileUri = FileSystem.documentDirectory + filename;
+      
+      Alert.alert("Downloading", "Please wait while the PDF is downloading...");
+      
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const downloadRes = await FileSystem.downloadAsync(pdfUri, fileUri, { headers });
+      
+      if (downloadRes.status !== 200) {
+        throw new Error("Failed to download PDF from server.");
+      }
+      
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(downloadRes.uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Save or share PDF',
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
+        Alert.alert("Error", "Sharing is not available on this device.");
+      }
+    } catch (error) {
+      console.log("Download PDF error:", error);
+      Alert.alert("Error", "Failed to download PDF.");
+    }
+  };
+
   // Image Modal Component
   const renderImageModal = () => (
     <Modal
@@ -770,12 +866,20 @@ const MediaViewer = ({
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setPdfModalVisible(false)}
-            >
-              <Icon name="close" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            <View style={styles.modalHeaderActions}>
+              <TouchableOpacity
+                style={styles.headerActionButton}
+                onPress={handleDownloadPdf}
+              >
+                <Icon name="file-download" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerActionButton}
+                onPress={() => setPdfModalVisible(false)}
+              >
+                <Icon name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.pdfContainer}>
               {/* PDF Content */}
@@ -795,12 +899,19 @@ const MediaViewer = ({
                       <Text style={styles.retryButtonText}>Try Again</Text>
                     </TouchableOpacity>
                   </View>
-                ) : pdfLoadingState === "loading" ? (
+                ) : !pdfContent ? (
                   <View style={styles.pdfLoadingContainer}>
                     <Icon name="picture-as-pdf" size={48} color="#FF5722" />
-                    <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
+                    <Text style={styles.pdfLoadingText}>Preparing PDF...</Text>
                   </View>
-                ) : pdfContent ? (
+                ) : (
+                  <View style={{ flex: 1 }}>
+                    {pdfLoadingState === "loading" && (
+                      <View style={[StyleSheet.absoluteFill, styles.pdfLoadingContainer, { zIndex: 10, backgroundColor: '#f5f5f5' }]}>
+                        <Icon name="picture-as-pdf" size={48} color="#FF5722" />
+                        <Text style={styles.pdfLoadingText}>Loading Viewer...</Text>
+                      </View>
+                    )}
                   <WebView
                     source={{
                       ...(currentPdfMethod === PDF_RENDER_METHODS.DIRECT_URL
@@ -835,27 +946,10 @@ const MediaViewer = ({
                       setPdfLoadingState("loading");
                     }}
                     onLoadEnd={() => {
-                      // Check if WebView actually loaded content
-                      setTimeout(() => {
-                        if (pdfLoadingState === "loading") {
-                          console.log(
-                            "⚠️ PDF may not have loaded properly, trying next method",
-                          );
-                          tryNextPdfMethod();
-                        }
-                      }, 5000);
+                      // Check if WebView actually loaded content using a ref or just rely on onError
+                      // Removing the buggy setTimeout closure
                     }}
                   />
-                ) : (
-                  <View style={styles.errorContainer}>
-                    <Icon name="error" size={64} color="#666" />
-                    <Text style={styles.errorText}>Unable to load PDF</Text>
-                    <TouchableOpacity
-                      style={styles.retryButton}
-                      onPress={() => initializePdfLoad(selectedMedia?.uri)}
-                    >
-                      <Text style={styles.retryButtonText}>Retry</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
               </View>

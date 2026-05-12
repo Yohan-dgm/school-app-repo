@@ -5979,6 +5979,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-clipboard@npm:~7.1.5":
+  version: 7.1.5
+  resolution: "expo-clipboard@npm:7.1.5"
+  peerDependencies:
+    expo: "*"
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/44288d70ab84d687c63261eca294f2decc9eb18172d3dadbdbbfd5aa7d814acfb83c9e9e54e0399ea3052ef90a1312564bd79288a411429a2aeb830fffb5f998
+  languageName: node
+  linkType: hard
+
 "expo-constants@npm:~17.1.7":
   version: 17.1.7
   resolution: "expo-constants@npm:17.1.7"
@@ -6261,6 +6272,15 @@ __metadata:
     expo: "*"
     react-native: "*"
   checksum: 10c0/b3f49a88e3c85b55504a30a7a337bb044aaf2f923afda41d3d2a8944751b6964208fe17c095a196a9a7172863a6afc9f68dcf23ff4a3f9e6b1c0b824f0925697
+  languageName: node
+  linkType: hard
+
+"expo-sharing@npm:~13.1.5":
+  version: 13.1.5
+  resolution: "expo-sharing@npm:13.1.5"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/abd35fd0be993a5cf4fcd3010b3e3ab8dca35284c0d4a0a1184721b614673715c65a11d3104b779bb42633b66129c19bd049f5de387ba0c6bcf5efd14653af11
   languageName: node
   linkType: hard
 
@@ -11269,6 +11289,7 @@ __metadata:
     expo-audio: "npm:^0.4.8"
     expo-av: "npm:^16.0.7"
     expo-blur: "npm:^14.1.5"
+    expo-clipboard: "npm:~7.1.5"
     expo-constants: "npm:~17.1.7"
     expo-device: "npm:~7.1.4"
     expo-document-picker: "npm:^13.1.6"
@@ -11285,6 +11306,7 @@ __metadata:
     expo-router: "npm:~5.1.3"
     expo-screen-capture: "npm:^7.1.5"
     expo-screen-orientation: "npm:^8.1.7"
+    expo-sharing: "npm:~13.1.5"
     expo-splash-screen: "npm:~0.30.10"
     expo-status-bar: "npm:~2.2.3"
     expo-video: "npm:^2.2.2"

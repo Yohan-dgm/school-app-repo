@@ -59,16 +59,29 @@ const ChatListView: React.FC<ChatListViewProps> = ({
       return matchesSearch;
     })
     .sort((a, b) => {
-      // Sort by pinned status first (pinned might be in metadata or added locally)
+      // Pinned groups always appear at the top
       const aPinned = a.is_pinned || false;
       const bPinned = b.is_pinned || false;
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
-      
-      // Then by timestamp (use last message timestamp OR created_at)
-      const aTime = a.last_message ? new Date(a.last_message.timestamp).getTime() : new Date(a.created_at || 0).getTime();
-      const bTime = b.last_message ? new Date(b.last_message.timestamp).getTime() : new Date(b.created_at || 0).getTime();
-      return bTime - aTime;
+
+      // Groups WITH messages come before groups with NO messages
+      const aHasMsg = !!a.last_message;
+      const bHasMsg = !!b.last_message;
+      if (aHasMsg && !bHasMsg) return -1;
+      if (!aHasMsg && bHasMsg) return 1;
+
+      // Both have messages → sort newest last_message first (like WhatsApp)
+      if (aHasMsg && bHasMsg) {
+        const aTime = new Date(a.last_message!.timestamp).getTime() || 0;
+        const bTime = new Date(b.last_message!.timestamp).getTime() || 0;
+        return bTime - aTime;
+      }
+
+      // Both have NO messages → sort by created_at so order is stable
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bCreated - aCreated;
     });
 
   const FilterChip = ({ label, value }: { label: string, value: typeof activeFilter }) => (
