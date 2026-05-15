@@ -376,11 +376,28 @@ const ProfileSection = ({ onClose }) => {
 
       const formData = new FormData();
 
+      // Derive mime type: Android sometimes returns null mimeType from the photo picker.
+      // Fall back to guessing from the URI extension, then default to image/jpeg.
+      const uriExtension = selectedImage.uri
+        ? selectedImage.uri.split(".").pop()?.toLowerCase()?.split("?")[0]
+        : null;
+      const mimeMap = { png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic", heif: "image/heif" };
+      const resolvedMime =
+        selectedImage.mimeType ||
+        (uriExtension && mimeMap[uriExtension]) ||
+        "image/jpeg";
+
+      // Derive extension from mime type for a reliable filename
+      const extMap = { "image/png": "png", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" };
+      const resolvedExt = extMap[resolvedMime] || "jpg";
+      const resolvedName =
+        selectedImage.fileName || `profile_${Date.now()}.${resolvedExt}`;
+
       // Add the image file
       formData.append("profile_image", {
         uri: selectedImage.uri,
-        type: selectedImage.mimeType || "image/jpeg",
-        name: selectedImage.fileName || `profile_${Date.now()}.jpg`,
+        type: resolvedMime,
+        name: resolvedName,
       });
 
       // Add user ID to the form data
@@ -389,8 +406,10 @@ const ProfileSection = ({ onClose }) => {
       console.log("Uploading profile photo for user:", userId);
       console.log("Image details:", {
         uri: selectedImage.uri,
-        type: selectedImage.mimeType || "image/jpeg",
-        name: selectedImage.fileName || `profile_${Date.now()}.jpg`,
+        type: resolvedMime,
+        name: resolvedName,
+        originalMimeType: selectedImage.mimeType,
+        uriExtension,
       });
 
       const uploadResponse = await uploadProfilePhoto(formData).unwrap();

@@ -1,0 +1,3 @@
+eas build --platform ios --profile production --clear-cache
+eas build --platform android --profile production     
+eas build --platform android --profile preview   

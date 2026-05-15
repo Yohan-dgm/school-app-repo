@@ -62,6 +62,7 @@ export const apiServer1 = createApi({
       const isFormDataRequest =
         api.endpoint === "uploadMedia" ||
         api.endpoint === "pushUploadChunk" ||
+        api.endpoint === "uploadProfilePhoto" || // Profile photo upload (Android FormData instanceof check is unreliable)
         (api.arg instanceof FormData) ||
         headers.get("Content-Type") === "multipart/form-data";
 

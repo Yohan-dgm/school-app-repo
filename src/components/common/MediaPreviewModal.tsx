@@ -165,9 +165,19 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
   const player = useVideoPlayer(mediaUrl || '', (player) => {
     if (isVideo) {
       player.loop = true;
-      player.play();
+      // Do NOT auto-play on mount — only play when modal is explicitly opened
     }
   });
+
+  // Play only when the modal is actually visible; pause when it closes
+  useEffect(() => {
+    if (!isVideo) return;
+    if (visible) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [visible, isVideo]);
 
   const convertPdfToBase64 = async (pdfUrl: string) => {
     try {

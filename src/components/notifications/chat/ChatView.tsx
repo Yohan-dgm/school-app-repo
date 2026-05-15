@@ -16,6 +16,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { resolveMediaUrl } from "../../../utils/mediaUtils";
 import MediaPreviewModal from "../../common/MediaPreviewModal";
+import { format, isSameDay } from "date-fns";
 
 interface ChatViewProps {
   group: ChatGroup;
@@ -27,6 +28,9 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const insets = useSafeAreaInsets();
   const user = useSelector((state: any) => state.app.user);
   const currentUserId = user?.id;
+
+  // Measured height of the custom header — used as KAV offset on iOS
+  const [headerHeight, setHeaderHeight] = React.useState(0);
   
   const [page, setPage] = React.useState(1);
   const pageRef = React.useRef(1);
@@ -678,10 +682,33 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     }
   };
 
+  // ── Date Separator component ────────────────────────────────────────────
+  const DateSeparator = ({ date }: { date: Date }) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    let label: string;
+    if (isSameDay(date, today)) label = 'Today';
+    else if (isSameDay(date, yesterday)) label = 'Yesterday';
+    else label = format(date, 'EEE, d MMM yyyy');
+
+    return (
+      <View style={{ alignItems: 'center', marginVertical: 8 }}>
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.12)', paddingHorizontal: 12, paddingVertical: 3, borderRadius: 20 }}>
+          <Text style={{ fontSize: 11, color: '#6b7280', fontWeight: '600' }}>{label}</Text>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
+      <View
+        className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100"
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+      >
         <TouchableOpacity 
           onPress={() => {
             if (isUploading) {
@@ -757,14 +784,15 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       {/*
         ── Keyboard-aware zone ────────────────────────────────────────────────
         Header is ABOVE this KAV so it never moves when keyboard opens.
-        With softwareKeyboardLayoutMode="pan" (app.json), the OS does NOT
-        resize/pan the root window — we handle keyboard offset here manually.
-        behavior="padding" works on both iOS and Android in "pan" mode.
+        iOS:     behavior="padding" + keyboardVerticalOffset = measured header height.
+                 This pushes the input bar above the keyboard correctly.
+        Android: softwareKeyboardLayoutMode="pan" (app.json) pans the whole window,
+                 so KAV must be a no-op (behavior=undefined) to avoid double-offset.
       */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
 
       {/* Message List */}
@@ -789,31 +817,39 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             // which appears above the current message.
             const nextChronologicalMessage = messages[index + 1];
             const showSenderName = !nextChronologicalMessage || nextChronologicalMessage.sender_id !== item.sender_id;
-            
+
+            // Show a date separator above (i.e. rendered below in inverted list) when the day changes
+            const currentDate = new Date(item.timestamp);
+            const showDateSeparator = !nextChronologicalMessage ||
+              !isSameDay(currentDate, new Date(nextChronologicalMessage.timestamp));
+
             return (
-              <MessageBubble
-                message={item}
-                isMe={String(item.sender_id) === String(currentUserId)}
-                currentUserId={currentUserId}
-                showSenderName={showSenderName}
-                canViewReceipts={isAdmin}
-                onShowReceipts={(msg) => {
-                  setSelectedMessage(msg);
-                  setShowReceiptsModal(true);
-                }}
-                onLongPress={handleMessageLongPress}
-                onReactionPress={(emoji) => handleToggleReaction(item, emoji)}
-                onDelete={(msg) => {
-                  Alert.alert(
-                    "Delete Message",
-                    "Delete this message?",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "Delete", style: "destructive", onPress: () => handleDeleteMessage(false, msg) }
-                    ]
-                  );
-                }}
-              />
+              <>
+                <MessageBubble
+                  message={item}
+                  isMe={String(item.sender_id) === String(currentUserId)}
+                  currentUserId={currentUserId}
+                  showSenderName={showSenderName}
+                  canViewReceipts={isAdmin}
+                  onShowReceipts={(msg) => {
+                    setSelectedMessage(msg);
+                    setShowReceiptsModal(true);
+                  }}
+                  onLongPress={handleMessageLongPress}
+                  onReactionPress={(emoji) => handleToggleReaction(item, emoji)}
+                  onDelete={(msg) => {
+                    Alert.alert(
+                      "Delete Message",
+                      "Delete this message?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Delete", style: "destructive", onPress: () => handleDeleteMessage(false, msg) }
+                      ]
+                    );
+                  }}
+                />
+                {showDateSeparator && <DateSeparator date={currentDate} />}
+              </>
             );
           }}
           contentContainerStyle={{ paddingVertical: 16 }}

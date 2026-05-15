@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, Image, TouchableOpacity, Linking, ActivityIndicator } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatMessage } from "./ChatTypes";
-import { format } from "date-fns";
+import { format, isSameDay } from "date-fns";
 import { Swipeable } from "react-native-gesture-handler";
 import { resolveMediaUrl } from "../../../utils/mediaUtils";
 import MediaPreviewModal from "../../common/MediaPreviewModal";
@@ -34,6 +34,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const [imageError, setImageError] = React.useState(false);
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
   const timestamp = new Date(message.timestamp);
+
+  // Format timestamp with date context for messages not sent today
+  const formatMessageTime = (date: Date): string => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (isSameDay(date, now)) return format(date, 'HH:mm');
+    if (isSameDay(date, yesterday)) return `Yesterday, ${format(date, 'HH:mm')}`;
+    return format(date, 'd MMM, HH:mm');
+  };
 
   // Splits a string into alternating plain-text and URL segments
   const parseMessageWithLinks = (text: string) => {
@@ -286,7 +296,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               </TouchableOpacity>
             )}
             <Text className={`text-[10px] ${isMe ? "text-gray-600" : "text-gray-400"}`}>
-              {format(timestamp, "HH:mm")}
+              {formatMessageTime(timestamp)}
             </Text>
             {isMe && (
               <MaterialIcons 
