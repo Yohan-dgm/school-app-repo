@@ -19,7 +19,7 @@ const StudentPaymentListItem: React.FC<StudentPaymentListItemProps> = ({
   summary,
   studentInfo,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   );

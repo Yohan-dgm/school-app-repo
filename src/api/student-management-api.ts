@@ -144,6 +144,57 @@ export interface StudentAttachmentRequest {
   student_id: number;
 }
 
+// ===== STUDENT INSIGHTS INTERFACES =====
+
+export interface SubjectTermMark {
+  term: string;
+  mark: number | null;
+  class_avg: number | null;
+  student_avg: number | null;
+  subject_avg: number | null;
+}
+
+export interface SubjectWisePerformance {
+  name: string;
+  marks: SubjectTermMark[];
+  rank: number | null;
+  status: "Up" | "Down" | "Stable";
+}
+
+export interface AttendanceSummaryItem {
+  term: string;
+  present: number;
+  absent: number;
+}
+
+export interface StudentInsightsStudentData {
+  id: number;
+  full_name_with_title: string;
+  admission_number: string;
+  full_name: string;
+  grade_level_class: { id: number; name: string } | null;
+  student_attachment_list: StudentAttachment[];
+}
+
+export interface StudentInsightsData {
+  student_data: StudentInsightsStudentData;
+  student_achievements: any[];
+  student_mark_subject_list: any[];
+  subject_list: string[];
+  term_list: string[];
+  subject_wise_performance: SubjectWisePerformance[];
+  attendance_summary: AttendanceSummaryItem[];
+}
+
+export interface StudentInsightsResponse {
+  status: "successful" | "error";
+  data: StudentInsightsData;
+}
+
+export interface StudentInsightsRequest {
+  student_id: number;
+}
+
 // ===== API ENDPOINTS =====
 
 export const studentManagementApi = apiServer1.injectEndpoints({
@@ -251,7 +302,8 @@ export const studentManagementApi = apiServer1.injectEndpoints({
         }
 
         if (params.grade_level_class_id) {
-          requestBody.search_filter_list.grade_level_class_id = params.grade_level_class_id;
+          requestBody.search_filter_list.grade_level_class_id =
+            params.grade_level_class_id;
         }
 
         console.log("🔗 Get Student List API Request:", {
@@ -268,6 +320,28 @@ export const studentManagementApi = apiServer1.injectEndpoints({
       },
       providesTags: ["StudentList"],
     }),
+
+    getStudentInsights: builder.query<
+      StudentInsightsResponse,
+      StudentInsightsRequest
+    >({
+      query: (params) => {
+        console.log("📊 Get Student Insights API Request:", {
+          url: "api/student-management/student-insights/get-student-insights-list-data",
+          method: "POST",
+          params: { student_id: params.student_id },
+          baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
+        });
+        return {
+          url: "api/student-management/student-insights/get-student-insights-list-data",
+          method: "POST",
+          body: params,
+        };
+      },
+      providesTags: (result, error, arg) => [
+        { type: "StudentInsights", id: arg.student_id },
+      ],
+    }),
   }),
   overrideExisting: false,
 });
@@ -283,6 +357,8 @@ export const {
   useLazyGetStudentAttachmentsByStudentIdQuery,
   useGetStudentListQuery,
   useLazyGetStudentListQuery,
+  useGetStudentInsightsQuery,
+  useLazyGetStudentInsightsQuery,
 } = studentManagementApi;
 
 // ===== UTILITY FUNCTIONS =====

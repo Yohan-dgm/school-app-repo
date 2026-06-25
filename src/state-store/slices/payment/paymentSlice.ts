@@ -5,12 +5,14 @@ import {
   BillSummary,
   PaymentStatus,
 } from "../../../types/payment";
+import { PendingInvoiceStudentData } from "../../../api/pending-invoice-api";
 
 interface PaymentState {
   selectedStudentId: number | null;
   selectedCategory: BillCategory | "all";
   searchQuery: string;
   studentBillsData: { [studentId: string]: StudentBillData };
+  pendingInvoicesData: PendingInvoiceStudentData[];
   loading: boolean;
   error: string | null;
 }
@@ -20,6 +22,7 @@ const initialState: PaymentState = {
   selectedCategory: "all",
   searchQuery: "",
   studentBillsData: {},
+  pendingInvoicesData: [],
   loading: false,
   error: null,
 };
@@ -59,8 +62,15 @@ const paymentSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
     },
+    setPendingInvoicesData: (
+      state,
+      action: PayloadAction<PendingInvoiceStudentData[]>,
+    ) => {
+      state.pendingInvoicesData = action.payload;
+    },
     clearPaymentData: (state) => {
       state.studentBillsData = {};
+      state.pendingInvoicesData = [];
       state.selectedStudentId = null;
       state.error = null;
     },
@@ -72,6 +82,7 @@ export const {
   setSelectedCategory,
   setSearchQuery,
   setStudentBillsData,
+  setPendingInvoicesData,
   setLoading,
   setError,
   clearPaymentData,
@@ -88,6 +99,8 @@ export const selectStudentBillsData = (state: any) =>
   state.payment.studentBillsData;
 export const selectPaymentLoading = (state: any) => state.payment.loading;
 export const selectPaymentError = (state: any) => state.payment.error;
+export const selectPendingInvoicesData = (state: any) =>
+  state.payment.pendingInvoicesData as PendingInvoiceStudentData[];
 
 // Complex selectors
 export const selectAvailableStudents = createSelector(

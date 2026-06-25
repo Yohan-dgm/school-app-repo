@@ -17,6 +17,7 @@ import ExamsDrawer from "../../../../components/common/drawer/ExamsDrawer";
 import ReportCardsDrawer from "../../../../components/common/drawer/ReportCardsDrawer";
 import AllBadgesDrawer from "../../../../components/common/drawer/AllBadgesDrawer";
 import StudentAttendanceDrawer from "../../../../components/student-growth/StudentAttendanceDrawer";
+import StudentAnalyticsDrawer from "../../../../components/common/drawer/StudentAnalyticsDrawer";
 import { useSelector, useDispatch } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../../../styles/theme";
@@ -37,7 +38,7 @@ import {
 
 // House logo and color mapping
 const getHouseInfo = (houseName) => {
-  if (!houseName || houseName === "Unknown House") {
+  if (!houseName || houseName === "Unknown Housesssss") {
     return { isValid: false, color: "#999999", logo: null };
   }
 
@@ -81,6 +82,7 @@ const StudentProfileMain = () => {
   const [selectedBadge, setSelectedBadge] = useState(null);
   const [showAllBadgesDrawer, setShowAllBadgesDrawer] = useState(false);
   const [attendanceDrawerVisible, setAttendanceDrawerVisible] = useState(false);
+  const [showAnalyticsDrawer, setShowAnalyticsDrawer] = useState(false);
   const [detailedStudentData, setDetailedStudentData] = useState(null);
   const [isLoadingDetailedData, setIsLoadingDetailedData] = useState(false);
   const rotationValue = new Animated.Value(0);
@@ -112,6 +114,11 @@ const StudentProfileMain = () => {
   const closeAttendanceDrawer = () => {
     console.log("🎯 Closing Student Attendance drawer");
     setAttendanceDrawerVisible(false);
+  };
+
+  const handleAnalyticsPress = () => {
+    console.log("📊 Opening Student Analytics drawer");
+    setShowAnalyticsDrawer(true);
   };
 
   // Enable LayoutAnimation on Android
@@ -213,13 +220,13 @@ const StudentProfileMain = () => {
     { skip: !selectedStudent?.id },
   );
 
-  // Get student data from backend API response
-  const backendStudentList = sessionData?.data?.student_list || [];
-
   // Transform backend student data to match UI requirements
-  const students = backendStudentList.map((student) => {
-    return transformStudentWithProfilePicture(student, sessionData);
-  });
+  const students = React.useMemo(() => {
+    const backendStudentList = sessionData?.data?.student_list || [];
+    return backendStudentList.map((student) => {
+      return transformStudentWithProfilePicture(student, sessionData);
+    });
+  }, [sessionData]);
 
   // Transform achievements to badges for UI display
   const studentBadges =
@@ -241,7 +248,7 @@ const StudentProfileMain = () => {
       );
       dispatch(setSelectedStudent(students[0]));
     }
-  }, [students.length, selectedStudent, dispatch]);
+  }, [students, selectedStudent, dispatch]);
 
   // Reset detailed data when student changes
   useEffect(() => {
@@ -781,6 +788,30 @@ const StudentProfileMain = () => {
           </TouchableOpacity>
         </View>
 
+        {/* Student Analytics Section */}
+        <View style={styles.analyticsSection}>
+          <Text style={styles.analyticsSectionTitle}>Student Analytics</Text>
+          <TouchableOpacity
+            style={styles.analyticsCard}
+            onPress={handleAnalyticsPress}
+            activeOpacity={0.85}
+          >
+            <View style={styles.analyticsIconWrapper}>
+              <MaterialIcons name="analytics" size={30} color="#FFFFFF" />
+            </View>
+            <View style={styles.analyticsCardContent}>
+              <Text style={styles.analyticsCardTitle}>
+                Growth & Development Dashboard
+              </Text>
+              <Text style={styles.analyticsCardSubtitle}>
+                Track learning curves, behavior reports, and intelligence
+                ratings.
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#920734" />
+          </TouchableOpacity>
+        </View>
+
         {/* Modern Stats Cards */}
         {/* <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -905,6 +936,20 @@ const StudentProfileMain = () => {
         studentId={selectedStudent?.id || 0}
         studentName={selectedStudent?.student_calling_name}
       />
+
+      {/* Student Analytics Drawer */}
+      <Modal
+        visible={showAnalyticsDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowAnalyticsDrawer(false)}
+      >
+        <StudentAnalyticsDrawer
+          onClose={() => setShowAnalyticsDrawer(false)}
+          studentId={selectedStudent?.id || 0}
+          studentName={selectedStudent?.student_calling_name}
+        />
+      </Modal>
     </View>
   );
 };
@@ -1570,6 +1615,55 @@ const styles = StyleSheet.create({
     minHeight: 32,
     justifyContent: "center",
     alignItems: "center",
+  },
+  // Student Analytics Styles
+  analyticsSection: {
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+  },
+  analyticsSectionTitle: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 18,
+    color: "#000000",
+    marginBottom: theme.spacing.md,
+  },
+  analyticsCard: {
+    flexDirection: "row",
+    backgroundColor: "#FDF2F4",
+    borderWidth: 1,
+    borderColor: "#F3D5DC",
+    borderRadius: 16,
+    padding: theme.spacing.lg,
+    alignItems: "center",
+    shadowColor: "#920734",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  analyticsIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#920734",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: theme.spacing.md,
+  },
+  analyticsCardContent: {
+    flex: 1,
+  },
+  analyticsCardTitle: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 16,
+    color: "#920734",
+    marginBottom: 4,
+  },
+  analyticsCardSubtitle: {
+    fontFamily: theme.fonts.regular,
+    fontSize: 13,
+    color: "#4B5563",
+    lineHeight: 18,
   },
 });
 

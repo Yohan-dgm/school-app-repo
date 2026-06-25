@@ -39,6 +39,7 @@ export const apiServer1 = createApi({
     "ChatThreads",
     "ChatMessages",
     "ChatMembers",
+    "StudentInsights",
   ],
   baseQuery: fetchBaseQuery({
     baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
@@ -63,7 +64,7 @@ export const apiServer1 = createApi({
         api.endpoint === "uploadMedia" ||
         api.endpoint === "pushUploadChunk" ||
         api.endpoint === "uploadProfilePhoto" || // Profile photo upload (Android FormData instanceof check is unreliable)
-        (api.arg instanceof FormData) ||
+        api.arg instanceof FormData ||
         headers.get("Content-Type") === "multipart/form-data";
 
       console.log("📋 Request Type Analysis:", {
@@ -82,7 +83,9 @@ export const apiServer1 = createApi({
       if (isFormDataRequest) {
         // Delete Content-Type to let fetch set it automatically
         headers.delete("Content-Type");
-        console.log("🔧 FormData request detected - Content-Type header removed to allow auto-generation");
+        console.log(
+          "🔧 FormData request detected - Content-Type header removed to allow auto-generation",
+        );
         console.log("📎 This fixes 'Network request failed' error on Android");
       } else {
         // For non-FormData requests, use application/json
