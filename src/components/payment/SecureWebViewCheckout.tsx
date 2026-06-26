@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -57,11 +57,18 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
   const [errorMessage, setErrorMessage] = useState("");
   const [is3DSActive, setIs3DSActive] = useState(false);
 
+  // Generate a random message token per session — used to authenticate postMessage from WebView
+  const messageToken = useMemo(
+    () => Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join(""),
+    [],
+  );
+
   // Generate HTML once — memoised implicitly by closure
   const injectedHtml = generateSecureCheckoutHtml(
     captureContext,
     clientLibraryUrl,
     clientLibraryIntegrity,
+    messageToken,
   );
 
   const formatAmount = (val: number) =>
@@ -81,6 +88,12 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
       }
 
       console.log("🔐 SecureWebViewCheckout —", payload.type);
+
+      // Verify message token — drop unverified messages
+      if (payload._token !== messageToken) {
+        console.warn("🚫 SecureWebViewCheckout — invalid message token, dropping");
+        return;
+      }
 
       switch (payload.type) {
         case "SDK_MOUNTED":
@@ -111,7 +124,8 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
           break;
 
         case "MOUNT_PAYMENT_UNAVAILABLE":
-          setErrorMessage(ERROR_LABELS.MOUNT_PAYMENT_UNAVAILABLE);
+          console.error("❌ SDK Mount Failed:", payload.message);
+          setErrorMessage(payload.message || ERROR_LABELS.MOUNT_PAYMENT_UNAVAILABLE);
           setWebViewState("error_mount");
           break;
 

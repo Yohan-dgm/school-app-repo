@@ -37,6 +37,7 @@ export function generateSecureCheckoutHtml(
   captureContext: string,
   clientLibraryUrl: string,
   clientLibraryIntegrity: string,
+  messageToken: string,
 ): string {
   // Sanitize — never interpolate raw user content here
   const safeContext = captureContext.replace(/[<>"'`]/g, "");
@@ -48,18 +49,21 @@ export function generateSecureCheckoutHtml(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 
-  <!-- CSP: allow scripts and connections ONLY from cybersource.com domains -->
+  <!-- CSP: allow scripts, connections, images, fonts from cybersource.com domains -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
-             script-src 'self' 'unsafe-inline' https://*.cybersource.com;
+             script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.cybersource.com;
              frame-src https://*.cybersource.com https://*.visa.com https://*.mastercard.com;
              connect-src 'self' https://*.cybersource.com;
-             style-src 'self' 'unsafe-inline';" />
+             style-src 'self' 'unsafe-inline' https://*.cybersource.com;
+             img-src 'self' data: https://*.cybersource.com https://*.visa.com https://*.mastercard.com;
+             font-src 'self' https://*.cybersource.com;" />
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: #f8f9fa; font-family: -apple-system, sans-serif; }
-    #unified-checkout-container { width: 100%; min-height: 420px; padding: 16px; }
+    #payment-buttons { width: 100%; padding: 16px; }
+    #payment-form { width: 100%; min-height: 350px; padding: 16px; }
     #status-message { text-align: center; padding: 40px 20px; color: #666; font-size: 15px; }
     .spinner {
       width: 36px; height: 36px; border: 3px solid #e0e0e0;
@@ -76,12 +80,13 @@ export function generateSecureCheckoutHtml(
   <p>Loading secure payment form...</p>
 </div>
 
-<div id="unified-checkout-container" style="display:none;"></div>
+<div id="payment-buttons" style="display:none;"></div>
+<div id="payment-form" style="display:none;"></div>
 
-<!-- CyberSource SDK — integrity is only set if server provides it -->
+<!-- CyberSource UC SDK — integrity is only set if server provides it -->
 <script
   src="${clientLibraryUrl}"
-  ${clientLibraryIntegrity ? `integrity="${clientLibraryIntegrity}" crossorigin="anonymous"` : ''}
+  ${clientLibraryIntegrity ? 'integrity="' + clientLibraryIntegrity + '" crossorigin="anonymous"' : ''}
 ></script>
 
 <script>
@@ -90,6 +95,7 @@ export function generateSecureCheckoutHtml(
 
   function postToNative(payload) {
     try {
+      payload._token = '${messageToken}';
       window.ReactNativeWebView.postMessage(JSON.stringify(payload));
     } catch(e) {}
   }
@@ -99,33 +105,49 @@ export function generateSecureCheckoutHtml(
     if (el) el.innerHTML = '<p>' + msg + '</p>';
   }
 
-  // 15-second mount timeout guard (per gateway.md spec)
+  // 20-second mount timeout guard
   mountTimeoutId = setTimeout(function() {
     if (!isPaymentActive) {
       postToNative({ type: 'MOUNT_PAYMENT_UNAVAILABLE', message: 'Payment form took too long to load.' });
     }
-  }, 15000);
+  }, 20000);
 
-  function initCheckout() {
+  async function initCheckout() {
     try {
-      var microform = Flex('${safeContext}');
-      var checkout = microform.createUnifiedCheckout();
+      // Check if SDK loaded
+      if (typeof VAS === 'undefined') {
+        throw new Error('CyberSource SDK failed to load. VAS is undefined.');
+      }
 
-      checkout.mount('#unified-checkout-container');
+      // Initialize Unified Checkout with the capture context JWT
+      var client = await VAS.UnifiedCheckout('${safeContext}');
+
+      // Mount to DOM elements
+      var result = await client.mount({
+        paymentSelection: '#payment-buttons',
+        paymentScreen: '#payment-form'
+      });
+
       isPaymentActive = true;
       clearTimeout(mountTimeoutId);
 
       document.getElementById('status-message').style.display = 'none';
-      document.getElementById('unified-checkout-container').style.display = 'block';
+      document.getElementById('payment-buttons').style.display = 'block';
+      document.getElementById('payment-form').style.display = 'block';
 
       postToNative({ type: 'SDK_MOUNTED' });
 
-      checkout.on('success', function(transientToken) {
+      // Listen for completion events on the client
+      client.on('payments_complete', function(data) {
         isPaymentActive = false;
-        postToNative({ type: 'PAYMENT_SUCCESS', transientToken: transientToken });
+        if (data && data.token) {
+          postToNative({ type: 'PAYMENT_SUCCESS', transientToken: data.token });
+        } else {
+          postToNative({ type: 'PAYMENT_FAILED', code: 'NO_TOKEN', message: 'No transient token received' });
+        }
       });
 
-      checkout.on('error', function(error) {
+      client.on('error', function(error) {
         isPaymentActive = false;
         var code = (error && error.code) ? error.code : 'PAYMENT_FAILED';
 
@@ -139,18 +161,13 @@ export function generateSecureCheckoutHtml(
         }
       });
 
-      checkout.on('cancel', function() {
-        isPaymentActive = false;
-        postToNative({ type: 'PAYMENT_CANCELLED' });
-      });
-
     } catch(e) {
       clearTimeout(mountTimeoutId);
-      postToNative({ type: 'MOUNT_PAYMENT_UNAVAILABLE', message: e.message });
+      postToNative({ type: 'MOUNT_PAYMENT_UNAVAILABLE', message: 'SDK Error: ' + (e.message || String(e)) });
     }
   }
 
-  // Wait for DOM + SDK to be ready
+  // Wait for DOM to be ready then init
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initCheckout);
   } else {

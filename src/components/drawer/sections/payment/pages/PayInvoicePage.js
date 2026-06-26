@@ -151,7 +151,16 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
       setStep("success");
     } catch (err) {
       console.error("❌ Payment completion failed:", err);
-      setPaymentError({ errorCode: "PAYMENT_FAILED", message: "Payment completion failed." });
+
+      // Distinguish bank decline from other errors
+      const errorCode = err?.data?.error === "PAYMENT_DECLINED"
+        ? "PAYMENT_DECLINED"
+        : "PAYMENT_FAILED";
+      const message = err?.data?.error === "PAYMENT_DECLINED"
+        ? err?.data?.message || "Your payment was declined by the bank."
+        : "Payment completion failed. Please try again.";
+
+      setPaymentError({ errorCode, message });
       setStep("failed");
     }
   }, [sessionData, completePayment]);
