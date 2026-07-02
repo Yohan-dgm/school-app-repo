@@ -96,6 +96,10 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
       }
 
       switch (payload.type) {
+        case "DIAGNOSTIC":
+          console.log("🔍 WebView Diagnostic:", JSON.stringify(payload, null, 2));
+          break;
+
         case "SDK_MOUNTED":
           setWebViewState("ready");
           break;
@@ -240,7 +244,7 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
       <View style={styles.webViewContainer}>
         <WebView
           ref={webViewRef}
-          source={{ html: injectedHtml, baseUrl: "https://secureacceptance.cybersource.com" }}
+          source={{ html: injectedHtml, baseUrl: "https://school-app.toyar.lk" }}
           // Security
           mixedContentMode="never"
           javaScriptEnabled={true}
