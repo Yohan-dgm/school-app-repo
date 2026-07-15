@@ -24,19 +24,22 @@ export async function checkNetworkBeforePayment(): Promise<{
 }
 
 /**
- * Builds the secure injected HTML page that hosts the CyberSource Flex Microform v2 SDK.
+ * Builds the secure injected HTML page hosting the CyberSource Unified Checkout SDK.
  *
- * Integration: Flex Microform v2 (/flex/v2/sessions)
- *  - Creates individual secure iframe fields for card number, expiry, CVV
- *  - Uses microform.createToken() to generate a transient token
- *  - All events forwarded to React Native via postMessage bridge
+ * Integration: VAS.UnifiedCheckout() — async Promise-based API
+ *  - Session: POST /uc/v1/sessions → capture context JWT
+ *  - clientLibrary URL extracted from JWT by backend (ctx[0].data.clientLibrary)
+ *  - SDK exposes window.VAS (NOT Flex / UnifiedCheckout / UC)
  *
- * Security features:
- *  - CSP meta tag: blocks all non-CyberSource scripts and connections
- *  - SRI: script tag uses integrity + crossorigin from server response
- *  - 20-second mount timeout guard
+ * Lifecycle:
+ *   VAS.UnifiedCheckout(captureContext) → client
+ *   client.createCheckout()             → checkout
+ *   checkout.mount(containers)          → result JWT  ← Promise resolves on payment
+ *
+ * Security:
+ *  - CSP allows testup.cybersource.com explicitly
+ *  - 60-second timeout (UC widget + 3DS can take time)
  *  - Message token authentication for postMessage bridge
- *  - 3DS redirects: allowed by NOT blocking navigation in onShouldStartLoadWithRequest
  */
 export function generateSecureCheckoutHtml(
   captureContext: string,
@@ -44,16 +47,10 @@ export function generateSecureCheckoutHtml(
   clientLibraryIntegrity: string,
   messageToken: string,
 ): string {
-  // Override broken server URL if the backend hasn't been updated yet
-  if (clientLibraryUrl.includes('microui/bundle/v2/initiate')) {
-    clientLibraryUrl = clientLibraryUrl.replace(
-      'microui/bundle/v2/initiate',
-      'microform/bundle/v2/flex-microform.min.js'
-    );
-  }
-
-  // JSON.stringify safely quotes and escapes the JWT for inline JS — no stripping needed.
-  const safeContext = JSON.stringify(captureContext);
+  const safeContext    = JSON.stringify(captureContext);
+  const contextPreview = JSON.stringify(captureContext.substring(0, 80));
+  const contextLength  = captureContext.length;
+  const isJwt          = (captureContext.split('.').length === 3);
 
   return `
 <!DOCTYPE html>
@@ -62,123 +59,51 @@ export function generateSecureCheckoutHtml(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 
-  <!-- CSP: allow scripts, connections, iframes from cybersource.com domains -->
+  <!--
+    CSP: testup.cybersource.com listed explicitly — wildcard *.cybersource.com
+    may not match it in all Android WebView implementations.
+  -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
-             script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.cybersource.com;
-             frame-src https://*.cybersource.com https://*.visa.com https://*.mastercard.com;
-             connect-src 'self' https://*.cybersource.com;
-             style-src 'self' 'unsafe-inline' https://*.cybersource.com;
-             img-src 'self' data: https://*.cybersource.com https://*.visa.com https://*.mastercard.com;
-             font-src 'self' https://*.cybersource.com;" />
+             script-src  'self' 'unsafe-inline' 'unsafe-eval'
+                         https://*.cybersource.com https://testup.cybersource.com;
+             frame-src   https://*.cybersource.com https://testup.cybersource.com
+                         https://*.visa.com https://*.mastercard.com;
+             connect-src 'self'
+                         https://*.cybersource.com https://testup.cybersource.com;
+             style-src   'self' 'unsafe-inline'
+                         https://*.cybersource.com https://testup.cybersource.com;
+             img-src     'self' data:
+                         https://*.cybersource.com https://testup.cybersource.com
+                         https://*.visa.com https://*.mastercard.com;
+             font-src    'self'
+                         https://*.cybersource.com https://testup.cybersource.com;" />
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: #f5f7fa; font-family: -apple-system, 'Segoe UI', sans-serif; }
-
+    html, body {
+      height: 100%;
+      background: #f5f7fa;
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+    }
     #status-message {
-      text-align: center; padding: 48px 20px; color: #666; font-size: 15px;
+      text-align: center;
+      padding: 48px 20px;
+      color: #666;
+      font-size: 15px;
     }
     .spinner {
-      width: 36px; height: 36px; border: 3px solid #e0e0e0;
-      border-top-color: #1565C0; border-radius: 50%;
-      animation: spin 0.9s linear infinite; margin: 20px auto;
+      width: 36px; height: 36px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #1565C0;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      margin: 20px auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Card Form ────────────────────────────────────────────── */
-    #payment-form {
-      display: none;
-      padding: 20px 16px;
-      max-width: 420px;
-      margin: 0 auto;
-    }
-
-    .field-group {
-      margin-bottom: 18px;
-    }
-    .field-label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: #374151;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 6px;
-    }
-    .field-container {
-      height: 44px;
-      border: 1.5px solid #d1d5db;
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 0 12px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .field-container.focused {
-      border-color: #1565C0;
-      box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.12);
-    }
-    .field-container.invalid {
-      border-color: #dc2626;
-      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-    }
-    .field-container.valid {
-      border-color: #16a34a;
-    }
-
-    .row {
-      display: flex;
-      gap: 12px;
-    }
-    .row .field-group {
-      flex: 1;
-    }
-
-    .field-error {
-      font-size: 12px;
-      color: #dc2626;
-      margin-top: 4px;
-      min-height: 16px;
-    }
-
-    /* ── Pay Button ───────────────────────────────────────────── */
-    #pay-button {
-      width: 100%;
-      height: 50px;
-      background: linear-gradient(135deg, #1565C0, #1976D2);
-      color: #ffffff;
-      font-size: 16px;
-      font-weight: 700;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      margin-top: 8px;
-      letter-spacing: 0.3px;
-      transition: opacity 0.2s, transform 0.1s;
-    }
-    #pay-button:active {
-      transform: scale(0.98);
-    }
-    #pay-button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    #form-error {
-      text-align: center;
-      color: #dc2626;
-      font-size: 13px;
-      margin-top: 12px;
-      min-height: 20px;
-    }
-
-    /* ── Card Brand Icon ─────────────────────────────────────── */
-    .card-brand {
-      font-size: 11px;
-      color: #6b7280;
-      margin-top: 4px;
-    }
+    /* UC SDK mounts into these two containers */
+    #payment-buttons { width: 100%; }
+    #payment-form    { width: 100%; }
   </style>
 </head>
 <body>
@@ -188,40 +113,38 @@ export function generateSecureCheckoutHtml(
   <p>Loading secure payment form...</p>
 </div>
 
-<div id="payment-form">
-  <div class="field-group">
-    <label class="field-label">Card Number</label>
-    <div id="number-container" class="field-container"></div>
-    <div id="number-error" class="field-error"></div>
-  </div>
+<!-- UC SDK mounts payment selection here -->
+<div id="payment-buttons"></div>
 
-  <div class="row">
-    <div class="field-group">
-      <label class="field-label">Expiry Date</label>
-      <div id="expiration-container" class="field-container"></div>
-      <div id="expiration-error" class="field-error"></div>
-    </div>
-    <div class="field-group">
-      <label class="field-label">CVV</label>
-      <div id="securityCode-container" class="field-container"></div>
-      <div id="securityCode-error" class="field-error"></div>
-    </div>
-  </div>
+<!-- UC SDK mounts card entry form here -->
+<div id="payment-form"></div>
 
-  <button id="pay-button" disabled>Pay Now</button>
-  <div id="form-error"></div>
-</div>
-
-<!-- CyberSource Flex Microform v2 SDK -->
+<!-- VAS SDK — session-specific URL from capture context JWT ctx[0].data.clientLibrary -->
 <script
   src="${clientLibraryUrl}"
   ${clientLibraryIntegrity ? 'integrity="' + clientLibraryIntegrity + '" crossorigin="anonymous"' : ''}
+  onload="window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+    type: 'PHASE2_LOG',
+    message: '[UC] SDK onload fired',
+    data: {
+      libraryUrl: '${clientLibraryUrl}',
+      VAS:             typeof window.VAS,
+      Flex:            typeof window.Flex,
+      UnifiedCheckout: typeof window.UnifiedCheckout,
+      UC:              typeof window.UC
+    },
+    _token: '${messageToken}'
+  }));"
+  onerror="window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+    type: 'MOUNT_PAYMENT_UNAVAILABLE',
+    message: 'UC SDK script failed to load from: ${clientLibraryUrl}',
+    _token: '${messageToken}'
+  }));"
 ></script>
 
 <script>
-  var mountTimeoutId = null;
+  var mountTimeoutId  = null;
   var isPaymentActive = false;
-  var microformInstance = null;
 
   function postToNative(payload) {
     try {
@@ -230,163 +153,172 @@ export function generateSecureCheckoutHtml(
     } catch(e) {}
   }
 
-  function showStatus(msg) {
-    var el = document.getElementById('status-message');
-    if (el) el.innerHTML = '<p>' + msg + '</p>';
-  }
-
-  // 20-second mount timeout guard
+  // 60-second timeout — UC widget includes 3DS which can be slow
   mountTimeoutId = setTimeout(function() {
     if (!isPaymentActive) {
-      postToNative({ type: 'MOUNT_PAYMENT_UNAVAILABLE', message: 'Payment form took too long to load.' });
+      postToNative({
+        type: 'MOUNT_PAYMENT_UNAVAILABLE',
+        message: 'Payment form timed out after 60 seconds.'
+      });
     }
-  }, 20000);
+  }, 60000);
 
-  function initCheckout() {
+  // Decode a JWT's payload section without a library
+  function decodeJwtPayload(jwt) {
     try {
-      // Check if SDK loaded
-      if (typeof Flex === 'undefined') {
-        throw new Error('CyberSource SDK failed to load. Flex is undefined.');
-      }
-
-      // ── Flex Microform v2 Integration ──────────────────────────
-      var flex = new Flex(${safeContext});
-      var microform = flex.microform({
-        styles: {
-          'input': {
-            'font-size': '15px',
-            'font-family': '-apple-system, "Segoe UI", sans-serif',
-            'color': '#1f2937',
-            'line-height': '44px',
-          },
-          ':focus': { 'color': '#1f2937' },
-          ':disabled': { 'cursor': 'not-allowed' },
-          'valid': { 'color': '#1f2937' },
-          'invalid': { 'color': '#dc2626' },
-        }
-      });
-
-      microformInstance = microform;
-
-      // ── Create Secure Fields ──────────────────────────────────
-      var numberField = microform.createField('number', { placeholder: '•••• •••• •••• ••••' });
-      var securityCodeField = microform.createField('securityCode', { placeholder: '•••' });
-
-      // ── Mount Fields ──────────────────────────────────────────
-      numberField.load('#number-container');
-      securityCodeField.load('#securityCode-container');
-
-      // ── Field State Tracking ──────────────────────────────────
-      var fieldStates = { number: false, securityCode: false, expMonth: false, expYear: false };
-
-      function updatePayButton() {
-        document.getElementById('pay-button').disabled = !(fieldStates.number && fieldStates.securityCode);
-      }
-
-      // Number field events
-      numberField.on('change', function(data) {
-        var el = document.getElementById('number-container');
-        el.className = 'field-container' + (data.valid ? ' valid' : (data.couldBeValid ? '' : ' invalid'));
-        fieldStates.number = data.valid;
-        document.getElementById('number-error').textContent = (!data.valid && !data.couldBeValid && !data.empty) ? 'Invalid card number' : '';
-        updatePayButton();
-      });
-
-      numberField.on('focus', function() {
-        document.getElementById('number-container').classList.add('focused');
-      });
-      numberField.on('blur', function() {
-        document.getElementById('number-container').classList.remove('focused');
-      });
-
-      // Security code field events
-      securityCodeField.on('change', function(data) {
-        var el = document.getElementById('securityCode-container');
-        el.className = 'field-container' + (data.valid ? ' valid' : (data.couldBeValid ? '' : ' invalid'));
-        fieldStates.securityCode = data.valid;
-        document.getElementById('securityCode-error').textContent = (!data.valid && !data.couldBeValid && !data.empty) ? 'Invalid CVV' : '';
-        updatePayButton();
-      });
-
-      securityCodeField.on('focus', function() {
-        document.getElementById('securityCode-container').classList.add('focused');
-      });
-      securityCodeField.on('blur', function() {
-        document.getElementById('securityCode-container').classList.remove('focused');
-      });
-
-      // ── Expiry Fields (plain HTML — not PCI-sensitive) ────────
-      var expContainer = document.getElementById('expiration-container');
-      expContainer.innerHTML = '<div style="display:flex;align-items:center;height:100%;gap:4px;">'
-        + '<input id="exp-month" type="tel" maxlength="2" placeholder="MM" '
-        + 'style="width:40px;border:none;outline:none;font-size:15px;font-family:-apple-system,sans-serif;color:#1f2937;text-align:center;background:transparent;" />'
-        + '<span style="color:#9ca3af;font-size:16px;">/</span>'
-        + '<input id="exp-year" type="tel" maxlength="2" placeholder="YY" '
-        + 'style="width:40px;border:none;outline:none;font-size:15px;font-family:-apple-system,sans-serif;color:#1f2937;text-align:center;background:transparent;" />'
-        + '</div>';
-
-      // ── Mark as Mounted ───────────────────────────────────────
-      isPaymentActive = true;
-      clearTimeout(mountTimeoutId);
-
-      document.getElementById('status-message').style.display = 'none';
-      document.getElementById('payment-form').style.display = 'block';
-
-      postToNative({ type: 'SDK_MOUNTED' });
-
-      // ── Pay Button Handler ────────────────────────────────────
-      document.getElementById('pay-button').addEventListener('click', function() {
-        var btn = document.getElementById('pay-button');
-        var formError = document.getElementById('form-error');
-        formError.textContent = '';
-
-        var expMonth = document.getElementById('exp-month').value.trim();
-        var expYear = document.getElementById('exp-year').value.trim();
-
-        // Validate expiry
-        if (!expMonth || !expYear || expMonth.length < 1 || expYear.length < 2) {
-          formError.textContent = 'Please enter a valid expiry date (MM/YY).';
-          return;
-        }
-
-        var monthNum = parseInt(expMonth, 10);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          formError.textContent = 'Expiry month must be between 01 and 12.';
-          return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Processing...';
-
-        var options = {
-          expirationMonth: expMonth.padStart(2, '0'),
-          expirationYear: '20' + expYear,
-        };
-
-        microform.createToken(options, function(err, token) {
-          if (err) {
-            btn.disabled = false;
-            btn.textContent = 'Pay Now';
-            var errMsg = (err.message || err.reason || 'Payment failed');
-            formError.textContent = errMsg;
-            postToNative({ type: 'PAYMENT_FAILED', code: err.reason || 'TOKEN_ERROR', message: errMsg });
-            return;
-          }
-
-          isPaymentActive = false;
-          postToNative({ type: 'PAYMENT_SUCCESS', transientToken: token });
-        });
-      });
-
+      var parts = jwt.split('.');
+      if (parts.length !== 3) return null;
+      var padded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (padded.length % 4) padded += '=';
+      return JSON.parse(atob(padded));
     } catch(e) {
-      clearTimeout(mountTimeoutId);
-      postToNative({ type: 'MOUNT_PAYMENT_UNAVAILABLE', message: 'SDK Error: ' + (e.message || String(e)) });
+      return null;
     }
   }
 
-  // Wait for DOM to be ready then init
+  async function initCheckout() {
+    try {
+      // ── Task 8: Origin check ───────────────────────────────────────────────
+      postToNative({
+        type: 'PHASE2_LOG',
+        message: '[UC] ORIGIN CHECK',
+        data: {
+          windowOrigin: window.location.origin,
+          windowHref:   window.location.href,
+          VAS:          typeof window.VAS,
+        }
+      });
+
+      // ── Task 5: Decode capture context JWT ────────────────────────────────
+      var captureContext = ${safeContext};
+      if (typeof captureContext !== 'string' || captureContext.length === 0) {
+        throw new Error('captureContext is empty or not a string');
+      }
+      var sessionJwtPayload = decodeJwtPayload(captureContext);
+      postToNative({
+        type: 'PHASE2_LOG',
+        message: '[UC] CAPTURE CONTEXT JWT DECODED',
+        data: {
+          captureCtxLen:    ${contextLength},
+          captureCtxIsJWT:  ${isJwt},
+          // Key fields from the JWT payload:
+          ctx:              sessionJwtPayload ? sessionJwtPayload.ctx : null,
+          completeMandate:  sessionJwtPayload ? sessionJwtPayload.completeMandate : null,
+          targetOrigins:    sessionJwtPayload ? sessionJwtPayload.targetOrigins : null,
+          clientLibrary:    sessionJwtPayload ? sessionJwtPayload.clientLibrary : null,
+          allowedPaymentTypes: sessionJwtPayload ? sessionJwtPayload.allowedPaymentTypes : null,
+        }
+      });
+
+      if (typeof window.VAS === 'undefined') {
+        throw new Error(
+          'VAS is undefined after SDK loaded from: ${clientLibraryUrl}. '
+          + 'Flex=' + typeof window.Flex
+          + ' UnifiedCheckout=' + typeof window.UnifiedCheckout
+          + ' UC=' + typeof window.UC
+        );
+      }
+
+      // ── Task 2 + Step 1: VAS.UnifiedCheckout() ────────────────────────────
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 1 - VAS.UnifiedCheckout()' });
+      var client = await window.VAS.UnifiedCheckout(captureContext);
+      postToNative({
+        type: 'PHASE2_LOG',
+        message: '[UC] STEP 1 COMPLETE',
+        data: { clientType: typeof client, clientKeys: client ? Object.keys(client).join(',') : 'null' }
+      });
+
+      // ── Task 2 + 3 + 4: client.createCheckout({ autoProcessing: true }) ───
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 2 - client.createCheckout({ autoProcessing: true })' });
+      var checkout = await client.createCheckout({ autoProcessing: true });
+      // Task 3: log checkout object keys
+      postToNative({
+        type: 'PHASE2_LOG',
+        message: '[UC] STEP 2 COMPLETE — CHECKOUT CREATED',
+        data: {
+          type: typeof checkout,
+          keys: checkout ? Object.keys(checkout).join(',') : 'null',
+        }
+      });
+
+      // Widget mounting — hide spinner, signal RN
+      isPaymentActive = true;
+      clearTimeout(mountTimeoutId);
+      document.getElementById('status-message').style.display = 'none';
+      postToNative({ type: 'SDK_MOUNTED' });
+
+      // ── Task 2 + Step 3: checkout.mount() ─────────────────────────────────
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 3 - checkout.mount()' });
+      var result = await checkout.mount({
+        paymentSelection: '#payment-buttons',
+        paymentScreen:    '#payment-form',
+      });
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 3 COMPLETE - mount() resolved' });
+
+      // ── Task 6: Decode result JWT before sending to backend ───────────────
+      var resultStr   = (typeof result === 'string') ? result : JSON.stringify(result);
+      var resultIsJwt = (typeof result === 'string' && result.split('.').length === 3);
+      var resultPayload = resultIsJwt ? decodeJwtPayload(result) : null;
+
+      postToNative({
+        type: 'PHASE2_LOG',
+        message: '[UC] RESULT JWT DECODED',
+        data: {
+          resultType:    typeof result,
+          resultIsJWT:   resultIsJwt,
+          resultLength:  resultStr.length,
+          resultPreview: resultStr.substring(0, 120),
+          // Task 6 fields:
+          status:         resultPayload ? resultPayload.status : null,
+          reason:         resultPayload ? resultPayload.reason : null,
+          decision:       resultPayload ? resultPayload.decision : null,
+          id:             resultPayload ? resultPayload.id : null,
+          transientToken: resultPayload ? resultPayload.transientToken : null,
+          // full payload for analysis:
+          jwtPayload:     resultPayload,
+        }
+      });
+
+      // ── Step 5: Send result to React Native (only after logging) ──────────
+      postToNative({
+        type: 'PAYMENT_SUCCESS',
+        transientToken: resultStr,
+      });
+
+      // ── Task 2: Cleanup with logs ─────────────────────────────────────────
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 4 - checkout.destroy()' });
+      try { await checkout.destroy(); postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 4 COMPLETE' }); } catch(e) {}
+
+      postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 5 - client.destroy()' });
+      try { await client.destroy();   postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 5 COMPLETE' }); } catch(e) {}
+
+    } catch (e) {
+      // ── Task 1: Full error object serialization ───────────────────────────
+      clearTimeout(mountTimeoutId);
+
+      var details = {
+        name:    e ? e.name    : null,
+        message: e ? e.message : null,
+        reason:  e ? e.reason  : null,
+        code:    e ? e.code    : null,
+        stack:   e ? e.stack   : null,
+      };
+
+      try {
+        details.full = JSON.stringify(e, Object.getOwnPropertyNames(e));
+      } catch (_) {}
+
+      postToNative({
+        type: 'MOUNT_PAYMENT_UNAVAILABLE',
+        message: 'UC SDK Exception',
+        data: details,
+      });
+    }
+  }
+
+  // Wait for DOM ready, then run async init
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initCheckout);
+    document.addEventListener('DOMContentLoaded', function() { initCheckout(); });
   } else {
     initCheckout();
   }

@@ -105,38 +105,50 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
       Alert.alert("No Connection", network.message);
       return;
     }
+ // Safely extract the primary key across all fee invoice types
+  const resolvedInvoiceId = 
+    invoice.invoice_id || 
+    invoice.term_fee_invoice_id || 
+    invoice.admission_fee_invoice_id || 
+    invoice.sport_fee_invoice_id || 
+    invoice.exam_bill_id || 
+    invoice.material_bill_id || 
+    invoice.id;
 
+  if (!resolvedInvoiceId) {
+    Alert.alert("Invoice Error", "Unable to resolve the invoice ID for payment.");
+    return;
+  }
     // 2. Request session from our Laravel backend
     try {
       const result = await initiateSession({
         invoice_type: invoice.invoice_type,
-        invoice_id:   invoice.invoice_id,   // standardised field from backend
+        invoice_id:   resolvedInvoiceId,   // standardised field from backend
         amount:       getPaymentAmount(),
         student_id:   student.id,
       }).unwrap();
 
-      if (result?.data) {
-        setSessionData(result.data);
-        setStep("checkout");
-      } else {
-        throw new Error("Invalid session response");
-      }
-    } catch (err) {
-      console.error("❌ Payment session initiation failed:", err);
-
-      if (err?.status === 504 || err?.data?.error === "GATEWAY_TIMEOUT") {
-        Alert.alert(
-          "Gateway Timeout",
-          "The payment server took too long to respond. Your account has not been charged. Please try again.",
-        );
-      } else {
-        Alert.alert(
-          "Payment Unavailable",
-          "Unable to start the payment process. Please try again in a moment.",
-        );
-      }
+     if (result?.data) {
+      setSessionData(result.data);
+      setStep("checkout");
+    } else {
+      throw new Error("Invalid session response");
     }
-  }, [invoice, student, getPaymentAmount, initiateSession]);
+  } catch (err) {
+    console.error("❌ Payment session initiation failed:", err);
+    if (err?.status === 504 || err?.data?.error === "GATEWAY_TIMEOUT") {
+      Alert.alert(
+        "Gateway Timeout",
+        "The payment server took too long to respond. Your account has not been charged. Please try again."
+      );
+    } else {
+      Alert.alert(
+        "Payment Unavailable",
+        err?.data?.message || "Unable to start the payment process. Please check your data."
+      );
+    }
+  }
+}, [invoice, student, getPaymentAmount, initiateSession]);
 
   // ── WebView: Payment success → call /payment/complete ──────────────
   const handlePaymentSuccess = useCallback(async (transientToken) => {

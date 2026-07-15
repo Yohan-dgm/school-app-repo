@@ -89,6 +89,12 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
 
       console.log("🔐 SecureWebViewCheckout —", payload.type);
 
+      // PHASE2_LOG messages are diagnostic-only and don't use the message token
+      if (payload.type === 'PHASE2_LOG') {
+        console.log('🔬', payload.message, payload.data ? JSON.stringify(payload.data) : '');
+        return;
+      }
+
       // Verify message token — drop unverified messages
       if (payload._token !== messageToken) {
         console.warn("🚫 SecureWebViewCheckout — invalid message token, dropping");
@@ -153,8 +159,11 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
     if (url === "about:blank" || url.startsWith("data:")) return true;
 
     if (is3DSAllowedUrl(url)) {
-      // Mark 3DS flow active if external bank redirect
-      if (!url.includes("cybersource.com") && url.startsWith("https://")) {
+      // Only set 3DS active for real bank redirects (non-CyberSource HTTPS pages).
+      // UC widget internal requests (testup.cybersource.com iframes, assets) must
+      // NOT trigger the 3DS overlay — they are part of normal widget operation.
+      const isCyberSourceDomain = url.includes("cybersource.com");
+      if (!isCyberSourceDomain && url.startsWith("https://")) {
         setIs3DSActive(true);
       }
       return true;

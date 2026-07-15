@@ -137,6 +137,15 @@ const StudentBillCard: React.FC<StudentBillCardProps> = ({
     data.general_bill_discount ||
     data.material_bill_discount;
 
+      const hasTax =
+    data.admission_fee_invoice_tax ||
+    data.term_fee_invoice_tax ||
+    data.exam_bill_tax ||
+    data.sport_fee_invoice_tax ||
+    data.refundable_deposit_tax ||
+    data.general_bill_tax ||
+    data.material_bill_tax;
+
   const has税 =
     data.admission_fee_invoice_tax ||
     data.term_fee_invoice_tax ||
@@ -200,7 +209,7 @@ const StudentBillCard: React.FC<StudentBillCardProps> = ({
       >
         {isExpanded && (
           <View style={styles.detailsContainer}>
-            {(hasDiscount || has税) && (
+            {(hasDiscount || hasTax) && (
               <View style={styles.breakdownSection}>
                 <Text style={styles.sectionTitle}>Amount Breakdown</Text>
 
