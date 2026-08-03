@@ -85,6 +85,7 @@ const StudentProfileMain = () => {
   const [showAnalyticsDrawer, setShowAnalyticsDrawer] = useState(false);
   const [detailedStudentData, setDetailedStudentData] = useState(null);
   const [isLoadingDetailedData, setIsLoadingDetailedData] = useState(false);
+  const [showEmptyBadges, setShowEmptyBadges] = useState(false);
   const rotationValue = new Animated.Value(0);
 
   const handleBadgePress = (badge) => {
@@ -98,6 +99,11 @@ const StudentProfileMain = () => {
 
   const closeAllBadgesDrawer = () => {
     setShowAllBadgesDrawer(false);
+  };
+
+  const handleToggleEmptyBadges = () => {
+    LayoutAnimation.configureNext(customLayoutAnimation);
+    setShowEmptyBadges((prev) => !prev);
   };
 
   const handleAttendancePress = () => {
@@ -254,6 +260,7 @@ const StudentProfileMain = () => {
   useEffect(() => {
     setDetailedStudentData(null);
     setIsExpanded(false); // Also collapse the section
+    setShowEmptyBadges(false); // Fold the empty-badges panel again for the new student
   }, [selectedStudent?.id]);
 
   // Debug logging
@@ -668,13 +675,30 @@ const StudentProfileMain = () => {
         <View style={styles.badgesSection}>
           <View style={styles.badgesTitleContainer}>
             <Text style={styles.badgesSectionTitle}>Achievements & Badges</Text>
-            <TouchableOpacity
-              style={styles.infoIconContainer}
-              onPress={handleAllBadgesDrawerPress}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="info-outline" size={20} color="#8B0000" />
-            </TouchableOpacity>
+            <View style={styles.badgesHeaderActions}>
+              <TouchableOpacity
+                style={styles.infoIconContainer}
+                onPress={handleAllBadgesDrawerPress}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="info-outline" size={20} color="#8B0000" />
+              </TouchableOpacity>
+              {!isLoadingAchievements &&
+                !achievementError &&
+                studentBadges.length === 0 && (
+                  <TouchableOpacity
+                    style={styles.infoIconContainer}
+                    onPress={handleToggleEmptyBadges}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name={showEmptyBadges ? "expand-less" : "expand-more"}
+                      size={20}
+                      color="#8B0000"
+                    />
+                  </TouchableOpacity>
+                )}
+            </View>
           </View>
 
           {/* Loading State */}
@@ -721,17 +745,19 @@ const StudentProfileMain = () => {
                   ))}
                 </ScrollView>
               ) : (
-                <View style={styles.noBadgesContainer}>
-                  <MaterialIcons
-                    name="emoji-events"
-                    size={32}
-                    color="#CCCCCC"
-                  />
-                  <Text style={styles.noBadgesText}>No achievements yet</Text>
-                  <Text style={styles.noBadgesSubtext}>
-                    Keep up the great work!
-                  </Text>
-                </View>
+                showEmptyBadges && (
+                  <View style={styles.noBadgesContainer}>
+                    <MaterialIcons
+                      name="emoji-events"
+                      size={32}
+                      color="#CCCCCC"
+                    />
+                    <Text style={styles.noBadgesText}>No achievements yet</Text>
+                    <Text style={styles.noBadgesSubtext}>
+                      Keep up the great work!
+                    </Text>
+                  </View>
+                )
               )}
             </>
           )}
@@ -948,6 +974,7 @@ const StudentProfileMain = () => {
           onClose={() => setShowAnalyticsDrawer(false)}
           studentId={selectedStudent?.id || 0}
           studentName={selectedStudent?.student_calling_name}
+          studentImage={selectedStudent?.profileImage}
         />
       </Modal>
     </View>
@@ -1606,6 +1633,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: theme.spacing.md,
+  },
+  badgesHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   infoIconContainer: {
     padding: 8,

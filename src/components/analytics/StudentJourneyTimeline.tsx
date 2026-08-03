@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react-native";
+import { MAROON, NEUTRAL_COLORS, getPerformanceColor } from "./analyticsTheme";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -56,9 +57,12 @@ interface StudentJourneyTimelineProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAROON = "#920734";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CHART_WIDTH = SCREEN_WIDTH - 80;
+// Temporarily hidden — student_subject_mark_list shape from the insights API
+// hasn't been confirmed yet (see console.warn diagnostic below). Flip back to
+// true once the field mapping is verified against the real backend response.
+const SHOW_SUBJECT_BREAKDOWN = false;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,13 +78,6 @@ function fullTermLabel(r: ExamReportItem): string {
   return name || title || "Exam";
 }
 
-function getPerformanceColor(avg: number): string {
-  if (avg >= 80) return "#059669";
-  if (avg >= 65) return "#4F46E5";
-  if (avg >= 50) return "#D97706";
-  return "#DC2626";
-}
-
 function getPerformanceLabel(avg: number): string {
   if (avg >= 80) return "Excellent";
   if (avg >= 65) return "Good";
@@ -89,7 +86,7 @@ function getPerformanceLabel(avg: number): string {
 }
 
 function getRankColor(rank: number | null): string {
-  if (rank == null) return "#CBD5E1";
+  if (rank == null) return NEUTRAL_COLORS.classAverage;
   if (rank <= 3) return "#059669";
   if (rank <= 10) return "#2563EB";
   return "#D97706";
@@ -227,13 +224,32 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
   const bestRank = allRanks.length > 0 ? Math.min(...allRanks) : null;
 
   // ── Subject breakdown for selected term
+  // Note: student_subject_mark_list marks are already 0-100-scaled (same
+  // scale as subject_average), so they are NOT a fraction of the exam's
+  // aggregate total_mark — that field only applies to the exam-level
+  // passing-mark reference above.
   const subjectMarks = selectedExam?.student_subject_mark_list ?? [];
-  const selectedTotal = selectedExam?.total_mark
-    ? Number(selectedExam.total_mark)
-    : null;
   const sortedSubjects = [...subjectMarks].sort(
     (a, b) => Number(b.student_mark ?? 0) - Number(a.student_mark ?? 0),
   );
+
+  // Diagnostic: the insights API types this field as `any[]`, so it has
+  // never been formally verified against the backend response. If an exam
+  // exists but carries no student_subject_mark_list, log its actual keys so
+  // the real field name can be identified from the console instead of
+  // guessing.
+  useEffect(() => {
+    if (selectedExam && subjectMarks.length === 0) {
+      console.warn(
+        "⚠️ StudentJourneyTimeline: selected exam has no student_subject_mark_list.",
+        "Exam id:",
+        selectedExam.id,
+        "Available keys on exam object:",
+        Object.keys(selectedExam),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExam]);
 
   // ── Group by school year for timeline
   const grouped: Record<string, ExamReportItem[]> = {};
@@ -616,7 +632,7 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
           </View>
 
           {/* ── Subject Breakdown ── */}
-          {selectedExam && (
+          {SHOW_SUBJECT_BREAKDOWN && selectedExam && (
             <View style={styles.subjectBreakdownCard}>
               {/* Header */}
               <TouchableOpacity
@@ -674,14 +690,8 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
                     sortedSubjects.map((subj, idx) => {
                       const mark = Number(subj.student_mark ?? 0);
                       const subjAvg = Number(subj.subject_average ?? 0);
-                      const pct =
-                        selectedTotal && selectedTotal > 0
-                          ? (mark / selectedTotal) * 100
-                          : mark;
-                      const safePct = Math.min(pct, 100);
-                      const markColor = getPerformanceColor(
-                        selectedTotal && selectedTotal > 0 ? pct : mark,
-                      );
+                      const safePct = Math.min(mark, 100);
+                      const markColor = getPerformanceColor(mark);
                       const isLast = idx === sortedSubjects.length - 1;
 
                       return (
@@ -693,7 +703,7 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
                           ]}
                         >
                           {/* Subject name + rank */}
-                          <View style={styles.subjectNameBlock}>
+                          {/* <View style={styles.subjectNameBlock}>
                             <Text style={styles.subjectName} numberOfLines={1}>
                               {subj.subject?.name ?? "Unknown"}
                             </Text>
@@ -704,7 +714,7 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
                                 </Text>
                               </View>
                             )}
-                          </View>
+                          </View> */}
 
                           {/* Progress bar + values */}
                           <View style={styles.subjectRight}>
@@ -726,10 +736,7 @@ const StudentJourneyTimeline: React.FC<StudentJourneyTimelineProps> = ({
                                   { color: markColor },
                                 ]}
                               >
-                                {mark.toFixed(0)}
-                                {selectedTotal
-                                  ? `/${selectedTotal.toFixed(0)}`
-                                  : ""}
+                                {mark.toFixed(0)}%
                               </Text>
                             </View>
                             {subjAvg > 0 && (

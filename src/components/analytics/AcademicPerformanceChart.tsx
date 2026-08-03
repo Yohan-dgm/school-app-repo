@@ -7,6 +7,7 @@ import {
   Minus,
   BarChart3,
 } from "lucide-react-native";
+import { MAROON, STATUS_COLORS, NEUTRAL_COLORS } from "./analyticsTheme";
 
 interface ExamReport {
   id: number;
@@ -29,8 +30,7 @@ interface AcademicPerformanceChartProps {
 
 const { width } = Dimensions.get("window");
 const CHART_WIDTH = width - 80;
-const MAROON = "#920734";
-const CLASS_AVG_COLOR = "#CBD5E1";
+const CLASS_AVG_COLOR = NEUTRAL_COLORS.classAverage;
 
 const AcademicPerformanceChart: React.FC<AcademicPerformanceChartProps> = ({
   examReports,
@@ -90,7 +90,11 @@ const AcademicPerformanceChart: React.FC<AcademicPerformanceChartProps> = ({
   const trendFlat = trendDelta === 0;
 
   const TrendIcon = trendFlat ? Minus : trendUp ? TrendingUp : TrendingDown;
-  const trendColor = trendFlat ? "#F59E0B" : trendUp ? "#059669" : "#DC2626";
+  const trendColor = trendFlat
+    ? "#F59E0B"
+    : trendUp
+      ? STATUS_COLORS.success
+      : STATUS_COLORS.danger;
 
   return (
     <View style={styles.container}>

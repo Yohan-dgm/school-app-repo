@@ -25,6 +25,7 @@ import {
   BookOpen,
   Star,
 } from "lucide-react-native";
+import { STATUS_COLORS } from "./analyticsTheme";
 
 if (
   Platform.OS === "android" &&
@@ -84,10 +85,10 @@ interface TermRecommendationsProps {
 type RecType = "success" | "warning" | "danger" | "info";
 
 const TYPE_COLORS: Record<RecType, string> = {
-  success: "#059669",
-  warning: "#D97706",
-  danger: "#DC2626",
-  info: "#4F46E5",
+  success: STATUS_COLORS.success,
+  warning: STATUS_COLORS.warning,
+  danger: STATUS_COLORS.danger,
+  info: STATUS_COLORS.info,
 };
 
 const TYPE_BG: Record<RecType, string> = {

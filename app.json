@@ -3,7 +3,7 @@
     "name": "School App",
     "slug": "school-app",
     "scheme": "school-app",
-    "version": "1.1.5",
+    "version": "1.1.6",
     "orientation": "default",
     "icon": "src/assets/SchooSnap_logo.png",
     "userInterfaceStyle": "light",
@@ -44,7 +44,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "lk.toyar.schoolapp",
-      "versionCode": 513,
+      "versionCode": 514,
       "compileSdkVersion": 35,
       "targetSdkVersion": 35,
       "minSdkVersion": 21,
@@ -108,12 +108,12 @@
           "savePhotosPermission": "Allow School App to save downloaded images to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "router": {},
       "expo-navigation-bar": {},
-      
       "eas": {
         "projectId": "c497b33a-59ce-4ea9-ae5a-ca16190babdd"
       }

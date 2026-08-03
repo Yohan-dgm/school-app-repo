@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Percent,
 } from "lucide-react-native";
+import { STATUS_COLORS } from "./analyticsTheme";
 
 interface AttendanceSummaryItem {
   term: string;
@@ -22,8 +23,8 @@ interface AttendanceAnalyticsChartProps {
 
 const { width } = Dimensions.get("window");
 const CHART_WIDTH = width - 112;
-const PRESENT_COLOR = "#059669";
-const ABSENT_COLOR = "#DC2626";
+const PRESENT_COLOR = STATUS_COLORS.success;
+const ABSENT_COLOR = STATUS_COLORS.danger;
 
 const AttendanceAnalyticsChart: React.FC<AttendanceAnalyticsChartProps> = ({
   attendanceSummary,

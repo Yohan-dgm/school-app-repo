@@ -49,14 +49,16 @@ export const apiServer1 = createApi({
       const token = api.getState().app.token;
       const isAuthenticated = api.getState().app.isAuthenticated;
 
-      console.log("🔐 API Server 1 - Authentication check:", {
-        tokenExists: !!token,
-        tokenLength: token ? token.length : 0,
-        tokenPreview: token ? `${token.substring(0, 15)}...` : "No token",
-        isAuthenticated: isAuthenticated,
-        endpoint: api.endpoint,
-        method: api.type,
-      });
+      if (__DEV__) {
+        // No token substring here, even truncated — avoids bearer-token
+        // material ending up in device logs.
+        console.log("🔐 API Server 1 - Authentication check:", {
+          tokenExists: !!token,
+          isAuthenticated: isAuthenticated,
+          endpoint: api.endpoint,
+          method: api.type,
+        });
+      }
 
       // CRITICAL: Check if this is a FormData request
       // FormData requests need the Content-Type to be auto-set by fetch with boundary
@@ -67,12 +69,13 @@ export const apiServer1 = createApi({
         api.arg instanceof FormData ||
         headers.get("Content-Type") === "multipart/form-data";
 
-      console.log("📋 Request Type Analysis:", {
-        endpoint: api.endpoint,
-        isFormDataRequest: isFormDataRequest,
-        existingContentType: headers.get("Content-Type"),
-        arg: api.arg,
-      });
+      if (__DEV__) {
+        console.log("📋 Request Type Analysis:", {
+          endpoint: api.endpoint,
+          isFormDataRequest: isFormDataRequest,
+          existingContentType: headers.get("Content-Type"),
+        });
+      }
 
       // Set required headers as per API instructions
       headers.set("X-Requested-With", "XMLHttpRequest");
@@ -83,15 +86,15 @@ export const apiServer1 = createApi({
       if (isFormDataRequest) {
         // Delete Content-Type to let fetch set it automatically
         headers.delete("Content-Type");
-        console.log(
-          "🔧 FormData request detected - Content-Type header removed to allow auto-generation",
-        );
-        console.log("📎 This fixes 'Network request failed' error on Android");
+        if (__DEV__) {
+          console.log(
+            "🔧 FormData request detected - Content-Type header removed to allow auto-generation",
+          );
+        }
       } else {
         // For non-FormData requests, use application/json
         if (!headers.get("Content-Type")) {
           headers.set("Content-Type", "application/json");
-          console.log("📝 JSON request - Content-Type set to application/json");
         }
       }
 
@@ -99,22 +102,23 @@ export const apiServer1 = createApi({
 
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
-        console.log("✅ API Server 1 - Authorization header set successfully");
-      } else {
+      } else if (__DEV__) {
         console.warn(
           "⚠️ API Server 1 - No authentication token found, request may fail",
         );
       }
 
-      console.log("📤 API Server 1 - Final headers:", {
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": headers.get("Content-Type") || "AUTO (for FormData)",
-        Accept: "application/json",
-        Authorization: token ? "Bearer [REDACTED]" : "None",
-        endpoint: api.endpoint,
-        method: api.type,
-        isFormDataRequest: isFormDataRequest,
-      });
+      if (__DEV__) {
+        console.log("📤 API Server 1 - Final headers:", {
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": headers.get("Content-Type") || "AUTO (for FormData)",
+          Accept: "application/json",
+          Authorization: token ? "Bearer [REDACTED]" : "None",
+          endpoint: api.endpoint,
+          method: api.type,
+          isFormDataRequest: isFormDataRequest,
+        });
+      }
 
       return headers;
     },

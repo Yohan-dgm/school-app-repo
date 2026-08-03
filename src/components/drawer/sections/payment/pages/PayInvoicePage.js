@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { theme } from "../../../../../styles/theme";
 import {
   useInitiatePaymentSessionMutation,
   useCompletePaymentMutation,
+  useGetPaymentGatewayStatusQuery,
 } from "../../../../../api/payment-gateway-api";
 import { checkNetworkBeforePayment } from "../../../../../utils/paymentSecurity";
 import SecureWebViewCheckout from "../../../../payment/SecureWebViewCheckout";
@@ -29,6 +30,13 @@ const INVOICE_TYPE_COLORS = {
   "Sport Fee":     { bg: "#E8F5E9", text: "#2E7D32" },
   "Material Bill": { bg: "#FBE9E7", text: "#BF360C" },
 };
+
+// Online payment service charge — must match CYBERSOURCE_SERVICE_FEE_PERCENTAGE
+// on the backend. Used only for a client-side estimate before a session exists;
+// the actual amount charged always comes from the backend response
+// (sessionData.total_charged_amount / paymentResult.total_charged_amount).
+const SERVICE_FEE_PERCENTAGE = 3;
+const getServiceFee = (amount) => Math.round(amount * SERVICE_FEE_PERCENTAGE) / 100;
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
@@ -56,9 +64,35 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
   const [paymentResult, setPaymentResult] = useState(null);  // { success data }
   const [paymentError, setPaymentError] = useState(null);    // { errorCode, message }
 
+  // ── Completion-retry state ──────────────────────────────────────────
+  // Remembers the order_reference + transient_token from the last WebView
+  // PAYMENT_SUCCESS message even after sessionData is cleared, so a failed
+  // /payment/complete call can be safely retried with the SAME token instead
+  // of starting an entirely new (and potentially duplicate) CyberSource session.
+  const lastCompletionRef = useRef(null); // { transientToken, orderReference } | null
+  // Prevents a duplicate WebView PAYMENT_SUCCESS message from firing
+  // completePayment twice concurrently.
+  const isSubmittingRef = useRef(false);
+
+  // ── Gateway maintenance status ───────────────────────────────────────
+  // Checked on entry so a payer sees "Under Maintenance" immediately rather
+  // than after filling in an amount. This is a UX check only — the backend
+  // enforces the same flag as the real gate inside initiate-session, so a
+  // GATEWAY_UNDER_MAINTENANCE error from that call (e.g. the flag flipped
+  // mid-session) also routes to the same maintenance screen via this state.
+  const { data: gatewayStatusData, isLoading: isCheckingGatewayStatus } = useGetPaymentGatewayStatusQuery();
+  const [forcedMaintenanceMessage, setForcedMaintenanceMessage] = useState(null);
+
+  const isUnderMaintenance =
+    forcedMaintenanceMessage !== null || gatewayStatusData?.data?.is_active === false;
+  const maintenanceMessage =
+    forcedMaintenanceMessage ||
+    gatewayStatusData?.data?.maintenance_message ||
+    "Online payments are temporarily unavailable. Please try again later.";
+
   // ── RTK mutations ───────────────────────────────────────────────────
   const [initiateSession, { isLoading: isInitiating }] = useInitiatePaymentSessionMutation();
-  const [completePayment, { isLoading: isCompleting }]  = useCompletePaymentMutation();
+  const [completePayment] = useCompletePaymentMutation();
 
   // ── Computed values ─────────────────────────────────────────────────
   const balanceAmount = parseFloat(invoice.balance_amount) || 0;
@@ -136,7 +170,13 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
     }
   } catch (err) {
     console.error("❌ Payment session initiation failed:", err);
-    if (err?.status === 504 || err?.data?.error === "GATEWAY_TIMEOUT") {
+    if (err?.data?.error === "GATEWAY_UNDER_MAINTENANCE") {
+      // Flag flipped off between the entry-point status check and this call —
+      // fall back to the same maintenance screen instead of a generic alert.
+      setForcedMaintenanceMessage(
+        err?.data?.message || "Online payments are temporarily unavailable. Please try again later."
+      );
+    } else if (err?.status === 504 || err?.data?.error === "GATEWAY_TIMEOUT") {
       Alert.alert(
         "Gateway Timeout",
         "The payment server took too long to respond. Your account has not been charged. Please try again."
@@ -150,17 +190,42 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
   }
 }, [invoice, student, getPaymentAmount, initiateSession]);
 
+  // ── Shared completion call, used by both the WebView success handler and
+  //    the "Retry" button on the failed screen (safe retry — same token). ──
+  const attemptCompletePayment = useCallback(async (transientToken, orderReference) => {
+    const result = await completePayment({
+      transient_token: transientToken,
+      order_reference: orderReference,
+    }).unwrap();
+
+    setPaymentResult(result?.data || {});
+    lastCompletionRef.current = null;
+    setStep("success");
+  }, [completePayment]);
+
   // ── WebView: Payment success → call /payment/complete ──────────────
   const handlePaymentSuccess = useCallback(async (transientToken) => {
-    if (!sessionData) return;
-    try {
-      const result = await completePayment({
-        transient_token:  transientToken,
-        order_reference:  sessionData.order_reference,
-      }).unwrap();
+    if (!sessionData) {
+      // CyberSource authorized the payment but our local session was cleared
+      // (e.g. a stale/expired retry). Do NOT drop the token silently — the
+      // charge may already be real. Surface it so the user can get help
+      // instead of being stuck on a "processing" screen forever.
+      console.error("❌ Payment success received with no active session — cannot complete.");
+      setPaymentError({
+        errorCode: "SESSION_LOST",
+        message: "Your payment may have been processed, but we lost track of the session. Please check Payment History or contact the finance office before retrying.",
+      });
+      setStep("failed");
+      return;
+    }
+    if (isSubmittingRef.current) return; // guard against a duplicate bridge message
+    isSubmittingRef.current = true;
 
-      setPaymentResult(result?.data || {});
-      setStep("success");
+    const orderReference = sessionData.order_reference;
+    lastCompletionRef.current = { transientToken, orderReference };
+
+    try {
+      await attemptCompletePayment(transientToken, orderReference);
     } catch (err) {
       console.error("❌ Payment completion failed:", err);
 
@@ -174,8 +239,10 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
 
       setPaymentError({ errorCode, message });
       setStep("failed");
+    } finally {
+      isSubmittingRef.current = false;
     }
-  }, [sessionData, completePayment]);
+  }, [sessionData, attemptCompletePayment]);
 
   // ── WebView: Payment failed ─────────────────────────────────────────
   const handlePaymentFailed = useCallback((errorCode, message) => {
@@ -203,11 +270,87 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
   };
 
   // ── Result: Retry (failed) ──────────────────────────────────────────
-  const handleRetry = () => {
+  const handleRetry = async () => {
+    const pending = lastCompletionRef.current;
+
+    // If CyberSource already authorized a payment for this order and only the
+    // /payment/complete call itself failed (e.g. network drop), retry
+    // completion with the SAME transient_token/order_reference first. The
+    // order is still "pending" server-side, so this is safe and idempotent —
+    // starting a brand-new session instead would risk a second real charge.
+    if (pending && !isSubmittingRef.current) {
+      isSubmittingRef.current = true;
+      try {
+        await attemptCompletePayment(pending.transientToken, pending.orderReference);
+        isSubmittingRef.current = false;
+        return;
+      } catch (err) {
+        console.error("❌ Safe completion retry failed, falling back to new session:", err);
+        isSubmittingRef.current = false;
+        // Order may have expired or the token is no longer usable — fall
+        // through to a full restart below.
+      }
+    }
+
+    lastCompletionRef.current = null;
     setSessionData(null);
     setPaymentError(null);
     setStep("confirm");
   };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // RENDER: Under Maintenance — only blocks entry (amount/confirm steps);
+  // never interrupts a checkout/success/failed screen already in progress.
+  // ─────────────────────────────────────────────────────────────────────
+  if (isUnderMaintenance && step !== "checkout" && step !== "success" && step !== "failed") {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerBtn} onPress={onBack}>
+            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Pay Invoice</Text>
+          </View>
+          <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
+            <MaterialIcons name="close" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.maintenanceContainer}>
+          <MaterialIcons name="build" size={56} color="#E65100" />
+          <Text style={styles.maintenanceTitle}>Under Maintenance</Text>
+          <Text style={styles.maintenanceMessage}>{maintenanceMessage}</Text>
+          <TouchableOpacity style={styles.maintenanceBackBtn} onPress={onBack} activeOpacity={0.85}>
+            <Text style={styles.maintenanceBackBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // RENDER: Checking gateway status (brief, before amount/confirm show)
+  // ─────────────────────────────────────────────────────────────────────
+  if (isCheckingGatewayStatus && step !== "checkout" && step !== "success" && step !== "failed") {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerBtn} onPress={onBack}>
+            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Pay Invoice</Text>
+          </View>
+          <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
+            <MaterialIcons name="close" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.maintenanceContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────
   // RENDER: Checkout WebView
@@ -219,8 +362,8 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
         clientLibraryUrl={sessionData.client_library_url}
         clientLibraryIntegrity={sessionData.client_library_integrity}
         orderReference={sessionData.order_reference}
-        amount={getPaymentAmount()}
-        currency="LKR"
+        amount={sessionData.total_charged_amount ?? sessionData.amount ?? getPaymentAmount()}
+        currency={sessionData.currency || "LKR"}
         onPaymentSuccess={handlePaymentSuccess}
         onPaymentFailed={handlePaymentFailed}
         onPaymentCancelled={handlePaymentCancelled}
@@ -239,6 +382,8 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
         type="success"
         amount={paymentResult?.amount}
         currency={paymentResult?.currency}
+        serviceFeeAmount={paymentResult?.service_fee_amount}
+        totalChargedAmount={paymentResult?.total_charged_amount}
         invoiceType={paymentResult?.invoice_type}
         orderReference={paymentResult?.order_reference}
         receiptVoucherId={paymentResult?.receipt_voucher_id}
@@ -423,7 +568,6 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
                 { label: "Student",       value: student.full_name_with_title },
                 { label: "Invoice Type",  value: invoice.invoice_type },
                 { label: "Reference",     value: invoice.serial_number },
-                { label: "Payment",       value: formatAmount(getPaymentAmount()), highlight: true },
               ].map((row) => (
                 <View key={row.label} style={styles.confirmRow}>
                   <Text style={styles.confirmLabel}>{row.label}</Text>
@@ -437,10 +581,28 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
               ))}
             </View>
 
+            {/* Fee breakdown — amount, online service charge, total to pay */}
+            <View style={styles.confirmCard}>
+              <View style={styles.confirmRow}>
+                <Text style={styles.confirmLabel}>Amount</Text>
+                <Text style={styles.confirmValue}>{formatAmount(getPaymentAmount())}</Text>
+              </View>
+              <View style={styles.confirmRow}>
+                <Text style={styles.confirmLabel}>Online Service Charge ({SERVICE_FEE_PERCENTAGE}%)</Text>
+                <Text style={styles.confirmValue}>{formatAmount(getServiceFee(getPaymentAmount()))}</Text>
+              </View>
+              <View style={[styles.confirmRow, styles.confirmRowLast]}>
+                <Text style={styles.confirmTotalLabel}>Total to Pay</Text>
+                <Text style={styles.confirmHighlight}>
+                  {formatAmount(getPaymentAmount() + getServiceFee(getPaymentAmount()))}
+                </Text>
+              </View>
+            </View>
+
             <View style={styles.gatewayNotice}>
               <MaterialIcons name="lock" size={16} color="#1565C0" />
               <Text style={styles.gatewayNoticeText}>
-                You will be redirected to the HNB secure payment gateway. Your card details are handled directly by CyberSource — we never see them.
+                You will be redirected to the HNB secure payment gateway. Your card details are handled directly by CyberSource — we never see them. A {SERVICE_FEE_PERCENTAGE}% online service charge applies to card payments.
               </Text>
             </View>
 
@@ -565,8 +727,10 @@ const styles = StyleSheet.create({
     marginBottom: 16, borderWidth: 1, borderColor: "#F0F0F0",
   },
   confirmRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F5F5F5" },
+  confirmRowLast:   { borderBottomWidth: 0 },
   confirmLabel:     { fontSize: 14, color: "#888888" },
   confirmValue:     { fontSize: 14, fontWeight: "600", color: "#1A1A1A", maxWidth: "55%", textAlign: "right" },
+  confirmTotalLabel:{ fontSize: 15, fontWeight: "700", color: "#1A1A1A" },
   confirmHighlight: { fontSize: 16, color: "#2E7D32", fontWeight: "700" },
 
   gatewayNotice: {
@@ -578,6 +742,17 @@ const styles = StyleSheet.create({
   schemeBadges: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   schemeBadge:  { backgroundColor: "#F5F5F5", borderRadius: 6, paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: "#E0E0E0" },
   schemeBadgeText: { fontSize: 12, fontWeight: "600", color: "#555555" },
+
+  maintenanceContainer: {
+    flex: 1, alignItems: "center", justifyContent: "center", padding: 32,
+  },
+  maintenanceTitle: { fontSize: 20, fontWeight: "700", color: "#1A1A1A", marginTop: 16, marginBottom: 10 },
+  maintenanceMessage: { fontSize: 14, color: "#666666", textAlign: "center", lineHeight: 22, marginBottom: 28 },
+  maintenanceBackBtn: {
+    backgroundColor: theme.colors.primary, borderRadius: 10,
+    paddingVertical: 14, paddingHorizontal: 32,
+  },
+  maintenanceBackBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
 
   footer: { padding: 16, backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EEEEEE" },
   primaryBtn: {

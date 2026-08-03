@@ -18,26 +18,22 @@ import {
   setStudentBillsData,
   setPendingInvoicesData,
   selectOverallTotalSummary,
-  selectAllStudentsWithPaymentData,
   selectStudentBillDetailsByStudentId,
   selectPendingInvoicesData,
 } from "../../../../state-store/slices/payment/paymentSlice";
 import OverallTotalSummary from "../../../payment/OverallTotalSummary";
-import StudentPaymentListItem from "../../../payment/StudentPaymentListItem";
 import PendingInvoiceCard from "../../../payment/PendingInvoiceCard";
-import MakePaymentPage from "./pages/MakePaymentPage";
-import PaymentHistoryPage from "./pages/PaymentHistoryPage";
+import GatewayPaymentHistoryList from "../../../payment/GatewayPaymentHistoryList";
 import PayInvoicePage from "./pages/PayInvoicePage";
 
 const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   const dispatch = useDispatch();
-  const [currentPage, setCurrentPage] = useState("main"); // main | make-payment | payment-history | pay-invoice
-  const [selectedInvoice, setSelectedInvoice] = useState(null);   // { invoice, student }
+  const [currentPage, setCurrentPage] = useState("main"); // main | pay-invoice
+  const [selectedInvoice, setSelectedInvoice] = useState(null); // { invoice, student }
 
   // Redux state
   const { sessionData } = useSelector((state) => state.app);
   const overallTotalSummary = useSelector(selectOverallTotalSummary);
-  const allStudentsPaymentData = useSelector(selectAllStudentsWithPaymentData);
   const pendingInvoicesData = useSelector(selectPendingInvoicesData);
 
   // Students from session
@@ -51,19 +47,11 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   // Admission numbers (for pending invoices API)
   // Try both top-level and nested shapes defensively
   const admissionNumbers = sessionStudentList
-    .map((student) => student.admission_number || student.student?.admission_number)
+    .map(
+      (student) =>
+        student.admission_number || student.student?.admission_number,
+    )
     .filter(Boolean);
-
-  // Debug: log what is being sent to confirm all students are included
-  useEffect(() => {
-    if (sessionStudentList.length > 0) {
-      console.log("📋 PaymentSection — students from session:", {
-        totalStudents: sessionStudentList.length,
-        admissionNumbers,
-        studentIds,
-      });
-    }
-  }, [sessionData]);
 
   // ── API: Existing paid bills ──────────────────────────────────────────
   const {
@@ -112,7 +100,8 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   // Error handling
   useEffect(() => {
     if (isBillsError) console.error("Payment API Error:", billsError);
-    if (isPendingError) console.error("Pending Invoice API Error:", pendingError);
+    if (isPendingError)
+      console.error("Pending Invoice API Error:", pendingError);
     if (isBillsError || isPendingError) {
       Alert.alert(
         "Error Loading Payment Data",
@@ -129,7 +118,14 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
         ],
       );
     }
-  }, [isBillsError, isPendingError, billsError, pendingError, refetchBills, refetchPending]);
+  }, [
+    isBillsError,
+    isPendingError,
+    billsError,
+    pendingError,
+    refetchBills,
+    refetchPending,
+  ]);
 
   const handleRefresh = () => {
     refetchBills();
@@ -164,16 +160,9 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
     );
   }
 
-  if (currentPage === "make-payment") {
-    return <MakePaymentPage onClose={onClose} onBack={handleBackToMain} />;
-  }
-
-  if (currentPage === "payment-history") {
-    return <PaymentHistoryPage onClose={onClose} onBack={handleBackToMain} />;
-  }
-
   // Loading state
-  const isLoading = (isBillsLoading || isPendingLoading) && studentIds.length > 0;
+  const isLoading =
+    (isBillsLoading || isPendingLoading) && studentIds.length > 0;
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -193,7 +182,6 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   }
 
   const hasPending = pendingInvoicesData && pendingInvoicesData.length > 0;
-  const hasBills = allStudentsPaymentData && allStudentsPaymentData.length > 0;
 
   // ── Main View ─────────────────────────────────────────────────────────
   return (
@@ -210,21 +198,36 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-
         {/* ── Section 1: Pending Invoices ────────────────────────── */}
         {hasPending ? (
           <View style={styles.section}>
             <View style={[styles.sectionHeader, styles.pendingSectionHeader]}>
               <View style={styles.sectionTitleRow}>
                 <View style={styles.pendingIconBox}>
-                  <MaterialIcons name="pending-actions" size={18} color="#E65100" />
+                  <MaterialIcons
+                    name="pending-actions"
+                    size={18}
+                    color="#E65100"
+                  />
                 </View>
                 <View>
-                  <Text style={styles.pendingSectionTitle}>Pending Invoices</Text>
+                  <Text style={styles.pendingSectionTitle}>
+                    Pending Invoices
+                  </Text>
                   <Text style={styles.sectionSubtitle}>
-                    {pendingInvoicesData.reduce((acc, s) => acc + s.pending_invoice_count, 0)} invoice
-                    {pendingInvoicesData.reduce((acc, s) => acc + s.pending_invoice_count, 0) !== 1 ? "s" : ""} outstanding
-                    across {pendingInvoicesData.length} student{pendingInvoicesData.length !== 1 ? "s" : ""}
+                    {pendingInvoicesData.reduce(
+                      (acc, s) => acc + s.pending_invoice_count,
+                      0,
+                    )}{" "}
+                    invoice
+                    {pendingInvoicesData.reduce(
+                      (acc, s) => acc + s.pending_invoice_count,
+                      0,
+                    ) !== 1
+                      ? "s"
+                      : ""}{" "}
+                    outstanding across {pendingInvoicesData.length} student
+                    {pendingInvoicesData.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
               </View>
@@ -244,7 +247,9 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
             <MaterialIcons name="check-circle" size={28} color="#2E7D32" />
             <View style={styles.allClearText}>
               <Text style={styles.allClearTitle}>All Paid Up!</Text>
-              <Text style={styles.allClearSub}>No outstanding invoices at this time.</Text>
+              <Text style={styles.allClearSub}>
+                No outstanding invoices at this time.
+              </Text>
             </View>
           </View>
         )}
@@ -254,36 +259,23 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
           <View style={styles.dividerLine} />
         </View>
 
-        {/* ── Section 2: Payment History ─────────────────────────── */}
+        {/* ── Section 2: Payment History (online gateway payments) ── */}
         <View style={styles.section}>
           <View style={[styles.sectionHeader, styles.historySectionHeader]}>
             <View style={styles.sectionTitleRow}>
               <View style={styles.historyIconBox}>
                 <MaterialIcons name="history" size={18} color="#1565C0" />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.historySectionTitle}>Payment History</Text>
                 <Text style={styles.sectionSubtitle}>
-                  Tap a student to expand their bill details
+                  Your online payments — tap a row for details
                 </Text>
               </View>
             </View>
           </View>
 
-          {hasBills ? (
-            allStudentsPaymentData.map((studentPayment) => (
-              <StudentPaymentListItem
-                key={`student-${studentPayment.summary.studentId}`}
-                summary={studentPayment.summary}
-                studentInfo={studentPayment.studentInfo}
-              />
-            ))
-          ) : (
-            <View style={styles.emptyStateContainer}>
-              <MaterialIcons name="account-balance-wallet" size={44} color="#CCCCCC" />
-              <Text style={styles.emptyStateText}>No payment history available</Text>
-            </View>
-          )}
+          <GatewayPaymentHistoryList />
         </View>
 
         <View style={styles.bottomPad} />
@@ -378,6 +370,11 @@ const styles = StyleSheet.create({
     color: "#888888",
     fontWeight: "400",
   },
+  viewGatewayHistoryLink: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1565C0",
+  },
 
   // ── All Clear Banner ────────────────────────────────────
   allClearBanner: {
@@ -392,7 +389,12 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   allClearText: { flex: 1 },
-  allClearTitle: { fontSize: 15, fontWeight: "700", color: "#2E7D32", marginBottom: 2 },
+  allClearTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#2E7D32",
+    marginBottom: 2,
+  },
   allClearSub: { fontSize: 13, color: "#558B2F" },
 
   // ── Divider ─────────────────────────────────────────────

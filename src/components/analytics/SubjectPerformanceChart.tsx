@@ -15,6 +15,11 @@ import {
   BookOpen,
   Medal,
 } from "lucide-react-native";
+import {
+  SUBJECT_COLORS,
+  NEUTRAL_COLORS,
+  getPerformanceColor,
+} from "./analyticsTheme";
 
 interface SubjectTermMark {
   term: string;
@@ -40,17 +45,6 @@ interface SubjectPerformanceChartProps {
 const { width } = Dimensions.get("window");
 const CHART_WIDTH = width - 112;
 
-const SUBJECT_COLORS = [
-  "#920734",
-  "#2563EB",
-  "#059669",
-  "#D97706",
-  "#7C3AED",
-  "#DB2777",
-  "#0891B2",
-  "#65A30D",
-];
-
 const SubjectPerformanceChart: React.FC<SubjectPerformanceChartProps> = ({
   subjects,
   filteredTerms,
@@ -67,10 +61,41 @@ const SubjectPerformanceChart: React.FC<SubjectPerformanceChartProps> = ({
       .filter((subj) => subj.marks.some((m) => m.mark != null));
   }, [subjects, filteredTerms]);
 
+  // Per-subject, per-term marks for the selected academic year — powers the
+  // "All Subjects" table at the bottom of this tab.
+  const termColumns = useMemo(
+    () =>
+      filteredTerms.map((term) => ({
+        term,
+        label: term
+          .replace(/^\d{4}\s*-\s*/i, "")
+          .replace(/term\s*/i, "T")
+          .slice(0, 6),
+      })),
+    [filteredTerms],
+  );
+
+  const subjectYearStats = useMemo(() => {
+    return yearSubjects.map((subj, index) => {
+      const termMarks = termColumns.map(({ term }) => {
+        const found = subj.marks.find((m) => m.term === term);
+        return {
+          term,
+          mark: found?.mark != null ? Number(found.mark) : null,
+        };
+      });
+      return {
+        name: subj.name,
+        color: SUBJECT_COLORS[index % SUBJECT_COLORS.length],
+        termMarks,
+      };
+    });
+  }, [yearSubjects, termColumns]);
+
   if (!yearSubjects || yearSubjects.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <BookOpen size={40} color="#CBD5E1" />
+        <BookOpen size={40} color={NEUTRAL_COLORS.classAverage} />
         <Text style={styles.emptyText}>
           No subject marks recorded for selected terms.
         </Text>
@@ -221,11 +246,11 @@ const SubjectPerformanceChart: React.FC<SubjectPerformanceChartProps> = ({
             height={200}
             spacing={80}
             color={subjectColor}
-            color2="#CBD5E1"
+            color2={NEUTRAL_COLORS.classAverage}
             thickness={3}
             thickness2={2}
             dataPointsColor={subjectColor}
-            dataPointsColor2="#CBD5E1"
+            dataPointsColor2={NEUTRAL_COLORS.classAverage}
             dataPointsRadius={7}
             dataPointsRadius2={5}
             hideRules
@@ -266,9 +291,73 @@ const SubjectPerformanceChart: React.FC<SubjectPerformanceChartProps> = ({
           <Text style={styles.legendText}>Your Mark</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendLine, { backgroundColor: "#CBD5E1" }]} />
+          <View
+            style={[
+              styles.legendLine,
+              { backgroundColor: NEUTRAL_COLORS.classAverage },
+            ]}
+          />
           <Text style={styles.legendText}>Class Avg</Text>
         </View>
+      </View>
+
+      {/* All Subjects — term-wise marks table for the selected academic year */}
+      <View style={styles.marksListCard}>
+        <Text style={styles.marksListTitle}>
+          All Subjects · {subjectYearStats.length}
+        </Text>
+
+        {/* Column headers */}
+        <View style={styles.tableHeaderRow}>
+          <View style={styles.tableNameCol} />
+          {termColumns.map((col) => (
+            <Text key={col.term} style={styles.tableHeaderCell}>
+              {col.label}
+            </Text>
+          ))}
+        </View>
+
+        {subjectYearStats.map((stat, idx) => {
+          const isActive = idx === safeIndex;
+          const isLast = idx === subjectYearStats.length - 1;
+          return (
+            <TouchableOpacity
+              key={stat.name}
+              style={[
+                styles.tableRow,
+                !isLast && styles.marksListRowBorder,
+                isActive && styles.marksListRowActive,
+              ]}
+              onPress={() => setSelectedIndex(idx)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.tableNameCol}>
+                <View
+                  style={[styles.marksListDot, { backgroundColor: stat.color }]}
+                />
+                <Text style={styles.tableNameText} numberOfLines={1}>
+                  {stat.name}
+                </Text>
+              </View>
+              {stat.termMarks.map((tm) => (
+                <Text
+                  key={tm.term}
+                  style={[
+                    styles.tableCell,
+                    {
+                      color:
+                        tm.mark != null
+                          ? getPerformanceColor(tm.mark)
+                          : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  {tm.mark != null ? `${tm.mark.toFixed(0)}%` : "—"}
+                </Text>
+              ))}
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
@@ -391,6 +480,78 @@ const styles = StyleSheet.create({
   noChartDataText: {
     fontSize: 13,
     color: "#94A3B8",
+  },
+  marksListCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  marksListTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#94A3B8",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  marksListRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  marksListRowActive: {
+    backgroundColor: "rgba(146,7,52,0.06)",
+  },
+  marksListDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tableHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: 8,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  tableHeaderCell: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#94A3B8",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    textAlign: "center",
+  },
+  tableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 11,
+    marginHorizontal: -14,
+    paddingHorizontal: 14,
+  },
+  tableNameCol: {
+    flex: 1.4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingRight: 6,
+  },
+  tableNameText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  tableCell: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
   },
 });
 

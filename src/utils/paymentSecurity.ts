@@ -1,6 +1,30 @@
 import NetInfo from "@react-native-community/netinfo";
 
 /**
+ * Generates a random token used to (a) authenticate postMessage bridge traffic
+ * from the injected WebView page, and (b) as a per-render CSP script nonce.
+ *
+ * NOTE: this is Math.random()-based, not a true CSPRNG. A real CSPRNG in this
+ * RN/Expo environment requires adding a native module (e.g. `expo-crypto`),
+ * which was intentionally not added here to avoid an untested native
+ * dependency/rebuild as a side effect of a security hardening pass. This is a
+ * defense-in-depth token, not the primary security boundary — the primary
+ * boundary is the CSP script-src nonce plus the fact that /payment/complete
+ * cryptographically re-verifies the CyberSource result server-side regardless
+ * of what the WebView bridge claims.
+ */
+export function generateSecureRandomToken(length: number = 32): string {
+  let out = "";
+  while (out.length < length) {
+    out += Math.random().toString(36).slice(2);
+  }
+  // Mix in current time to reduce cross-call predictability from Math.random's
+  // internal state.
+  out += Date.now().toString(36);
+  return out.slice(0, length);
+}
+
+/**
  * Pre-flight network check before launching the payment WebView.
  * Returns true if connected, false if offline or on a very slow connection.
  */
@@ -38,6 +62,10 @@ export async function checkNetworkBeforePayment(): Promise<{
  *
  * Security:
  *  - CSP allows testup.cybersource.com explicitly
+ *  - script-src uses a per-render nonce instead of 'unsafe-inline'/'unsafe-eval' —
+ *    only our own nonced script (or a script served from an allowed CyberSource
+ *    host) can execute, which meaningfully reduces the impact of any in-page
+ *    script-injection vector against the postMessage message-token check.
  *  - 60-second timeout (UC widget + 3DS can take time)
  *  - Message token authentication for postMessage bridge
  */
@@ -46,9 +74,9 @@ export function generateSecureCheckoutHtml(
   clientLibraryUrl: string,
   clientLibraryIntegrity: string,
   messageToken: string,
+  scriptNonce: string,
 ): string {
   const safeContext    = JSON.stringify(captureContext);
-  const contextPreview = JSON.stringify(captureContext.substring(0, 80));
   const contextLength  = captureContext.length;
   const isJwt          = (captureContext.split('.').length === 3);
 
@@ -62,22 +90,41 @@ export function generateSecureCheckoutHtml(
   <!--
     CSP: testup.cybersource.com listed explicitly — wildcard *.cybersource.com
     may not match it in all Android WebView implementations.
+
+    script-src uses a per-render nonce for our own inline script instead of
+    'unsafe-inline'/'unsafe-eval'. The CyberSource SDK itself is loaded from an
+    allowed host, not via the nonce. IMPORTANT: removing 'unsafe-eval' has not
+    been confirmed against a live CyberSource sandbox session — if the UC widget
+    relies on eval()/Function() internally, checkout.mount() may fail. Verify in
+    sandbox before shipping; revert to including 'unsafe-eval' if it breaks.
+
+    pay.google.com / *.gstatic.com / accounts.google.com added for Google Pay
+    (rendered by the CyberSource widget itself when allowedPaymentTypes includes
+    GOOGLEPAY — see InitiatePaymentSessionAction.php). NOT yet confirmed against a
+    live session with Google Pay actually rendering — if the WebView console shows
+    additional blocked origins during testing, add only those specific hosts here.
   -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
-             script-src  'self' 'unsafe-inline' 'unsafe-eval'
-                         https://*.cybersource.com https://testup.cybersource.com;
+             script-src  'self' 'nonce-${scriptNonce}'
+                         https://*.cybersource.com https://testup.cybersource.com
+                         https://pay.google.com https://*.gstatic.com;
              frame-src   https://*.cybersource.com https://testup.cybersource.com
-                         https://*.visa.com https://*.mastercard.com;
+                         https://*.visa.com https://*.mastercard.com
+                         https://pay.google.com https://accounts.google.com;
              connect-src 'self'
-                         https://*.cybersource.com https://testup.cybersource.com;
+                         https://*.cybersource.com https://testup.cybersource.com
+                         https://pay.google.com;
              style-src   'self' 'unsafe-inline'
-                         https://*.cybersource.com https://testup.cybersource.com;
+                         https://*.cybersource.com https://testup.cybersource.com
+                         https://pay.google.com https://*.gstatic.com;
              img-src     'self' data:
                          https://*.cybersource.com https://testup.cybersource.com
-                         https://*.visa.com https://*.mastercard.com;
+                         https://*.visa.com https://*.mastercard.com
+                         https://pay.google.com https://*.gstatic.com;
              font-src    'self'
-                         https://*.cybersource.com https://testup.cybersource.com;" />
+                         https://*.cybersource.com https://testup.cybersource.com
+                         https://*.gstatic.com;" />
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -119,30 +166,12 @@ export function generateSecureCheckoutHtml(
 <!-- UC SDK mounts card entry form here -->
 <div id="payment-form"></div>
 
-<!-- VAS SDK — session-specific URL from capture context JWT ctx[0].data.clientLibrary -->
-<script
-  src="${clientLibraryUrl}"
-  ${clientLibraryIntegrity ? 'integrity="' + clientLibraryIntegrity + '" crossorigin="anonymous"' : ''}
-  onload="window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-    type: 'PHASE2_LOG',
-    message: '[UC] SDK onload fired',
-    data: {
-      libraryUrl: '${clientLibraryUrl}',
-      VAS:             typeof window.VAS,
-      Flex:            typeof window.Flex,
-      UnifiedCheckout: typeof window.UnifiedCheckout,
-      UC:              typeof window.UC
-    },
-    _token: '${messageToken}'
-  }));"
-  onerror="window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-    type: 'MOUNT_PAYMENT_UNAVAILABLE',
-    message: 'UC SDK script failed to load from: ${clientLibraryUrl}',
-    _token: '${messageToken}'
-  }));"
-></script>
-
-<script>
+<!--
+  VAS SDK is loaded dynamically from the inline script below (not as a static
+  <script src> tag) so there are no inline event-handler attributes — those
+  require 'unsafe-inline' regardless of the nonce, which we've removed from CSP.
+-->
+<script nonce="${scriptNonce}">
   var mountTimeoutId  = null;
   var isPaymentActive = false;
 
@@ -151,6 +180,44 @@ export function generateSecureCheckoutHtml(
       payload._token = '${messageToken}';
       window.ReactNativeWebView.postMessage(JSON.stringify(payload));
     } catch(e) {}
+  }
+
+  // Loads the CyberSource SDK from the session-specific URL in the capture
+  // context JWT (ctx[0].data.clientLibrary). Uses createElement + property
+  // assignment (not HTML attributes) so load/error listeners are attached
+  // before the request starts — no race with the browser firing the event
+  // before our handler exists.
+  function loadSdk(url, integrity) {
+    return new Promise(function(resolve, reject) {
+      var s = document.createElement('script');
+      s.src = url;
+      if (integrity) {
+        s.integrity   = integrity;
+        s.crossOrigin = 'anonymous';
+      }
+      s.onload = function() {
+        postToNative({
+          type: 'PHASE2_LOG',
+          message: '[UC] SDK onload fired',
+          data: {
+            libraryUrl: url,
+            VAS:             typeof window.VAS,
+            Flex:            typeof window.Flex,
+            UnifiedCheckout: typeof window.UnifiedCheckout,
+            UC:              typeof window.UC
+          }
+        });
+        resolve();
+      };
+      s.onerror = function() {
+        postToNative({
+          type: 'MOUNT_PAYMENT_UNAVAILABLE',
+          message: 'UC SDK script failed to load from: ' + url
+        });
+        reject(new Error('UC SDK script failed to load'));
+      };
+      document.head.appendChild(s);
+    });
   }
 
   // 60-second timeout — UC widget includes 3DS which can be slow
@@ -209,6 +276,9 @@ export function generateSecureCheckoutHtml(
           allowedPaymentTypes: sessionJwtPayload ? sessionJwtPayload.allowedPaymentTypes : null,
         }
       });
+
+      // ── Load the CyberSource SDK (dynamic, no inline attribute handlers) ───
+      await loadSdk(${JSON.stringify(clientLibraryUrl)}, ${JSON.stringify(clientLibraryIntegrity || null)});
 
       if (typeof window.VAS === 'undefined') {
         throw new Error(
@@ -337,9 +407,14 @@ export function generateSecureCheckoutHtml(
 export function is3DSAllowedUrl(url: string): boolean {
   // Always allow CyberSource domains
   if (url.includes("cybersource.com")) return true;
-  // Allow blank/initial load
-  if (url === "about:blank" || url.startsWith("file://")) return true;
-  // Allow 3DS issuing bank redirect domains
+  // Allow blank/initial load only — file:// is intentionally NOT allowed in a
+  // payment WebView (no legitimate 3DS/CyberSource flow needs local file access).
+  if (url === "about:blank") return true;
+  // Allow 3DS issuing bank redirect domains, plus Google Pay's own domains
+  // (rendered by the CyberSource widget — see generateSecureCheckoutHtml CSP
+  // comment). Google Pay is expected to stay inside an iframe (frame-src) rather
+  // than navigate top-level, but these are allowed defensively in case sign-in
+  // or the payment sheet ever triggers a real navigation instead.
   const allowed3DSDomains = [
     "visa.com",
     "mastercard.com",
@@ -354,6 +429,9 @@ export function is3DSAllowedUrl(url: string): boolean {
     "boc.lk",
     "peoples.lk",
     "dfcc.lk",
+    // Google Pay
+    "pay.google.com",
+    "accounts.google.com",
   ];
   try {
     const hostname = new URL(url).hostname.replace(/^www\./, "");

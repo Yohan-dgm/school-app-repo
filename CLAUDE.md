@@ -141,3 +141,13 @@ Base components in `src/components/ui/` follow a consistent pattern:
 - Please every step of the way just give me a high level explanation of what changes you made
 - Make every task and code change you do as simple as possibl. We want to avoid making any massive or complex change. Every change should impact as little code as possibl. Everything is about simplicity
 - Finally, add a review section to the projectplan.nd file with a summary of the changes you made and any other relevant information
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

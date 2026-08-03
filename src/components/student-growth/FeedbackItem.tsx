@@ -11,6 +11,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { feedbackCardTheme } from "../../data/studentGrowthData";
 import AnimatedStarRating from "./AnimatedStarRating";
 import EvaluationsListModal from "./EvaluationsListModal";
+import FeedbackCommentModal from "./FeedbackCommentModal";
 import ParentCommentSection from "./ParentCommentSection";
 
 interface FeedbackItemData {
@@ -70,6 +71,9 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
   // Modal state for evaluations list
   const [isEvaluationsModalVisible, setIsEvaluationsModalVisible] =
     useState(false);
+
+  // Modal state for full comment popup
+  const [isCommentModalVisible, setIsCommentModalVisible] = useState(false);
 
   // Helper function to safely parse rating from string or number
   const parseRating = (rating: string | number): number => {
@@ -147,7 +151,16 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
       }),
     ]).start();
 
+    if (getMainComment()) {
+      setIsCommentModalVisible(true);
+    }
+
     if (onPress) onPress();
+  };
+
+  // Handle comment modal close
+  const handleCommentModalClose = () => {
+    setIsCommentModalVisible(false);
   };
 
   // Helper to get the main comment text
@@ -314,6 +327,17 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
         onClose={handleModalClose}
         evaluations={feedback.evaluations || []}
         categoryName={feedback.category.name}
+      />
+
+      {/* Full Comment Modal */}
+      <FeedbackCommentModal
+        visible={isCommentModalVisible}
+        onClose={handleCommentModalClose}
+        categoryName={feedback.category.name}
+        comment={getMainComment()}
+        ratingText={`${ratingValue.toFixed(1)} • ${getRatingText(ratingValue)}`}
+        creatorName={feedback.created_by.call_name_with_title}
+        dateText={formatDate(feedback.created_at)}
       />
     </Animated.View>
   );

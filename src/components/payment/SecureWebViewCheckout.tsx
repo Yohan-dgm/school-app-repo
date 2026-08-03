@@ -13,6 +13,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
 import {
   generateSecureCheckoutHtml,
+  generateSecureRandomToken,
   is3DSAllowedUrl,
 } from "../../utils/paymentSecurity";
 
@@ -58,10 +59,11 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
   const [is3DSActive, setIs3DSActive] = useState(false);
 
   // Generate a random message token per session — used to authenticate postMessage from WebView
-  const messageToken = useMemo(
-    () => Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join(""),
-    [],
-  );
+  const messageToken = useMemo(() => generateSecureRandomToken(32), []);
+  // Separate per-render nonce for the CSP script-src — kept distinct from the
+  // message token so the two purposes (bridge auth vs. script execution
+  // allowlisting) don't share a value.
+  const scriptNonce = useMemo(() => generateSecureRandomToken(24), []);
 
   // Generate HTML once — memoised implicitly by closure
   const injectedHtml = generateSecureCheckoutHtml(
@@ -69,6 +71,7 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
     clientLibraryUrl,
     clientLibraryIntegrity,
     messageToken,
+    scriptNonce,
   );
 
   const formatAmount = (val: number) =>
@@ -258,6 +261,10 @@ const SecureWebViewCheckout: React.FC<SecureWebViewCheckoutProps> = ({
           mixedContentMode="never"
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          // Google Pay's payment sheet / sign-in (rendered by the CyberSource
+          // widget when Google Pay is offered) may rely on third-party cookies
+          // inside the WebView's iframe context. Android-only prop; no-op on iOS.
+          thirdPartyCookiesEnabled={true}
           allowsInlineMediaPlayback={false}
           mediaPlaybackRequiresUserAction={true}
           // Hardware layer enables FLAG_SECURE equivalent on Android

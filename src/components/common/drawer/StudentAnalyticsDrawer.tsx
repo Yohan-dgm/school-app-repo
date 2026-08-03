@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,11 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Animated,
+  Easing,
+  RefreshControl,
+  Image,
+  ImageSourcePropType,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -37,11 +42,13 @@ import AttendanceAnalyticsChart from "../../analytics/AttendanceAnalyticsChart";
 import TermRecommendations from "../../analytics/TermRecommendations";
 import StudentJourneyTimeline from "../../analytics/StudentJourneyTimeline";
 import ReportCardsDrawer from "./ReportCardsDrawer";
+import { MAROON, MAROON_DARK } from "../../analytics/analyticsTheme";
 
 interface StudentAnalyticsDrawerProps {
   onClose: () => void;
   studentId?: number;
   studentName?: string;
+  studentImage?: ImageSourcePropType;
 }
 
 type TabKey =
@@ -73,9 +80,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "journey", label: "Journey" },
 ];
 
-const MAROON = "#920734";
-const MAROON_DARK = "#6B0523";
-
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -85,10 +89,97 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
+// Pulsing placeholder block used by the overview skeleton while insights load
+const SkeletonBlock: React.FC<{
+  width: number | `${number}%`;
+  height: number;
+  borderRadius?: number;
+  style?: object;
+}> = ({ width, height, borderRadius = 8, style }) => {
+  const pulse = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.4,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          borderRadius,
+          backgroundColor: "rgba(255,255,255,0.35)",
+          opacity: pulse,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+const OverviewSkeleton: React.FC = () => (
+  <View style={styles.overviewScroll}>
+    <View style={[styles.snapshotCard, { backgroundColor: MAROON }]}>
+      <SkeletonBlock width={110} height={11} borderRadius={4} />
+      <View style={[styles.snapshotStatsRow, { marginTop: 16 }]}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={styles.snapshotStat}>
+            <SkeletonBlock width={54} height={22} borderRadius={6} />
+            <View style={{ marginTop: 6 }}>
+              <SkeletonBlock width={44} height={9} borderRadius={4} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+    <View style={styles.statPillsRow}>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={[styles.statPill, { borderTopColor: "#E5E7EB" }]}>
+          <SkeletonBlock
+            width={20}
+            height={20}
+            borderRadius={10}
+            style={{ backgroundColor: "#E5E7EB" }}
+          />
+          <SkeletonBlock
+            width={32}
+            height={14}
+            style={{ backgroundColor: "#E5E7EB" }}
+          />
+          <SkeletonBlock
+            width={28}
+            height={8}
+            style={{ backgroundColor: "#F3F4F6" }}
+          />
+        </View>
+      ))}
+    </View>
+  </View>
+);
+
 const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
   onClose,
   studentId,
   studentName = "Student",
+  studentImage,
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [selectedYear, setSelectedYear] = useState<string>("");
@@ -99,12 +190,17 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
   const {
     data: insightsData,
     isLoading,
+    isFetching,
     isError,
     refetch,
   } = useGetStudentInsightsQuery(
     { student_id: studentId! },
     { skip: !hasStudent },
   );
+
+  const handlePullToRefresh = () => {
+    if (hasStudent) refetch();
+  };
 
   const insights = insightsData?.data;
   const examReports = useMemo(
@@ -329,9 +425,13 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
         {/* Student info row */}
         {hasStudent && (
           <View style={styles.studentInfoRow}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
+            {studentImage ? (
+              <Image source={studentImage} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+            )}
             <View style={styles.studentInfoText}>
               <Text style={styles.studentNameText} numberOfLines={1}>
                 {studentName}
@@ -396,12 +496,7 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
       );
     }
     if (isLoading) {
-      return (
-        <View style={styles.centeredState}>
-          <ActivityIndicator size="large" color={MAROON} />
-          <Text style={styles.stateSubtitle}>Loading analytics…</Text>
-        </View>
-      );
+      return <OverviewSkeleton />;
     }
     if (isError || !insights) {
       return (
@@ -441,6 +536,14 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.overviewScroll}
+      refreshControl={
+        <RefreshControl
+          refreshing={isFetching}
+          onRefresh={handlePullToRefresh}
+          tintColor={MAROON}
+          colors={[MAROON]}
+        />
+      }
     >
       {/* Year Snapshot Hero */}
       <LinearGradient
@@ -679,6 +782,14 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.sectionScroll}
+      refreshControl={
+        <RefreshControl
+          refreshing={isFetching}
+          onRefresh={handlePullToRefresh}
+          tintColor={MAROON}
+          colors={[MAROON]}
+        />
+      }
     >
       <View style={styles.sectionHeaderRow}>
         <View
@@ -861,6 +972,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  avatarImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.4)",
   },

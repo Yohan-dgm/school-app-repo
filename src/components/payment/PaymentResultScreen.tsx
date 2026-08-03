@@ -6,15 +6,19 @@ import {
   TouchableOpacity,
   Platform,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
+import { useDownloadPaymentReceipt } from "../../hooks/useDownloadPaymentReceipt";
 
 interface PaymentResultScreenProps {
   type: "success" | "failed";
   // Success data
   amount?: number;
   currency?: string;
+  serviceFeeAmount?: number;
+  totalChargedAmount?: number;
   invoiceType?: string;
   orderReference?: string;
   receiptVoucherId?: number | null;
@@ -44,6 +48,8 @@ const PaymentResultScreen: React.FC<PaymentResultScreenProps> = ({
   type,
   amount,
   currency = "LKR",
+  serviceFeeAmount,
+  totalChargedAmount,
   invoiceType,
   orderReference,
   receiptVoucherId,
@@ -55,6 +61,7 @@ const PaymentResultScreen: React.FC<PaymentResultScreenProps> = ({
 }) => {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { downloadReceipt, isDownloading } = useDownloadPaymentReceipt();
 
   useEffect(() => {
     // Icon pop-in + content fade-in
@@ -105,8 +112,20 @@ const PaymentResultScreen: React.FC<PaymentResultScreenProps> = ({
             <View style={styles.resultCard}>
               <View style={styles.resultRow}>
                 <Text style={styles.resultLabel}>Amount Paid</Text>
-                <Text style={[styles.resultValue, styles.greenText]}>{formatAmount(amount)}</Text>
+                <Text style={styles.resultValue}>{formatAmount(amount)}</Text>
               </View>
+              {serviceFeeAmount !== undefined && serviceFeeAmount > 0 && (
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>Online Service Charge</Text>
+                  <Text style={styles.resultValue}>{formatAmount(serviceFeeAmount)}</Text>
+                </View>
+              )}
+              {totalChargedAmount !== undefined && (
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>Total Charged</Text>
+                  <Text style={[styles.resultValue, styles.greenText]}>{formatAmount(totalChargedAmount)}</Text>
+                </View>
+              )}
               {invoiceType && (
                 <View style={styles.resultRow}>
                   <Text style={styles.resultLabel}>Invoice Type</Text>
@@ -135,6 +154,24 @@ const PaymentResultScreen: React.FC<PaymentResultScreenProps> = ({
               <MaterialIcons name="info-outline" size={16} color="#1565C0" />
               <Text style={styles.infoText}>{message}</Text>
             </View>
+          )}
+
+          {orderReference && (
+            <TouchableOpacity
+              style={[styles.receiptBtn, isDownloading && styles.btnDisabled]}
+              onPress={() => downloadReceipt(orderReference)}
+              disabled={isDownloading}
+              activeOpacity={0.85}
+            >
+              {isDownloading ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <MaterialIcons name="receipt-long" size={18} color={theme.colors.primary} />
+              )}
+              <Text style={styles.receiptBtnText}>
+                {isDownloading ? "Preparing Receipt..." : "Download Receipt"}
+              </Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity style={styles.doneBtn} onPress={onDone} activeOpacity={0.85}>
@@ -247,6 +284,15 @@ const styles = StyleSheet.create({
     gap: 8, marginBottom: 28, width: "100%",
   },
   noChargeText: { fontSize: 14, color: "#2E7D32", fontWeight: "600" },
+
+  receiptBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#FFFFFF", borderRadius: 12,
+    paddingVertical: 14, gap: 8, width: "100%", marginBottom: 12,
+    borderWidth: 1.5, borderColor: theme.colors.primary,
+  },
+  receiptBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.primary },
+  btnDisabled: { opacity: 0.6 },
 
   doneBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",

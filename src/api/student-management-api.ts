@@ -187,7 +187,7 @@ export interface StudentInsightsData {
 }
 
 export interface StudentInsightsResponse {
-  status: "successful" | "error";
+  status: "success" | "error";
   data: StudentInsightsData;
 }
 
