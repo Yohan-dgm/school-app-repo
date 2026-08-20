@@ -68,8 +68,9 @@ const IntelligenceCard: React.FC<IntelligenceCardProps> = ({
     ]).start();
 
     // Floating animation
+    let floatLoop: Animated.CompositeAnimation | null = null;
     const startFloating = () => {
-      Animated.loop(
+      floatLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(floatAnim, {
             toValue: 1,
@@ -82,11 +83,15 @@ const IntelligenceCard: React.FC<IntelligenceCardProps> = ({
             useNativeDriver: true,
           }),
         ]),
-      ).start();
+      );
+      floatLoop.start();
     };
 
     const floatTimeout = setTimeout(startFloating, delay + 800);
-    return () => clearTimeout(floatTimeout);
+    return () => {
+      clearTimeout(floatTimeout);
+      floatLoop?.stop();
+    };
   }, [cardIndex]);
 
   // Enhanced press animations with 3D effects - using separate press values

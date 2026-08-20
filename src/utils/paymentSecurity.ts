@@ -103,18 +103,28 @@ export function generateSecureCheckoutHtml(
     GOOGLEPAY — see InitiatePaymentSessionAction.php). NOT yet confirmed against a
     live session with Google Pay actually rendering — if the WebView console shows
     additional blocked origins during testing, add only those specific hosts here.
+
+    *.visa.com / *.mastercard.com in script-src + connect-src added for Click to
+    Pay (Secure Remote Commerce) — CyberSource's UC widget loads Visa/Mastercard's
+    own SRC SDK scripts directly from these hosts and calls out to them for card
+    recognition, which script-src/connect-src (not just frame-src/img-src, which
+    were already here for card network logos/3DS) must allow or the SDK silently
+    fails to load with no visible error. NOT yet confirmed against a live session
+    with Click to Pay actually rendering.
   -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
              script-src  'self' 'nonce-${scriptNonce}'
                          https://*.cybersource.com https://testup.cybersource.com
-                         https://pay.google.com https://*.gstatic.com;
+                         https://pay.google.com https://*.gstatic.com
+                         https://*.visa.com https://*.mastercard.com;
              frame-src   https://*.cybersource.com https://testup.cybersource.com
                          https://*.visa.com https://*.mastercard.com
                          https://pay.google.com https://accounts.google.com;
              connect-src 'self'
                          https://*.cybersource.com https://testup.cybersource.com
-                         https://pay.google.com;
+                         https://pay.google.com
+                         https://*.visa.com https://*.mastercard.com;
              style-src   'self' 'unsafe-inline'
                          https://*.cybersource.com https://testup.cybersource.com
                          https://pay.google.com https://*.gstatic.com;
@@ -316,6 +326,44 @@ export function generateSecureCheckoutHtml(
       clearTimeout(mountTimeoutId);
       document.getElementById('status-message').style.display = 'none';
       postToNative({ type: 'SDK_MOUNTED' });
+
+      // ── Diagnostic: report what CyberSource actually renders into
+      // #payment-buttons (Google Pay / Click to Pay / etc. entry points).
+      // checkout.mount() below does NOT resolve until the payment itself
+      // completes, so we can't just inspect the DOM after awaiting it — a
+      // MutationObserver reports what showed up as soon as it happens,
+      // without blocking or delaying the actual payment flow. This is here
+      // so "is the button even rendering" can be answered from the normal
+      // RN log output instead of requiring chrome://inspect every time.
+      (function observePaymentButtons() {
+        var el = document.getElementById('payment-buttons');
+        var reported = false;
+        var report = function () {
+          if (reported || !el) return;
+          reported = true;
+          observer.disconnect();
+          postToNative({
+            type: 'PHASE2_LOG',
+            message: '[UC] payment-buttons rendered',
+            data: {
+              childCount: el.children.length,
+              childTags: Array.prototype.map.call(el.children, function (child) {
+                return child.tagName
+                  + (child.id ? '#' + child.id : '')
+                  + (child.className ? '.' + String(child.className).replace(/\s+/g, '.') : '');
+              }),
+            },
+          });
+        };
+        var observer = new MutationObserver(report);
+        if (el) observer.observe(el, { childList: true, subtree: true });
+        setTimeout(function () {
+          if (!reported) {
+            observer.disconnect();
+            postToNative({ type: 'PHASE2_LOG', message: '[UC] payment-buttons: still empty after 15s' });
+          }
+        }, 15000);
+      })();
 
       // ── Task 2 + Step 3: checkout.mount() ─────────────────────────────────
       postToNative({ type: 'PHASE2_LOG', message: '[UC] STEP 3 - checkout.mount()' });

@@ -1,7 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, FlatList, Image, Alert, Modal, Linking, RefreshControl, ActivityIndicator, BackHandler, AppState, AppStateStatus, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup, ChatMessage } from "./ChatTypes";
 import MessageBubble from "./MessageBubble";
@@ -95,35 +94,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const { uploadFile, isUploading, progress: uploadProgress } = useChunkedUpload();
   
   const flatListRef = React.useRef<FlatList>(null);
-  const navigation = useNavigation();
 
-  // Navigation Blocker: Prevent user from leaving while uploading
-  React.useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (!isUploading) {
-        return;
-      }
-
-      // Prevent default behavior of leaving the screen
-      e.preventDefault();
-
-      // Alert the user
-      Alert.alert(
-        'Upload in Progress',
-        'Please wait for the upload to complete before leaving the chat. Leaving now will cancel the upload.',
-        [
-          { text: 'Wait', style: 'cancel', onPress: () => {} },
-          {
-            text: 'Leave Anyway',
-            style: 'destructive',
-            onPress: () => navigation.dispatch(e.data.action),
-          },
-        ]
-      );
-    });
-
-    return unsubscribe;
-  }, [navigation, isUploading]);
+  // Note: ChatView is rendered as a plain conditional view inside
+  // UniversalNotificationSystem (not a real navigator screen), so there is no
+  // stack transition to intercept here. Leaving-while-uploading is already
+  // guarded by the custom back button (below) and the hardware back handler.
 
   // Hardware Back Button (Android)
   React.useEffect(() => {
@@ -1029,21 +1004,23 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         message={selectedMessage}
       />
 
-      <MediaPreviewModal
-        visible={isPreviewVisible}
-        onClose={() => setIsPreviewVisible(false)}
-        mediaUrl={
-          selectedMessage?.type === 'image' || selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
-            ? resolveMediaUrl(selectedMessage?.attachment_url || selectedMessage?.content)
-            : resolveMediaUrl(selectedMessage?.attachment_url)
-        }
-        mediaType={
-          selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
-            ? 'video'
-            : selectedMessage?.type as 'image' | 'file'
-        }
-        filename={selectedMessage?.metadata?.original_filename}
-      />
+      {isPreviewVisible && (
+        <MediaPreviewModal
+          visible={isPreviewVisible}
+          onClose={() => setIsPreviewVisible(false)}
+          mediaUrl={
+            selectedMessage?.type === 'image' || selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
+              ? resolveMediaUrl(selectedMessage?.attachment_url || selectedMessage?.content)
+              : resolveMediaUrl(selectedMessage?.attachment_url)
+          }
+          mediaType={
+            selectedMessage?.type === 'video' || (selectedMessage?.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(selectedMessage?.attachment_url || selectedMessage?.metadata?.original_filename || ''))
+              ? 'video'
+              : selectedMessage?.type as 'image' | 'file'
+          }
+          filename={selectedMessage?.metadata?.original_filename}
+        />
+      )}
 
       {/* Full Screen Upload Progress Overlay */}
       {isUploading && (

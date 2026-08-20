@@ -71,33 +71,6 @@ export const getValueOrFallback = (value, fallback = "Not provided") => {
 // External server URL for student profile pictures (separate from main API)
 const PROFILE_PICTURE_SERVER_URL = `${ENV_CONFIG.BASE_URL_STUDENT_IMAGES}/get-student-attachment-data`;
 
-// Debug log the server URLs
-console.log("🖼️ Profile Picture Server URLs:", {
-  BASE_URL_API_SERVER: ENV_CONFIG.BASE_URL_API_SERVER,
-  BASE_URL_STUDENT_IMAGES: ENV_CONFIG.BASE_URL_STUDENT_IMAGES,
-  PROFILE_PICTURE_SERVER_URL,
-});
-
-// Test if the main API server is accessible
-fetch(`${ENV_CONFIG.BASE_URL_API_SERVER}/api/test`)
-  .then((response) => {
-    console.log("🌐 Main API Server Test:", {
-      url: `${ENV_CONFIG.BASE_URL_API_SERVER}/api/test`,
-      status: response.status,
-      ok: response.ok,
-      statusText: response.statusText,
-    });
-    return response.text();
-  })
-  .then((text) => {
-    if (text.includes("<!DOCTYPE html>")) {
-      console.warn("⚠️ Main API Server returning HTML instead of JSON");
-    }
-  })
-  .catch((error) => {
-    console.error("❌ Main API Server not accessible:", error.message);
-  });
-
 /**
  * Utility function to get student profile picture URL from student attachment
  * @param {Object} student - Student object from backend with attachment property

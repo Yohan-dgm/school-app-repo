@@ -3,7 +3,7 @@ console.log("🔴 [CRITICAL DEBUG] _layout.tsx file is loading...");
 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Provider } from "react-redux";
 import { persistStore } from "redux-persist";
@@ -20,7 +20,7 @@ import {
   Inter_500Medium,
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
-import { Platform, useWindowDimensions } from "react-native";
+import { AppState, AppStateStatus, Platform, useWindowDimensions } from "react-native";
 // LogBox import disabled to prevent web bundling issues
 let LogBox: any = null;
 if (Platform.OS !== "web") {
@@ -30,8 +30,10 @@ import * as ExpoSplashScreen from "expo-splash-screen";
 import * as ScreenOrientation from "expo-screen-orientation";
 import NetInfo from "@react-native-community/netinfo";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../state-store/store";
+import { setToken } from "../state-store/slices/app-slice";
+import { secureTokenStorage } from "../utils/secureTokenStorage";
 // Test import immediately
 console.log("🔵 [_LAYOUT DEBUG] Importing SafeBackgroundNotificationService...");
 import SafeBackgroundNotificationService from "../components/notifications/SafeBackgroundNotificationService";
@@ -66,18 +68,55 @@ ExpoSplashScreen.preventAutoHideAsync();
 // Create persistor
 const persistor = persistStore(stateStore);
 
+// How long the app can sit backgrounded before returning to foreground
+// triggers a full reload (re-init + remount of the whole screen tree).
+const BACKGROUND_RELOAD_THRESHOLD_MS = 1 * 60 * 1000;
+
 // Create AppContent component that handles splash logic AFTER PersistGate
 function AppContent() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const { width } = useWindowDimensions();
+  const dispatch = useDispatch();
+  const backgroundedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isInitialized) {
       initializeApp();
     }
   }, [isInitialized]);
+
+  // Reload the whole app if it's been backgrounded for a long time
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "background" || nextState === "inactive") {
+        backgroundedAtRef.current = Date.now();
+      } else if (nextState === "active") {
+        const backgroundedAt = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+
+        if (
+          backgroundedAt &&
+          Date.now() - backgroundedAt >= BACKGROUND_RELOAD_THRESHOLD_MS
+        ) {
+          console.log(
+            "🔄 App was backgrounded for a long time, reloading...",
+          );
+          setReloadKey((key) => key + 1);
+          setAppIsReady(false);
+          setIsInitialized(false);
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+    return () => subscription.remove();
+  }, []);
 
   // Runtime orientation control based on screen size
   useEffect(() => {
@@ -104,6 +143,18 @@ function AppContent() {
 
   const initializeApp = async () => {
     try {
+      // Restore the auth token from expo-secure-store (it's intentionally
+      // excluded from the AsyncStorage-backed redux-persist blob) before
+      // anything authenticated renders or fires an API call.
+      try {
+        const storedToken = await secureTokenStorage.getToken();
+        if (storedToken) {
+          dispatch(setToken(storedToken));
+        }
+      } catch (error) {
+        console.warn("Error restoring secure auth token:", error);
+      }
+
       // Initialize Android configuration
       AndroidConfig.initialize();
 
@@ -194,7 +245,7 @@ function AppContent() {
   console.log("🔵 [_LAYOUT DEBUG] AppContent rendering...");
   
   return (
-    <>
+    <React.Fragment key={reloadKey}>
       <StatusBar style="auto" />
       {/* Background notification service - runs app-wide when user is authenticated */}
       {(() => {
@@ -215,7 +266,7 @@ function AppContent() {
         <Stack.Screen name="profile" />
       </Stack>
       <Toast />
-    </>
+    </React.Fragment>
   );
 }
 

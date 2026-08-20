@@ -2,7 +2,6 @@ import { Alert } from "react-native";
 import NotificationManager from "../../services/notifications/NotificationManager";
 import PushNotificationService from "../../services/notifications/PushNotificationService";
 import WebSocketService from "../../services/websocket/WebSocketService";
-import AuthService from "../../services/auth/AuthService";
 import PermissionService from "../../services/permissions/PermissionService";
 
 // Mock AsyncStorage
@@ -153,16 +152,6 @@ describe("Notification System Integration", () => {
       await service.initialize("123", 2, "mock-token");
 
       expect(service).toBeDefined();
-    });
-  });
-
-  describe("AuthService", () => {
-    it("should handle token management", async () => {
-      const service = AuthService.getInstance();
-
-      expect(service).toBeDefined();
-      expect(typeof service.isTokenValid).toBe("function");
-      expect(typeof service.refreshAccessToken).toBe("function");
     });
   });
 

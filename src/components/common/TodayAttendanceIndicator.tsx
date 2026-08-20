@@ -31,22 +31,25 @@ const TodayAttendanceIndicator: React.FC<TodayAttendanceIndicatorProps> = ({
 
   // Pulse animation for active status
   useEffect(() => {
+    let loop: Animated.CompositeAnimation;
+
     if (isLoading) {
       // Continuous rotation for loading
-      Animated.loop(
+      loop = Animated.loop(
         Animated.timing(rotateAnim, {
           toValue: 1,
           duration: 2000,
           easing: Easing.linear,
           useNativeDriver: true,
         }),
-      ).start();
+      );
+      loop.start();
     } else {
       rotateAnim.setValue(0);
 
       // Pulse animation for attendance status
       if (attendanceStatus === "present" || attendanceStatus === "absent") {
-        Animated.loop(
+        loop = Animated.loop(
           Animated.sequence([
             Animated.timing(pulseAnim, {
               toValue: 1.2,
@@ -62,10 +65,11 @@ const TodayAttendanceIndicator: React.FC<TodayAttendanceIndicatorProps> = ({
             }),
           ]),
           { iterations: -1 },
-        ).start();
+        );
+        loop.start();
       } else {
         // Gentle breathing animation for pending/null
-        Animated.loop(
+        loop = Animated.loop(
           Animated.sequence([
             Animated.timing(pulseAnim, {
               toValue: 1.1,
@@ -81,9 +85,14 @@ const TodayAttendanceIndicator: React.FC<TodayAttendanceIndicatorProps> = ({
             }),
           ]),
           { iterations: -1 },
-        ).start();
+        );
+        loop.start();
       }
     }
+
+    return () => {
+      loop.stop();
+    };
   }, [attendanceStatus, isLoading]);
 
   // Get status configuration

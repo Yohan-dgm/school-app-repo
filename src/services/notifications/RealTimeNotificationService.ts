@@ -64,6 +64,7 @@ class RealTimeNotificationService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval: NodeJS.Timeout | null = null;
+  private appStateSubscription: { remove: () => void } | null = null;
   private chatListeners: Set<(message: any) => void> = new Set();
   private connectionListeners: Set<(connected: boolean) => void> = new Set();
 
@@ -287,24 +288,31 @@ class RealTimeNotificationService {
    * Setup app state listener for connection management
    */
   private setupAppStateListener(): void {
-    AppState.addEventListener("change", (nextAppState) => {
-      console.log("📱 App state changed:", nextAppState);
+    // initialize() runs on every login; avoid stacking duplicate listeners
+    // if a previous session's subscription was never removed.
+    this.appStateSubscription?.remove();
 
-      if (nextAppState === "active") {
-        // App came to foreground - ensure connection is active
-        if (!this.connected && this.echo) {
-          console.log("📱 App became active - reconnecting...");
-          this.reconnect();
+    this.appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextAppState) => {
+        console.log("📱 App state changed:", nextAppState);
+
+        if (nextAppState === "active") {
+          // App came to foreground - ensure connection is active
+          if (!this.connected && this.echo) {
+            console.log("📱 App became active - reconnecting...");
+            this.reconnect();
+          }
+        } else if (nextAppState === "background") {
+          // App went to background - maintain connection but reset reconnect attempts
+          this.reconnectAttempts = 0;
+          if (this.reconnectInterval) {
+            clearTimeout(this.reconnectInterval);
+            this.reconnectInterval = null;
+          }
         }
-      } else if (nextAppState === "background") {
-        // App went to background - maintain connection but reset reconnect attempts
-        this.reconnectAttempts = 0;
-        if (this.reconnectInterval) {
-          clearTimeout(this.reconnectInterval);
-          this.reconnectInterval = null;
-        }
-      }
-    });
+      },
+    );
   }
 
   /**
@@ -703,6 +711,10 @@ class RealTimeNotificationService {
       clearTimeout(this.reconnectInterval);
       this.reconnectInterval = null;
     }
+
+    // Remove app state listener
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
 
     // Unsubscribe from all channels
     this.channels.forEach((channel, channelName) => {

@@ -607,7 +607,7 @@ const PayInvoicePage = ({ invoice, student, onBack, onClose, onPaymentComplete }
             </View>
 
             <View style={styles.schemeBadges}>
-              {["Visa", "Mastercard", "AMEX", "UnionPay"].map((s) => (
+              {["Visa", "Mastercard", "AMEX"].map((s) => (
                 <View key={s} style={styles.schemeBadge}>
                   <Text style={styles.schemeBadgeText}>{s}</Text>
                 </View>

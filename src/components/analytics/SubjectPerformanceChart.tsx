@@ -13,7 +13,6 @@ import {
   TrendingDown,
   Minus,
   BookOpen,
-  Medal,
 } from "lucide-react-native";
 import {
   SUBJECT_COLORS,
@@ -220,20 +219,6 @@ const SubjectPerformanceChart: React.FC<SubjectPerformanceChartProps> = ({
             </Text>
           </View>
         </View>
-        {selected.rank != null && (
-          <>
-            <View style={styles.statStripDivider} />
-            <View style={styles.statStripItem}>
-              <Text style={styles.statStripLabel}>Rank</Text>
-              <View style={styles.rankRow}>
-                <Medal size={12} color="#7C3AED" />
-                <Text style={[styles.statStripValue, { color: "#7C3AED" }]}>
-                  #{selected.rank}
-                </Text>
-              </View>
-            </View>
-          </>
-        )}
       </View>
 
       {/* Line Chart */}
@@ -447,11 +432,6 @@ const styles = StyleSheet.create({
   statStripTrendText: {
     fontSize: 12,
     fontWeight: "700",
-  },
-  rankRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
   },
   legendRow: {
     flexDirection: "row",

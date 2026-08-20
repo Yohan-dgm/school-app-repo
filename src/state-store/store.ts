@@ -15,6 +15,7 @@ import paymentSlice from "./slices/payment/paymentSlice";
 import { userPostsMiddleware } from "./middleware/user-posts-middleware";
 import { studentSelectionMiddleware } from "./middleware/student-selection-middleware";
 import { authResponseLogger } from "./middleware/auth-response-logger";
+import { secureTokenMiddleware } from "./middleware/secure-token-middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Middleware, MiddlewareAPI } from "@reduxjs/toolkit";
 import {
@@ -24,6 +25,7 @@ import {
 } from "@reduxjs/toolkit";
 import { setupListeners } from "@reduxjs/toolkit/query";
 import {
+  createTransform,
   FLUSH,
   PAUSE,
   PERSIST,
@@ -33,6 +35,19 @@ import {
   REGISTER,
   REHYDRATE,
 } from "redux-persist";
+
+// The auth token is security-sensitive (bearer token = full account access).
+// It's kept out of the AsyncStorage-backed persisted blob entirely; it lives
+// only in expo-secure-store (see secureTokenMiddleware) and in-memory redux
+// state, restored on boot in _layout.tsx before the app renders.
+const stripTokenTransform = createTransform(
+  (inboundState: any) => {
+    const { token, ...rest } = inboundState;
+    return rest;
+  },
+  (outboundState) => outboundState,
+  { whitelist: ["app"] },
+);
 
 const persistConfig = {
   key: "root",
@@ -44,6 +59,7 @@ const persistConfig = {
     studentExamApi.reducerPath,
     studentExamReportApi.reducerPath,
   ], // these reduce will not persist data (NOTE: blacklist rtk api slices so that to use tags)
+  transforms: [stripTokenTransform],
   migrate: (state: any) => {
     // Handle calendar slice migration
     if (state && state.calendar && !state.calendar.lastFetched) {
@@ -138,6 +154,7 @@ const store = configureStore({
       userPostsMiddleware,
       studentSelectionMiddleware,
       authResponseLogger,
+      secureTokenMiddleware,
     ),
   enhancers: getEnhancers,
 });

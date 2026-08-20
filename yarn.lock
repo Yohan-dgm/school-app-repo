@@ -4038,6 +4038,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"babel-plugin-transform-remove-console@npm:^6.9.4":
+  version: 6.9.4
+  resolution: "babel-plugin-transform-remove-console@npm:6.9.4"
+  checksum: 10c0/8bb152eed6685b92c371d72be3d9107d879f64b507f3e255edd6a1fb4806e9bcf39011d6f32ce1d8d745fb3533d1da4d5c706eefa633fae25151866c986f2e24
+  languageName: node
+  linkType: hard
+
 "babel-preset-current-node-syntax@npm:^1.0.0, babel-preset-current-node-syntax@npm:^1.1.0":
   version: 1.2.0
   resolution: "babel-preset-current-node-syntax@npm:1.2.0"
@@ -6282,6 +6289,15 @@ __metadata:
     expo: "*"
     react-native: "*"
   checksum: 10c0/b3f49a88e3c85b55504a30a7a337bb044aaf2f923afda41d3d2a8944751b6964208fe17c095a196a9a7172863a6afc9f68dcf23ff4a3f9e6b1c0b824f0925697
+  languageName: node
+  linkType: hard
+
+"expo-secure-store@npm:~14.2.4":
+  version: 14.2.4
+  resolution: "expo-secure-store@npm:14.2.4"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/490009d561f03609b819251d71c741643ad9e556afc744dcc5dce1e4b4ea288fc602cc4d93f6045e9a1b09a7f821f1cde5005971d98ab01bbac9b46a054c5e31
   languageName: node
   linkType: hard
 
@@ -11285,6 +11301,7 @@ __metadata:
     ajv: "npm:^8.17.1"
     axios: "npm:^1.10.0"
     babel-jest: "npm:^30.0.4"
+    babel-plugin-transform-remove-console: "npm:^6.9.4"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
     date-fns: "npm:^4.1.0"
@@ -11318,6 +11335,7 @@ __metadata:
     expo-router: "npm:~5.1.3"
     expo-screen-capture: "npm:^7.1.5"
     expo-screen-orientation: "npm:^8.1.7"
+    expo-secure-store: "npm:~14.2.4"
     expo-sharing: "npm:~13.1.5"
     expo-splash-screen: "npm:~0.30.10"
     expo-status-bar: "npm:~2.2.3"

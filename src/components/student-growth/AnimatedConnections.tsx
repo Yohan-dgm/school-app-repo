@@ -35,24 +35,32 @@ const AnimatedConnections: React.FC<AnimatedConnectionsProps> = ({
 
   useEffect(() => {
     // Start main animation
-    Animated.loop(
+    const mainLoop = Animated.loop(
       Animated.timing(animationValue, {
         toValue: 1,
         duration: 4000,
         useNativeDriver: false,
       }),
-    ).start();
+    );
+    mainLoop.start();
 
     // Start particle animations with staggered delays
-    particleAnimations.forEach((anim, index) => {
-      Animated.loop(
+    const particleLoops = particleAnimations.map((anim, index) => {
+      const loop = Animated.loop(
         Animated.timing(anim, {
           toValue: 1,
           duration: 3000 + index * 200,
           useNativeDriver: false,
         }),
-      ).start();
+      );
+      loop.start();
+      return loop;
     });
+
+    return () => {
+      mainLoop.stop();
+      particleLoops.forEach((loop) => loop.stop());
+    };
   }, []);
 
   // Calculate card positions based on grid layout (3 cards per row)

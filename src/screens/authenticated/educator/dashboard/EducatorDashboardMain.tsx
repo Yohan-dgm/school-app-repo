@@ -17,6 +17,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  cancelAnimation,
 } from "react-native-reanimated";
 import EnhancedDashboardGrid from "./components/EnhancedDashboardGrid";
 import FullScreenModal from "../../principal/dashboard/components/FullScreenModal";
@@ -82,11 +83,15 @@ function EducatorDashboardMain() {
     fabScale.value = withRepeat(
       withSequence(
         withTiming(1.1, { duration: 1000 }),
-        withTiming(1, { duration: 1000 })
+        withTiming(1, { duration: 1000 }),
       ),
       -1,
-      true
+      true,
     );
+
+    return () => {
+      cancelAnimation(fabScale);
+    };
   }, []);
 
   // Animated styles

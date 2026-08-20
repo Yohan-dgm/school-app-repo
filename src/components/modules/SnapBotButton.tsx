@@ -14,6 +14,7 @@ import Animated, {
   withRepeat,
   withTiming,
   withSequence,
+  cancelAnimation,
 } from "react-native-reanimated";
 
 const { width } = Dimensions.get("window");
@@ -46,6 +47,11 @@ export const SnapBotButton: React.FC<SnapBotButtonProps> = ({ onPress }) => {
       -1,
       false,
     );
+
+    return () => {
+      cancelAnimation(pulseScale);
+      cancelAnimation(glowOpacity);
+    };
   }, []);
 
   const pulseStyle = useAnimatedStyle(() => ({

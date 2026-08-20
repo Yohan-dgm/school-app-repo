@@ -28,7 +28,9 @@
         "NSPhotoLibraryUsageDescription": "Allowing access to your photo library enables you to share photos and documents with your school, such as profile pictures and academic work.",
         "NSCameraUsageDescription": "Allowing camera access enables you to take profile pictures and scan school-related QR codes.",
         "UIApplicationSupportsIndirectInputEvents": true,
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
         },
@@ -109,7 +111,8 @@
           "isAccessMediaLocationEnabled": false
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store"
     ],
     "extra": {
       "router": {},

@@ -14,10 +14,6 @@ export const ENV_CONFIG = {
   SITE_URL: process.env.EXPO_PUBLIC_SITE_URL || "https://schoolsnap.app",
   SITE_NAME: process.env.EXPO_PUBLIC_SITE_NAME || "School App SnapBot",
 
-  // Security Configuration
-  APP_SECRET:
-    process.env.EXPO_PUBLIC_APP_SECRET ||
-    "SnapBot2024SecureKey!@#$%^&*()_+1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   RATE_LIMIT_REQUESTS: parseInt(
     process.env.EXPO_PUBLIC_RATE_LIMIT_REQUESTS || "10",
   ),
@@ -27,10 +23,6 @@ export const ENV_CONFIG = {
 
   // Environment
   NODE_ENV: process.env.NODE_ENV || "development",
-
-  // Base URL for existing API
-  BASE_URL_API_SERVER:
-    process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 || "http://192.168.1.14:9999",
 
   // Base URL for student profile images (separate from main API)
   BASE_URL_STUDENT_IMAGES:
@@ -47,7 +39,6 @@ export const validateEnvConfig = (): void => {
     "OPENROUTER_API_KEY",
     "OPENROUTER_BASE_URL",
     "DEEPSEEK_MODEL",
-    "APP_SECRET",
   ];
 
   const missingVars = requiredVars.filter((varName) => {

@@ -24,7 +24,6 @@ import {
   Sparkles,
   Route,
   Trophy,
-  Medal,
   GraduationCap,
   FileText,
   ChevronRight,
@@ -289,6 +288,20 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
         ) / filteredExams.length
       : null;
   const classRank = latestFilteredExam?.class_rank ?? null;
+  const classRankTermLabel = useMemo(() => {
+    if (!latestFilteredExam) return "";
+    const term = latestFilteredExam.scheduling_examination?.term;
+    if (!term)
+      return latestFilteredExam.scheduling_examination?.exam_title ?? "";
+    const sy = String(term.school_year ?? "").trim();
+    const tn = String(term.name ?? "").trim();
+    const label = sy && !tn.includes(sy) ? `${sy} - ${tn}` : tn;
+    const finalLabel =
+      label.trim() && label.trim() !== "-"
+        ? label.trim()
+        : (latestFilteredExam.scheduling_examination?.exam_title ?? "");
+    return finalLabel.replace(`${effectiveYear} - `, "");
+  }, [latestFilteredExam, effectiveYear]);
 
   // ── Previous year comparison
   const prevYear = effectiveYear ? String(Number(effectiveYear) - 1) : "";
@@ -566,7 +579,9 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
             <Text style={styles.snapshotStatValue}>
               {classRank != null ? `#${classRank}` : "—"}
             </Text>
-            <Text style={styles.snapshotStatLabel}>Class Rank</Text>
+            <Text style={styles.snapshotStatLabel}>
+              Class Rank{classRankTermLabel ? ` · ${classRankTermLabel}` : ""}
+            </Text>
           </View>
           <View style={styles.snapshotDivider} />
           <View style={styles.snapshotStat}>
@@ -601,13 +616,6 @@ const StudentAnalyticsDrawer: React.FC<StudentAnalyticsDrawerProps> = ({
             {bestSubject?.avg != null ? `${bestSubject.avg.toFixed(0)}%` : "—"}
           </Text>
           <Text style={styles.statPillLabel}>Best</Text>
-        </View>
-        <View style={[styles.statPill, { borderTopColor: "#7C3AED" }]}>
-          <Medal size={20} color="#7C3AED" strokeWidth={1.8} />
-          <Text style={[styles.statPillValue, { color: "#7C3AED" }]}>
-            {classRank != null ? `#${classRank}` : "—"}
-          </Text>
-          <Text style={styles.statPillLabel}>Rank</Text>
         </View>
         <View style={[styles.statPill, { borderTopColor: "#10B981" }]}>
           <CalendarCheck2 size={20} color="#10B981" strokeWidth={1.8} />

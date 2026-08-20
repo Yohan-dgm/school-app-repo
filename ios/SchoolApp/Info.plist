@@ -43,36 +43,7 @@
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>
-      <true/>
-      <key>NSAllowsArbitraryLoadsInWebContent</key>
-      <true/>
-      <key>NSAllowsLocalNetworking</key>
-      <true/>
-      <key>NSExceptionDomains</key>
-      <dict>
-        <key>172.20.10.3</key>
-        <dict>
-          <key>NSExceptionAllowsInsecureHTTPLoads</key>
-          <true/>
-          <key>NSExceptionMinimumTLSVersion</key>
-          <string>1.0</string>
-          <key>NSIncludesSubdomains</key>
-          <true/>
-          <key>NSExceptionRequiresForwardSecrecy</key>
-          <false/>
-        </dict>
-        <key>localhost</key>
-        <dict>
-          <key>NSExceptionAllowsInsecureHTTPLoads</key>
-          <true/>
-          <key>NSExceptionMinimumTLSVersion</key>
-          <string>1.0</string>
-          <key>NSIncludesSubdomains</key>
-          <true/>
-          <key>NSExceptionRequiresForwardSecrecy</key>
-          <false/>
-        </dict>
-      </dict>
+      <false/>
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>This app needs access to camera to take profile pictures</string>

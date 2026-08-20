@@ -60,5 +60,17 @@ target 'SchoolApp' do
         end
       end
     end
+
+    # Work around Xcode 26.4+ (Apple Clang 21) rejecting fmt 11.0.2's
+    # FMT_STRING consteval checks. Building fmt against C++17 skips that
+    # code path since consteval doesn't exist pre-C++20. Remove once RN
+    # ships fmt >= 12.1.0 (RN >= 0.83.9 / Expo SDK 56).
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
+      end
+    end
   end
 end

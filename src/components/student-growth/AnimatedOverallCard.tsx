@@ -65,8 +65,9 @@ const AnimatedOverallCard: React.FC<AnimatedOverallCardProps> = ({
     ]).start();
 
     // Start continuous glow animation
+    let glowLoop: Animated.CompositeAnimation | null = null;
     const startGlowAnimation = () => {
-      Animated.loop(
+      glowLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(glowAnim, {
             toValue: 1,
@@ -79,12 +80,16 @@ const AnimatedOverallCard: React.FC<AnimatedOverallCardProps> = ({
             useNativeDriver: false,
           }),
         ]),
-      ).start();
+      );
+      glowLoop.start();
     };
 
     const timer = setTimeout(startGlowAnimation, 1000);
-    return () => clearTimeout(timer);
-  }, [rating]); // Re-trigger when rating changes
+    return () => {
+      clearTimeout(timer);
+      glowLoop?.stop();
+    };
+  }, [rating]); // Re-trigger when rating changes; cleanup also stops the previous glow loop
 
   // Press animations
   const handlePressIn = () => {

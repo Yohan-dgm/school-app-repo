@@ -4,11 +4,7 @@
 node_modules/
 
 # Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-school-app-by-toyar-firebase-adminsdk-*.json
+.expo/  
 # Native
 *.orig.*
 *.jks
@@ -29,7 +25,8 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# env files (contain real secrets; .env.example stays tracked as a template)
+.env
 .env*.local
 
 # typescript

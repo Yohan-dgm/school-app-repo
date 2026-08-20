@@ -84,7 +84,7 @@ export function generateReceiptHtml(
     }
     .logo { height: 56px; margin-bottom: 10px; }
     .school-name { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
-    .receipt-title { font-size: 13px; color: rgba(255,255,255,0.85); margin-top: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
+    .receipt-title { font-size: 13px; color: rgba(11,36,71,0.7); margin-top: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
     .meta-row { display: flex; justify-content: space-between; margin-bottom: 24px; font-size: 12px; color: #666; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     td { padding: 10px 4px; border-bottom: 1px solid #eee; font-size: 14px; }

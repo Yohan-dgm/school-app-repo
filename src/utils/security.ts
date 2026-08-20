@@ -2,7 +2,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Application from "expo-application";
 import * as Device from "expo-device";
-import { ENV_CONFIG } from "../config/env";
 
 // Security configuration
 const SECURITY_CONFIG = {
@@ -193,85 +192,6 @@ export class EnhancedRateLimiter {
   }
 }
 
-// Request encryption/obfuscation
-export class RequestSecurity {
-  static async encryptPayload(payload: string): Promise<{
-    encrypted: string;
-    iv: string;
-    salt: string;
-  }> {
-    try {
-      // Simple base64 encoding instead of complex encryption for now
-      const salt = Math.random().toString(36).substring(2, 18);
-      const iv = Math.random().toString(36).substring(2, 18);
-      const encrypted = btoa(payload + salt + iv);
-      return { encrypted, iv, salt };
-    } catch (error) {
-      console.warn("Encryption failed:", error);
-      throw new Error("Failed to encrypt payload");
-    }
-  }
-
-  static async decryptPayload(
-    encrypted: string,
-    iv: string,
-    salt: string,
-  ): Promise<string> {
-    try {
-      // Simple base64 decoding
-      const decoded = atob(encrypted);
-      const payload = decoded.replace(salt, "").replace(iv, "");
-      return payload;
-    } catch (error) {
-      console.warn("Decryption failed:", error);
-      throw new Error("Failed to decrypt payload");
-    }
-  }
-
-  static async createRequestSignature(
-    payload: string,
-    timestamp: number,
-    nonce: string,
-  ): Promise<string> {
-    try {
-      const deviceId = await DeviceFingerprint.generate();
-      const message = `${payload}${timestamp}${nonce}${deviceId}`;
-      // Simple hash instead of HMAC
-      let hash = 0;
-      for (let i = 0; i < message.length; i++) {
-        const char = message.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash = hash & hash;
-      }
-      return (
-        "sig_" + Math.abs(hash).toString(36) + ENV_CONFIG.APP_SECRET.slice(-8)
-      );
-    } catch (error) {
-      console.warn("Signature creation failed:", error);
-      throw new Error("Failed to create request signature");
-    }
-  }
-
-  static async verifyRequestSignature(
-    payload: string,
-    timestamp: number,
-    nonce: string,
-    signature: string,
-  ): Promise<boolean> {
-    try {
-      const expectedSignature = await this.createRequestSignature(
-        payload,
-        timestamp,
-        nonce,
-      );
-      return expectedSignature === signature;
-    } catch (error) {
-      console.warn("Signature verification failed:", error);
-      return false;
-    }
-  }
-}
-
 // Session management
 export class SessionManager {
   private static readonly SESSION_KEY = "chat_session";
@@ -368,7 +288,6 @@ export const Security = {
   DeviceFingerprint,
   RequestValidator,
   EnhancedRateLimiter,
-  RequestSecurity,
   SessionManager,
   ContentSanitizer,
   SECURITY_CONFIG,

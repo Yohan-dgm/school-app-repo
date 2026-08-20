@@ -535,6 +535,12 @@ const FilterBar = ({
       glowOpacity.stopAnimation();
       glowOpacity.setValue(0);
     }
+
+    // Ensure the glow loop doesn't keep running if this component unmounts
+    // while activeCount > 0.
+    return () => {
+      glowOpacity.stopAnimation();
+    };
   }, [filters, badgeScale, glowOpacity]);
 
   const selectedCategory = categories.find(

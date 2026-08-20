@@ -310,21 +310,23 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         </View>
       </TouchableOpacity>
 
-      <MediaPreviewModal
-        visible={isPreviewVisible}
-        onClose={() => setIsPreviewVisible(false)}
-        mediaUrl={
-          message.type === 'image' || message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
-            ? resolveMediaUrl(message.attachment_url || message.content)
-            : resolveMediaUrl(message.attachment_url)
-        }
-        mediaType={
-          message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
-            ? 'video'
-            : message.type as 'image' | 'file'
-        }
-        filename={message.metadata?.original_filename}
-      />
+      {isPreviewVisible && (
+        <MediaPreviewModal
+          visible={isPreviewVisible}
+          onClose={() => setIsPreviewVisible(false)}
+          mediaUrl={
+            message.type === 'image' || message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
+              ? resolveMediaUrl(message.attachment_url || message.content)
+              : resolveMediaUrl(message.attachment_url)
+          }
+          mediaType={
+            message.type === 'video' || (message.type === 'file' && /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || ''))
+              ? 'video'
+              : message.type as 'image' | 'file'
+          }
+          filename={message.metadata?.original_filename}
+        />
+      )}
     </View>
   );
 };

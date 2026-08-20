@@ -29,6 +29,7 @@ import {
   getUserCategoryDisplayName,
 } from "../../constants/userCategories";
 import { getUserProfileImageSourceWithAuth } from "../../utils/profileImageUtils";
+import { useGetPaymentGatewayStatusQuery } from "../../api/payment-gateway-api";
 
 // Import section components
 import ProfileSection from "../drawer/sections/profile/ProfileSection";
@@ -60,6 +61,19 @@ const DrawerMenu = ({ isVisible, onClose }) => {
     sessionData?.user_category || sessionData?.data?.user_category;
   const isParent = userCategory === USER_CATEGORIES.PARENT;
   const userDisplayName = getUserCategoryDisplayName(userCategory);
+
+  // Payment gateway status - hides the "Payments" menu item when disabled.
+  // Refetched on every drawer open (not just once at app load) so a flag
+  // flipped while the app is already running is picked up.
+  const { data: gatewayStatusData, refetch: refetchGatewayStatus } =
+    useGetPaymentGatewayStatusQuery(undefined, { skip: !isParent });
+  const isPaymentGatewayActive = gatewayStatusData?.data?.is_active !== false;
+
+  useEffect(() => {
+    if (isVisible && isParent) {
+      refetchGatewayStatus();
+    }
+  }, [isVisible, isParent, refetchGatewayStatus]);
 
   // console.log(
   //   "🏠 DrawerMenu - User category:",
@@ -160,8 +174,19 @@ const DrawerMenu = ({ isVisible, onClose }) => {
     }, 300); // Small delay to allow drawer close animation
   };
 
-  const handleSectionOpen = (section) => {
+  const handleSectionOpen = async (section) => {
     console.log(`🔹 Drawer Menu: Opening section: ${section}`);
+
+    if (section === "payment") {
+      // Re-check right before opening so a status change isn't missed
+      // by a still-in-flight/cached refetch from the drawer opening.
+      const result = await refetchGatewayStatus();
+      if (result.data?.data?.is_active === false) {
+        console.log("🔹 Drawer Menu: Payment gateway disabled, not opening");
+        return;
+      }
+    }
+
     setActiveSection(section);
     setSectionOverlayVisible(true);
     onClose(); // Close the drawer
@@ -262,14 +287,16 @@ const DrawerMenu = ({ isVisible, onClose }) => {
   ];
 
   // Parent-only menu items
-  const parentOnlyItems = [
-    {
-      id: "payments",
-      title: "Payments",
-      icon: "payments",
-      onPress: () => handleSectionOpen("payment"),
-    },
-  ];
+  const parentOnlyItems = isPaymentGatewayActive
+    ? [
+        {
+          id: "payments",
+          title: "Payments",
+          icon: "payments",
+          onPress: () => handleSectionOpen("payment"),
+        },
+      ]
+    : [];
 
   // Combine menu items based on user category
   const menuItems = isParent
