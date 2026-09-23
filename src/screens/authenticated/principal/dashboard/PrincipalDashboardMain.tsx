@@ -11,6 +11,7 @@ import {
   Alert,
   RefreshControl,
 } from "react-native";
+import { useSelector } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Modalize } from "react-native-modalize";
 import { Picker } from "@react-native-picker/picker";
@@ -34,9 +35,17 @@ import ClassTeacherModal from "./modals/ClassTeacherModal";
 import SectionalHeadModal from "./modals/SectionalHeadModal";
 import MyFeedbackModal from "./modals/MyFeedbackModal";
 import StudentAchievementModal from "../../educator/dashboard/modals/StudentAchievementModal";
+import DisciplineManagementModal from "../../educator/dashboard/modals/DisciplineManagementModal";
 import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
 import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
+import { useHasSectionAccess } from "../../../../api/section-access-api";
+import { USER_CATEGORIES } from "../../../../constants/userCategories";
+
+// Section-access key gating the Discipline Management dashboard item below -
+// visible to users granted this key (via the section_access table), or to
+// Principals outright (see hasDisciplineManagementAccess below).
+const DISCIPLINE_MANAGEMENT_SECTION_KEY = "discipline_management";
 
 export interface DashboardItem {
   id: string;
@@ -335,7 +344,7 @@ const EducatorFeedbackContent = () => {
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
   );
 
   // Reset page when filters change
@@ -436,8 +445,8 @@ const EducatorFeedbackContent = () => {
   const handleStatusChange = (id: string, newStatus: string) => {
     setFeedbackData((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, status: newStatus } : item
-      )
+        item.id === id ? { ...item, status: newStatus } : item,
+      ),
     );
   };
 
@@ -455,7 +464,7 @@ const EducatorFeedbackContent = () => {
             Alert.alert("Success", "Feedback deleted successfully");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -1081,6 +1090,17 @@ function PrincipalDashboardMain() {
   const [showClassSelectionDrawer, setShowClassSelectionDrawer] =
     useState(false);
 
+  // Discipline Management item is visible to users granted the
+  // "discipline_management" section-access key, or outright to Principals
+  // (user_category 4) regardless of that table.
+  const { sessionData } = useSelector((state: any) => state.app);
+  const isPrincipal =
+    sessionData?.data?.user_category === USER_CATEGORIES.PRINCIPAL;
+  const hasSectionAccessGrant = useHasSectionAccess(
+    DISCIPLINE_MANAGEMENT_SECTION_KEY,
+  );
+  const hasDisciplineManagementAccess = hasSectionAccessGrant || isPrincipal;
+
   // Modal refs
   // Updated to use FullScreenModal pattern
   const academicReportsModalRef = useRef<Modalize>(null);
@@ -1134,17 +1154,21 @@ function PrincipalDashboardMain() {
     setActiveModal("student_achievement");
   };
 
+  const openDisciplineManagementModal = () => {
+    setActiveModal("discipline_management");
+  };
+
   const openMyClassDrawer = () => {
     console.log("🔔 Opening Grade Level Class Selection Drawer...");
     setShowClassSelectionDrawer(true);
   };
 
   const handleClassSelection = (
-    classData: GradeLevelClass & { gradeLevelName: string }
+    classData: GradeLevelClass & { gradeLevelName: string },
   ) => {
     console.log(
       "✅ Class selected in GradeLevelClassSelectionDrawer...",
-      classData
+      classData,
     );
     setSelectedClassData(classData);
   };
@@ -1425,6 +1449,21 @@ function PrincipalDashboardMain() {
     //   gradient: ["#920734", "#b8285a"],
     //   onPress: () => emergencyManagementModalRef.current?.open(),
     // },
+    // Gated: only visible to users granted the "discipline_management"
+    // section-access key, or to Principals outright
+    ...(hasDisciplineManagementAccess
+      ? [
+          {
+            id: "discipline_management",
+            title: "Discipline Management",
+            subtitle: "Review, approve & manage discipline records",
+            icon: "gavel" as keyof typeof MaterialIcons.glyphMap,
+            color: "#DC2626",
+            gradient: ["#DC2626", "#F87171"] as [string, string],
+            onPress: openDisciplineManagementModal,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1496,6 +1535,10 @@ function PrincipalDashboardMain() {
         visible={activeModal === "student_achievement"}
         onClose={handleCloseModal}
       />
+      <DisciplineManagementModal
+        visible={activeModal === "discipline_management"}
+        onClose={handleCloseModal}
+      />
       <AcademicReportsModal ref={academicReportsModalRef} />
       <SchoolFacilitiesModal ref={schoolFacilitiesModalRef} />
       <FinancialOverviewModal ref={financialOverviewModalRef} />
@@ -1529,7 +1572,8 @@ function PrincipalDashboardMain() {
         activeModal !== "class_teachers" &&
         activeModal !== "sectional_heads" &&
         activeModal !== "my_feedback" &&
-        activeModal !== "student_achievement" && (
+        activeModal !== "student_achievement" &&
+        activeModal !== "discipline_management" && (
           <FullScreenModal
             visible={!!activeModal}
             onClose={handleCloseModal}

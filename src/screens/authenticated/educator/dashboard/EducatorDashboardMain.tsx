@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Dimensions,
 } from "react-native";
+import { useSelector } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Modalize } from "react-native-modalize";
 import { LinearGradient } from "expo-linear-gradient";
@@ -34,9 +35,18 @@ import FinancialOverviewModal from "../../principal/dashboard/modals/FinancialOv
 import ParentCommunicationModal from "../../principal/dashboard/modals/ParentCommunicationModal";
 import EmergencyManagementModal from "../../principal/dashboard/modals/EmergencyManagementModal";
 import StudentAchievementModal from "./modals/StudentAchievementModal";
+import DisciplineManagementModal from "./modals/DisciplineManagementModal";
+import CanteenManagementModal from "./modals/CanteenManagementModal";
 import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
 import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
+import { useHasSectionAccess } from "../../../../api/section-access-api";
+import { USER_CATEGORIES } from "../../../../constants/userCategories";
+
+// Section-access key gating the Discipline Management dashboard item below -
+// visible to users granted this key (via the section_access table), or to
+// Principals outright (see hasDisciplineManagementAccess below).
+const DISCIPLINE_MANAGEMENT_SECTION_KEY = "discipline_management";
 
 const { width } = Dimensions.get("window");
 
@@ -74,6 +84,17 @@ function EducatorDashboardMain() {
   const financialOverviewModalRef = useRef<Modalize>(null);
   const parentCommunicationModalRef = useRef<Modalize>(null);
   const emergencyManagementModalRef = useRef<Modalize>(null);
+
+  // Discipline Management item is visible to users granted the
+  // "discipline_management" section-access key, or outright to Principals
+  // (user_category 4) regardless of that table.
+  const { sessionData } = useSelector((state: any) => state.app);
+  const isPrincipal =
+    sessionData?.data?.user_category === USER_CATEGORIES.PRINCIPAL;
+  const hasSectionAccessGrant = useHasSectionAccess(
+    DISCIPLINE_MANAGEMENT_SECTION_KEY,
+  );
+  const hasDisciplineManagementAccess = hasSectionAccessGrant || isPrincipal;
 
   // Animation values
   const fabScale = useSharedValue(1);
@@ -132,17 +153,25 @@ function EducatorDashboardMain() {
     setActiveModal("student_achievement");
   };
 
+  const openDisciplineManagementModal = () => {
+    setActiveModal("discipline_management");
+  };
+
+  const openCanteenManagementModal = () => {
+    setActiveModal("canteen_management");
+  };
+
   const openMyClassDrawer = () => {
     console.log("🔔 Opening Grade Level Class Selection Drawer...");
     setShowClassSelectionDrawer(true);
   };
 
   const handleClassSelection = (
-    classData: GradeLevelClass & { gradeLevelName: string }
+    classData: GradeLevelClass & { gradeLevelName: string },
   ) => {
     console.log(
       "✅ Class selected in GradeLevelClassSelectionDrawer...",
-      classData
+      classData,
     );
     // Don't automatically open UniversalDrawerMenu anymore
     // The GradeLevelClassSelectionDrawer handles student details internally now
@@ -348,6 +377,30 @@ function EducatorDashboardMain() {
       gradient: ["#10B981", "#059669"],
       onPress: openMyFeedbackModal,
     },
+    {
+      id: "canteen_management",
+      title: "Canteen Management",
+      subtitle: "Manage meal plans & view orders",
+      icon: "restaurant",
+      color: "#F59E0B",
+      gradient: ["#F59E0B", "#FBBF24"],
+      onPress: openCanteenManagementModal,
+    },
+    // Gated: only visible to users granted the "discipline_management"
+    // section-access key
+    ...(hasDisciplineManagementAccess
+      ? [
+          {
+            id: "discipline_management",
+            title: "Discipline Management",
+            subtitle: "Review, approve & manage discipline records",
+            icon: "gavel" as keyof typeof MaterialIcons.glyphMap,
+            color: "#DC2626",
+            gradient: ["#DC2626", "#F87171"] as [string, string],
+            onPress: openDisciplineManagementModal,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -417,6 +470,14 @@ function EducatorDashboardMain() {
         visible={activeModal === "student_achievement"}
         onClose={handleCloseModal}
       />
+      <DisciplineManagementModal
+        visible={activeModal === "discipline_management"}
+        onClose={handleCloseModal}
+      />
+      <CanteenManagementModal
+        visible={activeModal === "canteen_management"}
+        onClose={handleCloseModal}
+      />
       <StudentAttendanceModal
         visible={activeModal === "student_attendance"}
         onClose={handleCloseModal}
@@ -463,7 +524,9 @@ function EducatorDashboardMain() {
         activeModal !== "my_feedback" &&
         activeModal !== "student_attendance_stats" &&
         activeModal !== "student_feedback_stats" &&
-        activeModal !== "student_achievement" && (
+        activeModal !== "student_achievement" &&
+        activeModal !== "discipline_management" &&
+        activeModal !== "canteen_management" && (
           <FullScreenModal
             visible={!!activeModal}
             onClose={handleCloseModal}

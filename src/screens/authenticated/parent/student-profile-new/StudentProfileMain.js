@@ -18,6 +18,8 @@ import ReportCardsDrawer from "../../../../components/common/drawer/ReportCardsD
 import AllBadgesDrawer from "../../../../components/common/drawer/AllBadgesDrawer";
 import StudentAttendanceDrawer from "../../../../components/student-growth/StudentAttendanceDrawer";
 import StudentAnalyticsDrawer from "../../../../components/common/drawer/StudentAnalyticsDrawer";
+import DisciplineRecordDrawer from "../../../../components/common/drawer/DisciplineRecordDrawer";
+import CanteenOrderDrawer from "../../../../components/common/drawer/CanteenOrderDrawer";
 import { useSelector, useDispatch } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
 import { theme } from "../../../../styles/theme";
@@ -35,6 +37,11 @@ import {
   transformAchievementsToBadges,
   getBadgeStatistics,
 } from "../../../../utils/badgeUtils";
+import {
+  useGetStudentDisciplineSummaryQuery,
+  getConductRatingColor,
+} from "../../../../api/discipline-management-api";
+import { useGetNotificationsQuery } from "../../../../api/notifications";
 
 // House logo and color mapping
 const getHouseInfo = (houseName) => {
@@ -86,6 +93,8 @@ const StudentProfileMain = () => {
   const [detailedStudentData, setDetailedStudentData] = useState(null);
   const [isLoadingDetailedData, setIsLoadingDetailedData] = useState(false);
   const [showEmptyBadges, setShowEmptyBadges] = useState(false);
+  const [showDisciplineDrawer, setShowDisciplineDrawer] = useState(false);
+  const [showCanteenDrawer, setShowCanteenDrawer] = useState(false);
   const rotationValue = new Animated.Value(0);
 
   const handleBadgePress = (badge) => {
@@ -224,6 +233,27 @@ const StudentProfileMain = () => {
   } = useGetStudentAchievementByIdQuery(
     { student_id: selectedStudent?.id || 0 },
     { skip: !selectedStudent?.id },
+  );
+
+  // Get the current academic year's discipline remaining marks, shown as a
+  // quick-glance badge on the Discipline Record nav card below
+  const { data: disciplineSummaryData } = useGetStudentDisciplineSummaryQuery(
+    { student_id: selectedStudent?.id || 0 },
+    { skip: !selectedStudent?.id },
+  );
+  const currentDisciplineSummary = disciplineSummaryData?.data;
+
+  // Unread discipline notifications for this student, used for the red dot
+  // on the Discipline Record card below. Backend tags these notifications'
+  // action_url with the student_id so this can be matched per-student.
+  const { data: unreadNotificationsData } = useGetNotificationsQuery(
+    { page: 1, limit: 50, filters: { unread_only: true } },
+    { skip: !selectedStudent?.id },
+  );
+  const hasUnreadDisciplineNotification = !!unreadNotificationsData?.data?.some(
+    (notification) =>
+      notification.action_url?.includes(`student_id=${selectedStudent?.id}`) &&
+      notification.action_url?.includes("discipline-record"),
   );
 
   // Transform backend student data to match UI requirements
@@ -812,6 +842,58 @@ const StudentProfileMain = () => {
             </View>
             <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowDisciplineDrawer(true)}
+          >
+            {hasUnreadDisciplineNotification && (
+              <View style={styles.unreadDot} />
+            )}
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="rule" size={32} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Discipline Record</Text>
+              <Text style={styles.cardSubtitle}>
+                Conduct rating & discipline history
+              </Text>
+            </View>
+            {currentDisciplineSummary && (
+              <View
+                style={[
+                  styles.disciplineMarksBadge,
+                  {
+                    backgroundColor: getConductRatingColor(
+                      currentDisciplineSummary.conduct_rating,
+                    ),
+                  },
+                ]}
+              >
+                <Text style={styles.disciplineMarksBadgeText}>
+                  {currentDisciplineSummary.remaining_marks}/
+                  {currentDisciplineSummary.baseline_marks}
+                </Text>
+              </View>
+            )}
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowCanteenDrawer(true)}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="restaurant" size={32} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Canteen</Text>
+              <Text style={styles.cardSubtitle}>
+                Order meals & view past orders
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
         </View>
 
         {/* Student Analytics Section */}
@@ -975,6 +1057,36 @@ const StudentProfileMain = () => {
           studentId={selectedStudent?.id || 0}
           studentName={selectedStudent?.student_calling_name}
           studentImage={selectedStudent?.profileImage}
+        />
+      </Modal>
+
+      {/* Discipline Record Drawer */}
+      <Modal
+        visible={showDisciplineDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowDisciplineDrawer(false)}
+      >
+        <DisciplineRecordDrawer
+          visible={showDisciplineDrawer}
+          onClose={() => setShowDisciplineDrawer(false)}
+          studentId={selectedStudent?.id || 0}
+          studentName={selectedStudent?.student_calling_name}
+        />
+      </Modal>
+
+      {/* Canteen Order Drawer */}
+      <Modal
+        visible={showCanteenDrawer}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowCanteenDrawer(false)}
+      >
+        <CanteenOrderDrawer
+          visible={showCanteenDrawer}
+          onClose={() => setShowCanteenDrawer(false)}
+          studentId={selectedStudent?.id || 0}
+          studentName={selectedStudent?.student_calling_name}
         />
       </Modal>
     </View>
@@ -1497,6 +1609,29 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.regular,
     fontSize: 14,
     color: "#6B7280",
+  },
+  disciplineMarksBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  disciplineMarksBadgeText: {
+    fontFamily: theme.fonts.bold,
+    fontSize: 13,
+    color: "#FFFFFF",
+  },
+  unreadDot: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#DC2626",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    zIndex: 1,
   },
   // Modal Styles
   modalOverlay: {

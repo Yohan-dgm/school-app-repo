@@ -39,7 +39,15 @@ export const apiServer1 = createApi({
     "ChatThreads",
     "ChatMessages",
     "ChatMembers",
+    "ChatMedia",
     "StudentInsights",
+    "DisciplineSummary",
+    "DisciplineRecordList",
+    "MisconductLevelList",
+    "SectionAccess",
+    "CanteenMealPlanList",
+    "CanteenOrderList",
+    "MyCanteenOrderList",
   ],
   baseQuery: fetchBaseQuery({
     baseUrl: process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1,
@@ -66,6 +74,8 @@ export const apiServer1 = createApi({
         api.endpoint === "uploadMedia" ||
         api.endpoint === "pushUploadChunk" ||
         api.endpoint === "uploadProfilePhoto" || // Profile photo upload (Android FormData instanceof check is unreliable)
+        api.endpoint === "createMealPlan" ||
+        api.endpoint === "updateMealPlan" ||
         api.arg instanceof FormData ||
         headers.get("Content-Type") === "multipart/form-data";
 

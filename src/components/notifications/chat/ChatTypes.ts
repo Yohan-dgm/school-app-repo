@@ -68,6 +68,7 @@ export interface ChatGroup {
   members_count?: number;
   is_disabled?: boolean;
   only_admins_can_message?: boolean;
+  is_voicenote?: boolean;
   is_pinned?: boolean;
   members?: ChatMember[];
 }

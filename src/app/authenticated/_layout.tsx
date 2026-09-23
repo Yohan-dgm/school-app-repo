@@ -3,6 +3,7 @@ import React, { useEffect } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "../../state-store/store";
 import { usePaymentStatusChecker } from "../../hooks/usePaymentStatusChecker";
+import { useHeaderStudentSync } from "../../hooks/useHeaderStudentSync";
 import PaymentStatusOverlay from "../../components/common/PaymentStatusOverlay";
 
 export default function AuthenticatedLayout() {
@@ -11,6 +12,10 @@ export default function AuthenticatedLayout() {
     (state: RootState) => state.app,
   );
   const { checkStatus } = usePaymentStatusChecker();
+
+  // Refreshes the header's selected-student data from the backend once per
+  // app load (see src/hooks/useHeaderStudentSync.ts)
+  useHeaderStudentSync();
 
   // Check payment status on mount
   useEffect(() => {

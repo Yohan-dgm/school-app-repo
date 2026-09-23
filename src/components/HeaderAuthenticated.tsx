@@ -191,9 +191,9 @@ export default function HeaderAuthenticated() {
           animationType="fade"
           onRequestClose={() => setShowStudentModal(false)}
         >
-          <View className="flex-1 justify-center items-center bg-black/50">
-            <View className="bg-white rounded-lg mx-4 p-4 w-80 max-h-96">
-              <Text className="text-lg font-semibold mb-4 text-center">
+          <View className="items-center justify-center flex-1 bg-black/50">
+            <View className="p-4 mx-4 bg-white rounded-lg w-80 max-h-96">
+              <Text className="mb-4 text-lg font-semibold text-center">
                 Select Student
               </Text>
 
@@ -217,10 +217,10 @@ export default function HeaderAuthenticated() {
               />
 
               <TouchableOpacity
-                className="mt-4 p-3 bg-gray-200 rounded-lg"
+                className="p-3 mt-4 bg-gray-200 rounded-lg"
                 onPress={() => setShowStudentModal(false)}
               >
-                <Text className="text-center text-gray-700 font-medium">
+                <Text className="font-medium text-center text-gray-700">
                   Cancel
                 </Text>
               </TouchableOpacity>

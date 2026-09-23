@@ -28,7 +28,8 @@ import {
   useCreateNewChatGroupMutation
 } from "../../api/chat-api";
 import { apiServer1 } from "../../api/api-server-1";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "../../state-store/store";
 // DISABLED: Push notifications
 // import PushNotificationService from "../../services/notifications/PushNotificationService";
 
@@ -46,9 +47,8 @@ import RealTimeNotificationService from "../../services/notifications/RealTimeNo
 
 // Chat Components
 import ChatListView from "./chat/ChatListView";
-import ChatView from "./chat/ChatView";
+import ChatRoomModal, { ChatRoomModalRef } from "./chat/ChatRoomModal";
 import CreateGroupModal from "./chat/CreateGroupModal";
-import GroupInfoScreen from "./chat/GroupInfoScreen";
 import { ChatGroup } from "./chat/ChatTypes";
 
 interface UniversalNotificationSystemProps {
@@ -73,8 +73,11 @@ export default function UniversalNotificationSystem({
   const [showAnnouncementModal, setShowAnnouncementModal] =
     React.useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = React.useState(false);
-  const [selectedChat, setSelectedChat] = React.useState<ChatGroup | null>(null);
-  const [currentView, setCurrentView] = React.useState<"list" | "chat" | "info">("list");
+  const chatRoomModalRef = React.useRef<ChatRoomModalRef>(null);
+  // Persisted snapshot from the last session — read only as a cold-start
+  // fallback so the chat list can paint instantly before the network
+  // request below resolves.
+  const cachedThreads = useSelector((state: RootState) => state.chatCache.threads);
   // DISABLED: Push notification test panel
   // const [showTestPanel, setShowTestPanel] = React.useState(false);
 
@@ -229,8 +232,7 @@ export default function UniversalNotificationSystem({
       
       // If result contains the new group, we could potentially open it directly
       if (result?.data?.id) {
-        setSelectedChat(result.data);
-        setCurrentView("chat");
+        chatRoomModalRef.current?.open(result.data);
       } else {
         Alert.alert("Success", `Group "${data.name}" created successfully!`);
       }
@@ -929,8 +931,12 @@ export default function UniversalNotificationSystem({
     // 3. Real chat threads
     // Only show if filter is 'all' or 'chats'
     const showChats = ["all", "chats", "read", "unread"].includes(filter);
+    // On cold start (before the network request below resolves) fall back
+    // to the persisted snapshot from the last session so the list isn't
+    // empty/blank on first paint.
+    const threadsSource = chatThreadsData?.data?.threads ?? cachedThreads;
     const realChatThreads: ChatGroup[] = showChats
-      ? (chatThreadsData?.data?.threads || []).map(chat => ({
+      ? (threadsSource || []).map(chat => ({
           ...chat,
           // Ensure they have root dates for sorting if missing
           created_at: chat.created_at || (chat.last_message?.timestamp) || new Date().toISOString(),
@@ -946,7 +952,7 @@ export default function UniversalNotificationSystem({
     });
 
     return [...mappedAnnouncements, ...mappedNotifications, ...realChatThreads];
-  }, [notifications, realAnnouncementsData, chatThreadsData, filter]);
+  }, [notifications, realAnnouncementsData, chatThreadsData, cachedThreads, filter]);
 
   // Show loading state (after all hooks are called)
   if (notificationsLoading || announcementsLoading || chatThreadsLoading) {
@@ -974,40 +980,6 @@ export default function UniversalNotificationSystem({
       </SafeAreaView>
     );
   }
-
-  // Render logic for different views
-  if (currentView === "chat" && selectedChat) {
-    return (
-      <ChatView
-        group={selectedChat}
-        onBack={() => {
-          setCurrentView("list");
-          setSelectedChat(null);
-        }}
-        onInfoPress={() => setCurrentView("info")}
-      />
-    );
-  }
-
-  if (currentView === "info" && selectedChat) {
-    return (
-      <GroupInfoScreen
-        chat={selectedChat}
-        onBack={() => setCurrentView("chat")}
-        onUpdateGroup={(updatedChat) => {
-          setSelectedChat(updatedChat);
-          // In a real app, update the global state or refetch
-        }}
-        onDeleteGroup={(id) => {
-          setCurrentView("list");
-          setSelectedChat(null);
-          Alert.alert("Deleted", "Group has been deleted.");
-        }}
-        currentUserId={userId}
-      />
-    );
-  }
-
 
   return (
     <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: 'white' }}>
@@ -1068,14 +1040,22 @@ export default function UniversalNotificationSystem({
             setSelectedNotification(mockNotification);
             setShowDetailsModal(true);
           } else {
-            setSelectedChat(chat);
-            setCurrentView("chat");
+            chatRoomModalRef.current?.open(chat);
           }
         }}
         onCreateGroup={() => setShowCreateGroupModal(true)}
         onCreateAnnouncement={() => setShowAnnouncementModal(true)}
       />
-      
+
+      {/* Full-screen chat room (messages + info), opened via chatRoomModalRef */}
+      <ChatRoomModal
+        ref={chatRoomModalRef}
+        currentUserId={userId}
+        onGroupDeleted={() => {
+          Alert.alert("Deleted", "Group has been deleted.");
+        }}
+      />
+
       {/* Group Creation Flow */}
       <CreateGroupModal
         visible={showCreateGroupModal}

@@ -122,7 +122,7 @@ const ChatListView: React.FC<ChatListViewProps> = ({
         </View>
         
         {/* Search Bar */}
-        <View className="flex-row items-center bg-gray-100 rounded-xl px-4 py-1 mb-4">
+        <View className="flex-row items-center bg-gray-100 rounded-full px-4 py-1 mb-4">
           <MaterialIcons name="search" size={20} color="#9ca3af" />
           <TextInput
             placeholder="Search chats..."

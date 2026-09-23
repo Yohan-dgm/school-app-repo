@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup } from "./ChatTypes";
-import { useUpdateChatGroupMutation } from "../../../api/chat-api";
+import { useUpdateChatGroupMutation, useSetChatGroupVoiceNoteMutation } from "../../../api/chat-api";
 import { Alert } from "react-native";
 
 interface EditGroupModalProps {
@@ -29,7 +29,11 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
   const [only_admins_can_message, setOnlyAdminsCanMessage] = useState(
     chat.only_admins_can_message !== undefined ? chat.only_admins_can_message : true
   );
+  const [is_voicenote, setIsVoicenote] = useState(
+    chat.is_voicenote !== undefined ? chat.is_voicenote : true
+  );
   const [updateGroup, { isLoading }] = useUpdateChatGroupMutation();
+  const [setVoiceNote, { isLoading: isVoiceNoteSaving }] = useSetChatGroupVoiceNoteMutation();
 
   const handleToggleDisabled = (value: boolean) => {
     if (value) {
@@ -54,12 +58,21 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
         is_disabled,
         only_admins_can_message,
       }).unwrap();
-      
+
+      // Voice notes go through a separate dedicated endpoint (see
+      // SetChatGroupVoiceNoteAction.php) rather than the general update-group
+      // one — only call it if this setting actually changed.
+      const originalVoiceNote = chat.is_voicenote !== undefined ? chat.is_voicenote : true;
+      if (is_voicenote !== originalVoiceNote) {
+        await setVoiceNote({ chat_group_id: chat.id, is_voicenote }).unwrap();
+      }
+
       onUpdate({
         name,
         description,
         is_disabled,
         only_admins_can_message,
+        is_voicenote,
       });
       onClose();
     } catch (error) {
@@ -125,6 +138,19 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
                   />
                 </View>
 
+                <View className="flex-row items-center justify-between py-2 border-b border-gray-50 pb-4 mb-4">
+                  <View className="flex-1 mr-4">
+                    <Text className="text-gray-900 font-semibold">Allow Voice Notes</Text>
+                    <Text className="text-gray-400 text-[11px] mt-1">If disabled, members won't be able to record or send voice notes in this group.</Text>
+                  </View>
+                  <Switch
+                    value={is_voicenote}
+                    onValueChange={setIsVoicenote}
+                    trackColor={{ false: "#e5e7eb", true: "#bfdbfe" }}
+                    thumbColor={is_voicenote ? "#3b82f6" : "#f3f4f6"}
+                  />
+                </View>
+
                 <View className="flex-row items-center justify-between py-2 border-b border-gray-50 pb-4">
                   <View className="flex-1 mr-4">
                     <Text className="text-red-600 font-semibold">Disable Group Chat completely</Text>
@@ -150,11 +176,11 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({ visible, chat, onClose,
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSave}
-                disabled={isLoading}
-                className={`flex-[2] h-12 rounded-xl items-center justify-center ${isLoading ? "bg-blue-300" : "bg-blue-600 shadow-md"}`}
+                disabled={isLoading || isVoiceNoteSaving}
+                className={`flex-[2] h-12 rounded-xl items-center justify-center ${(isLoading || isVoiceNoteSaving) ? "bg-blue-300" : "bg-blue-600 shadow-md"}`}
               >
                 <Text className="text-white font-bold">
-                  {isLoading ? "Saving..." : "Save Changes"}
+                  {(isLoading || isVoiceNoteSaving) ? "Saving..." : "Save Changes"}
                 </Text>
               </TouchableOpacity>
             </View>

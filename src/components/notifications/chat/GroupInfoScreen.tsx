@@ -7,18 +7,27 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ChatGroup, ChatMember } from "./ChatTypes";
 import EditGroupModal from "./EditGroupModal";
 import AddMembersModal from "./AddMembersModal";
-import { 
-  useGetChatGroupMembersQuery, 
-  useAddChatGroupMembersMutation, 
+import {
+  useGetChatGroupMembersQuery,
+  useAddChatGroupMembersMutation,
   useRemoveChatGroupMemberMutation,
-  useDeleteChatGroupMutation 
+  useDeleteChatGroupMutation,
+  useGetChatGroupMediaQuery,
+  ChatMediaItem,
 } from "../../../api/chat-api";
 import { useSelector } from "react-redux";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { resolveMediaUrl } from "../../../utils/mediaUtils";
+import MediaPreviewModal from "../../common/MediaPreviewModal";
+import { getAvatarColor } from "./chatAvatarColors";
+
+type InfoTab = "members" | "media" | "documents";
 
 interface GroupInfoScreenProps {
   chat: ChatGroup;
@@ -35,9 +44,30 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
   onDeleteGroup,
   currentUserId,
 }) => {
+  const insets = useSafeAreaInsets();
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddMembersModal, setShowAddMembersModal] = useState(false);
   const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<InfoTab>("members");
+  const [mediaPage, setMediaPage] = useState(1);
+  const [previewItem, setPreviewItem] = useState<ChatMediaItem | null>(null);
+
+  const { data: mediaData, isFetching: mediaFetching } = useGetChatGroupMediaQuery(
+    { chat_group_id: chat.id, category: "all", page: mediaPage, per_page: 30 },
+    { skip: !chat.id || activeTab === "members" }
+  );
+  const mediaItems = mediaData?.data?.items || [];
+  const mediaHasMore = mediaData?.data?.pagination?.has_more ?? false;
+  const imageVideoItems = mediaItems.filter((i) => i.category === "image" || i.category === "video");
+  const documentItems = mediaItems.filter((i) => i.category === "document" || i.category === "audio");
+
+  React.useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [onBack]);
 
   const { data: membersData, isLoading: membersLoading, isFetching: membersFetching } = useGetChatGroupMembersQuery(
     { chat_group_id: chat.id, page, per_page: 20 },
@@ -129,14 +159,89 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
     }
   };
 
+  const loadMoreMedia = () => {
+    if (mediaHasMore && !mediaFetching) {
+      setMediaPage(prev => prev + 1);
+    }
+  };
+
+  const renderTabBar = () => (
+    <View className="flex-row bg-white px-4 pt-3 pb-1 border-b border-gray-100">
+      {([
+        { key: "members", label: "Members", icon: "people" },
+        { key: "media", label: "Media", icon: "photo-library" },
+        { key: "documents", label: "Documents", icon: "insert-drive-file" },
+      ] as { key: InfoTab; label: string; icon: any }[]).map((tab) => (
+        <TouchableOpacity
+          key={tab.key}
+          className={`flex-1 items-center pb-3 border-b-2 ${activeTab === tab.key ? "border-blue-600" : "border-transparent"}`}
+          onPress={() => setActiveTab(tab.key)}
+        >
+          <MaterialIcons name={tab.icon} size={18} color={activeTab === tab.key ? "#2563eb" : "#9ca3af"} />
+          <Text className={`text-xs font-bold mt-1 ${activeTab === tab.key ? "text-blue-600" : "text-gray-400"}`}>
+            {tab.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderMediaGridItem = ({ item }: { item: ChatMediaItem }) => (
+    <TouchableOpacity
+      className="w-1/3 aspect-square p-0.5"
+      activeOpacity={0.8}
+      onPress={() => setPreviewItem(item)}
+    >
+      {item.category === "image" ? (
+        <Image
+          source={{ uri: resolveMediaUrl(item.attachment_url) }}
+          style={{ flex: 1, borderRadius: 4 }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View className="flex-1 bg-gray-900 rounded items-center justify-center">
+          <MaterialIcons name="play-arrow" size={28} color="white" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderDocumentItem = ({ item }: { item: ChatMediaItem }) => (
+    <TouchableOpacity
+      className="flex-row items-center bg-white px-4 py-3 border-b border-gray-50"
+      activeOpacity={0.7}
+      onPress={() => setPreviewItem(item)}
+    >
+      <View className="w-10 h-10 rounded-xl bg-red-50 items-center justify-center mr-3">
+        <MaterialIcons
+          name={item.category === "audio" ? "mic" : "picture-as-pdf"}
+          size={20}
+          color="#ef4444"
+        />
+      </View>
+      <View className="flex-1">
+        <Text className="text-gray-900 font-semibold text-sm" numberOfLines={1}>
+          {item.metadata?.original_filename || (item.category === "audio" ? "Voice note" : "Document")}
+        </Text>
+        {item.metadata?.size ? (
+          <Text className="text-gray-400 text-xs mt-0.5">{(item.metadata.size / 1024).toFixed(1)} KB</Text>
+        ) : null}
+      </View>
+      <MaterialIcons name="chevron-right" size={20} color="#d1d5db" />
+    </TouchableOpacity>
+  );
+
   const renderHeader = () => (
     <View>
       {/* Group Profile Card */}
       <View className="bg-white items-center py-8 px-4 border-b border-gray-100 shadow-sm">
         <View className="relative">
-          <View className="w-28 h-28 rounded-full bg-blue-100 items-center justify-center">
-            <Text className="text-blue-600 font-bold text-3xl">
-              {chat.name.trim().split(' ').length >= 2 
+          <View
+            className="w-28 h-28 rounded-full items-center justify-center"
+            style={{ backgroundColor: getAvatarColor(chat.name).bg }}
+          >
+            <Text className="font-bold text-3xl" style={{ color: getAvatarColor(chat.name).text }}>
+              {chat.name.trim().split(' ').length >= 2
                 ? (chat.name.trim().split(' ')[0][0] + chat.name.trim().split(' ')[1][0]).toUpperCase()
                 : (chat.name[0] || '?').toUpperCase()
               }
@@ -284,31 +389,98 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
 
   return (
     <View className="flex-1 bg-gray-50">
-      {/* Header */}
-      <View className="bg-white px-4 pt-4 pb-4 border-b border-gray-100 flex-row items-center">
+      {/* Header — this screen lives inside the same full-screen popup as
+          ChatView, so it needs its own top safe-area padding too. */}
+      <View
+        className="bg-white px-4 pb-4 border-b border-gray-100 flex-row items-center"
+        style={{ paddingTop: insets.top + 16 }}
+      >
         <TouchableOpacity onPress={onBack} className="p-2 -ml-2">
           <MaterialIcons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
         <Text className="text-xl font-bold text-gray-900 ml-2">Group Info</Text>
       </View>
 
-      <FlatList
-        data={displayedMembers}
-        renderItem={renderMember}
-        keyExtractor={(item) => item.id.toString()}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={
-          !membersLoading ? (
-            <View className="bg-white py-8 items-center">
-              <Text className="text-gray-400">No members found</Text>
-            </View>
-          ) : null
-        }
-        onEndReached={totalMembers >= 20 ? undefined : loadMore}
-        onEndReachedThreshold={0.5}
-        showsVerticalScrollIndicator={false}
-      />
+      {renderTabBar()}
+
+      {activeTab === "members" && (
+        <FlatList
+          data={displayedMembers}
+          renderItem={renderMember}
+          keyExtractor={(item) => item.id.toString()}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={
+            !membersLoading ? (
+              <View className="bg-white py-8 items-center">
+                <Text className="text-gray-400">No members found</Text>
+              </View>
+            ) : null
+          }
+          onEndReached={totalMembers >= 20 ? undefined : loadMore}
+          onEndReachedThreshold={0.5}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {activeTab === "media" && (
+        <FlatList
+          key="media-grid"
+          data={imageVideoItems}
+          renderItem={renderMediaGridItem}
+          keyExtractor={(item) => item.id}
+          numColumns={3}
+          ListEmptyComponent={
+            !mediaFetching ? (
+              <View className="bg-white py-12 items-center">
+                <MaterialIcons name="photo-library" size={32} color="#d1d5db" />
+                <Text className="text-gray-400 mt-2">No photos or videos yet</Text>
+              </View>
+            ) : (
+              <View className="py-12 items-center">
+                <ActivityIndicator color="#2563eb" />
+              </View>
+            )
+          }
+          onEndReached={loadMoreMedia}
+          onEndReachedThreshold={0.5}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {activeTab === "documents" && (
+        <FlatList
+          key="documents-list"
+          data={documentItems}
+          renderItem={renderDocumentItem}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={
+            !mediaFetching ? (
+              <View className="bg-white py-12 items-center">
+                <MaterialIcons name="insert-drive-file" size={32} color="#d1d5db" />
+                <Text className="text-gray-400 mt-2">No documents yet</Text>
+              </View>
+            ) : (
+              <View className="py-12 items-center">
+                <ActivityIndicator color="#2563eb" />
+              </View>
+            )
+          }
+          onEndReached={loadMoreMedia}
+          onEndReachedThreshold={0.5}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {previewItem && (
+        <MediaPreviewModal
+          visible={!!previewItem}
+          onClose={() => setPreviewItem(null)}
+          mediaUrl={resolveMediaUrl(previewItem.attachment_url)}
+          mediaType={previewItem.category === "image" ? "image" : previewItem.category === "video" ? "video" : "file"}
+          filename={previewItem.metadata?.original_filename}
+        />
+      )}
 
       {/* Modals */}
       <EditGroupModal

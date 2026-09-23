@@ -44,6 +44,7 @@ export interface SubjectDetails {
 
 export interface ExamReport {
   scheduling_examination_id: number;
+  grade_level_name: string;
   exam_details: ExamDetails;
   report_summary: ReportSummary;
   subject_details: SubjectDetails[];

@@ -112,7 +112,13 @@
         }
       ],
       "expo-asset",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allowing microphone access enables you to send voice notes in chat."
+        }
+      ]
     ],
     "extra": {
       "router": {},

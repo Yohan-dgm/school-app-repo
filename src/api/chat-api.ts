@@ -194,6 +194,56 @@ export interface UploadResponse {
   };
 }
 
+export type ChatMediaCategory = "all" | "image" | "video" | "audio" | "document";
+
+export interface ChatMediaItem {
+  id: string;
+  category: Exclude<ChatMediaCategory, "all">;
+  attachment_url: string;
+  metadata?: Record<string, any>;
+  sender_id: string;
+  created_at: string;
+}
+
+export interface GetChatGroupMediaRequest {
+  chat_group_id: string | number;
+  category?: ChatMediaCategory;
+  page?: number;
+  per_page?: number;
+}
+
+export interface GetChatGroupMediaResponse {
+  success: boolean;
+  message: string;
+  data: {
+    items: ChatMediaItem[];
+    pagination: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+      has_more: boolean;
+    };
+  };
+}
+
+export interface UploadVoiceNoteRequest {
+  chat_group_id: string | number;
+  audio: any; // { uri, name, type } — picked up as a multipart file by FormData
+}
+
+export interface UploadVoiceNoteResponse {
+  success: boolean;
+  message: string;
+  data: {
+    url: string;
+    filename: string;
+    original_filename: string;
+    size: number;
+    mime_type: string;
+  };
+}
+
 export interface GetMessageReadReceiptsResponse {
   success: boolean;
   message: string;
@@ -432,6 +482,54 @@ export const chatApi = apiServer1.injectEndpoints({
       ],
     }),
 
+    getChatGroupMedia: builder.query<GetChatGroupMediaResponse, GetChatGroupMediaRequest>({
+      query: (params) => ({
+        url: "api/communication-management/chats/media",
+        method: "POST",
+        body: params,
+      }),
+      // Serialize by group + category so each gallery tab has its own cache/pagination
+      serializeQueryArgs: ({ endpointName, queryArgs }) => {
+        return `${endpointName}-${queryArgs.chat_group_id}-${queryArgs.category || "all"}`;
+      },
+      merge: (currentCache, newItems) => {
+        if (newItems.data.pagination.current_page === 1) {
+          return newItems;
+        }
+        currentCache.data.items.push(...newItems.data.items);
+        currentCache.data.pagination = newItems.data.pagination;
+      },
+      forceRefetch({ currentArg, previousArg }) {
+        return currentArg?.page !== previousArg?.page;
+      },
+      providesTags: (result, error, arg) => [
+        { type: "ChatMedia", id: `${arg.chat_group_id}-${arg.category || "all"}` },
+      ],
+    }),
+
+    uploadVoiceNote: builder.mutation<UploadVoiceNoteResponse, UploadVoiceNoteRequest>({
+      query: (data) => {
+        const formData = new FormData();
+        formData.append("chat_group_id", data.chat_group_id.toString());
+        formData.append("audio", data.audio);
+
+        return {
+          url: "api/communication-management/chats/voice-notes/upload",
+          method: "POST",
+          body: formData,
+        };
+      },
+    }),
+
+    setChatGroupVoiceNote: builder.mutation<any, { chat_group_id: string | number; is_voicenote: boolean }>({
+      query: (data) => ({
+        url: "api/communication-management/chats/set-voicenote",
+        method: "POST",
+        body: data,
+      }),
+      invalidatesTags: ["ChatThreads"],
+    }),
+
     deleteChatGroup: builder.mutation<any, DeleteChatGroupRequest>({
       query: (data) => ({
         url: "api/communication-management/chats/delete-group",
@@ -491,6 +589,9 @@ export const {
   useAddChatGroupMembersMutation,
   useRemoveChatGroupMemberMutation,
   useGetChatGroupMembersQuery,
+  useGetChatGroupMediaQuery,
+  useUploadVoiceNoteMutation,
+  useSetChatGroupVoiceNoteMutation,
   useDeleteChatGroupMutation,
   useSearchChatUsersQuery,
   useToggleChatGroupPinMutation,

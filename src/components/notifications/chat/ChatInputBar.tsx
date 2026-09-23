@@ -5,10 +5,11 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import { useVoiceRecorder } from "../../../hooks/useVoiceRecorder";
 
 interface ChatInputBarProps {
-  onSendMessage: (text: string) => void;
-  onSendAttachment: (type: "image" | "file" | "video", file: any) => void;
+  onSendMessage: (text: string) => void | Promise<void>;
+  onSendAttachment: (type: "image" | "file" | "video", file: any, extraMetadata?: Record<string, any>) => void;
   initialValue?: string;
   isDisabled?: boolean;
   isAdminsOnly?: boolean;
@@ -17,6 +18,13 @@ interface ChatInputBarProps {
   uploadProgress?: number;
   onTyping?: () => void;
 }
+
+const formatRecordingTime = (millis: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(millis / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
 
 const ChatInputBar: React.FC<ChatInputBarProps> = ({ 
   onSendMessage, 
@@ -32,17 +40,81 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   const insets = useSafeAreaInsets();
   const [message, setMessage] = React.useState(initialValue);
   const [showAttachments, setShowAttachments] = React.useState(false);
+  const [recordedNote, setRecordedNote] = React.useState<{ uri: string; durationMillis: number } | null>(null);
+  const [selection, setSelection] = React.useState({ start: 0, end: 0 });
+  const voiceRecorder = useVoiceRecorder();
+
+  const hasTextSelection = selection.end > selection.start;
+
+  // Bold uses WhatsApp's own *text* markdown convention (parsed back out
+  // for rendering in MessageBubble.tsx) — RN's TextInput can't render mixed
+  // bold/plain text while editing, only plain strings, so this is the only
+  // way to represent it here. Toggles: re-tapping already-bolded selected
+  // text un-bolds it instead of double-wrapping.
+  const handleToggleBold = () => {
+    const { start, end } = selection;
+    if (end <= start) return;
+
+    const before = message.slice(0, start);
+    const selected = message.slice(start, end);
+    const after = message.slice(end);
+
+    const alreadyBold = selected.length > 2 && selected.startsWith("*") && selected.endsWith("*");
+    const replacement = alreadyBold ? selected.slice(1, -1) : `*${selected}*`;
+    const newText = before + replacement + after;
+    const newCursor = before.length + replacement.length;
+
+    setMessage(newText);
+    setSelection({ start: newCursor, end: newCursor });
+  };
+
+  const handleMicPress = async () => {
+    Keyboard.dismiss();
+    await voiceRecorder.start();
+  };
+
+  const handleStopRecording = async () => {
+    const result = await voiceRecorder.stop();
+    if (result) {
+      setRecordedNote(result);
+    }
+  };
+
+  const handleDiscardRecording = async () => {
+    await voiceRecorder.discard();
+    setRecordedNote(null);
+  };
+
+  const handleSendVoiceNote = () => {
+    if (!recordedNote) return;
+    const file = {
+      uri: recordedNote.uri,
+      name: `voice-note-${Date.now()}.m4a`,
+      type: "audio/m4a",
+    };
+    onSendAttachment("file", file, { duration_ms: recordedNote.durationMillis, is_voice_note: true });
+    setRecordedNote(null);
+  };
 
   // Update input when initialValue changes (e.g., when editing starts)
   React.useEffect(() => {
     setMessage(initialValue);
   }, [initialValue]);
 
-  const handleSend = () => {
-    if (message.trim()) {
-      onSendMessage(message.trim());
-      setMessage("");
-      Keyboard.dismiss();
+  const handleSend = async () => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    // Clear optimistically for a snappy feel, but restore the typed text if
+    // the send actually fails instead of just losing it — a failed network
+    // request shouldn't cost the user what they wrote.
+    setMessage("");
+    Keyboard.dismiss();
+
+    try {
+      await onSendMessage(trimmed);
+    } catch {
+      setMessage(trimmed);
     }
   };
 
@@ -135,7 +207,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     return (
       <View
         className="bg-gray-50 px-6 py-8 border-t border-gray-100 items-center justify-center"
-        style={{ paddingBottom: insets.bottom + 90 }}
+        style={{ paddingBottom: insets.bottom + 12 }}
       >
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="lock" size={14} color="#6b7280" />
@@ -149,7 +221,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     return (
       <View
         className="bg-gray-50 px-6 py-8 border-t border-gray-100 items-center justify-center"
-        style={{ paddingBottom: insets.bottom + 90 }}
+        style={{ paddingBottom: insets.bottom + 12 }}
       >
         <View className="flex-row items-center bg-gray-200/50 px-4 py-2 rounded-full">
           <MaterialIcons name="campaign" size={16} color="#3b82f6" />
@@ -199,11 +271,13 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
         </View>
       )}
 
-      {/* Input Field — padding clears the floating bottom nav bar */}
-      {/* NAV_BAR_HEIGHT ≈ 90: pill content (62px) + extra gap (28px), above safe area inset */}
+      {/* Input Field — this bar is now inside the full-screen chat popup
+          (ChatRoomModal), not stacked above the app's floating bottom nav
+          bar, so it only needs to clear the device's own safe area (home
+          indicator etc.), not the old 90px nav-bar allowance. */}
       <View
         className="relative bg-white border-t border-gray-100 px-2 pt-3"
-        style={{ paddingBottom: insets.bottom + 90 }}
+        style={{ paddingBottom: insets.bottom + 12 }}
       >
         {/* Upload Progress Bar */}
         {isUploading && (
@@ -215,50 +289,112 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
           </View>
         )}
 
-        <View className="flex-row items-center">
-          <TouchableOpacity 
-            className="p-2" 
-            onPress={toggleAttachments}
-            activeOpacity={0.7}
-            disabled={isUploading}
-          >
-            <MaterialIcons 
-              name={showAttachments ? "close" : "add"} 
-              size={28} 
-              color={isUploading ? "#d1d5db" : "#6b7280"} 
-            />
-          </TouchableOpacity>
-
-          <View className="flex-1 bg-gray-100 rounded-2xl px-4 py-2 mx-1 max-h-[100px]">
-            <TextInput
-              placeholder={isUploading ? "Uploading file..." : "Type a message..."}
-              multiline
-              className="text-[15px] text-gray-900 leading-5"
-              value={message}
-              onChangeText={(text) => {
-                setMessage(text);
-                if (text.length > 0 && onTyping) {
-                  onTyping();
-                }
-              }}
-              placeholderTextColor="#9ca3af"
-              editable={!isUploading}
-            />
+        {voiceRecorder.isRecording ? (
+          <View className="flex-row items-center px-2 py-1">
+            <View className="w-2.5 h-2.5 rounded-full bg-red-500 mr-2" />
+            <Text className="flex-1 text-gray-700 font-semibold">
+              Recording... {formatRecordingTime(voiceRecorder.durationMillis)}
+            </Text>
+            <TouchableOpacity
+              className="p-3 rounded-full bg-red-500 ml-1"
+              onPress={handleStopRecording}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="stop" size={20} color="white" />
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            className={`p-3 rounded-full ml-1 ${(message.trim() && !isUploading) ? "bg-green-600" : "bg-gray-200"}`}
-            onPress={handleSend}
-            disabled={!message.trim() || isUploading}
-            activeOpacity={0.7}
-          >
-            {isUploading ? (
-              <MaterialIcons name="hourglass-empty" size={20} color="white" />
-            ) : (
+        ) : recordedNote ? (
+          <View className="flex-row items-center px-1 py-1">
+            <TouchableOpacity className="p-2" onPress={handleDiscardRecording} activeOpacity={0.7}>
+              <MaterialIcons name="delete-outline" size={24} color="#ef4444" />
+            </TouchableOpacity>
+            <View className="flex-1 flex-row items-center bg-gray-100 rounded-full px-4 py-2.5 mx-1">
+              <MaterialIcons name="mic" size={18} color="#2563eb" />
+              <Text className="text-gray-700 font-semibold ml-2">
+                Voice note · {formatRecordingTime(recordedNote.durationMillis)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              className="p-3 rounded-full ml-1 bg-green-600"
+              onPress={handleSendVoiceNote}
+              activeOpacity={0.7}
+            >
               <MaterialIcons name="send" size={20} color="white" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {hasTextSelection && (
+              <View className="flex-row px-2 pb-2">
+                <TouchableOpacity
+                  className="flex-row items-center bg-gray-900 rounded-full px-3 py-1.5"
+                  onPress={handleToggleBold}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-white font-extrabold text-[13px]">B</Text>
+                  <Text className="text-white text-[11px] ml-1.5">Bold</Text>
+                </TouchableOpacity>
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
+            <View className="flex-row items-center">
+            <TouchableOpacity
+              className="p-2"
+              onPress={toggleAttachments}
+              activeOpacity={0.7}
+              disabled={isUploading}
+            >
+              <MaterialIcons
+                name={showAttachments ? "close" : "add"}
+                size={28}
+                color={isUploading ? "#d1d5db" : "#6b7280"}
+              />
+            </TouchableOpacity>
+
+            <View className="flex-1 bg-gray-100 rounded-3xl px-4 py-2.5 mx-1 max-h-[220px]">
+              <TextInput
+                placeholder={isUploading ? "Uploading file..." : "Type a message..."}
+                multiline
+                textAlignVertical="top"
+                className="text-[15px] text-gray-900 leading-5"
+                value={message}
+                onChangeText={(text) => {
+                  setMessage(text);
+                  if (text.length > 0 && onTyping) {
+                    onTyping();
+                  }
+                }}
+                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                placeholderTextColor="#9ca3af"
+                editable={!isUploading}
+              />
+            </View>
+
+            {message.trim() ? (
+              <TouchableOpacity
+                className={`p-3 rounded-full ml-1 ${!isUploading ? "bg-green-600" : "bg-gray-200"}`}
+                onPress={handleSend}
+                disabled={isUploading}
+                activeOpacity={0.7}
+              >
+                {isUploading ? (
+                  <MaterialIcons name="hourglass-empty" size={20} color="white" />
+                ) : (
+                  <MaterialIcons name="send" size={20} color="white" />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                className="p-3 rounded-full ml-1 bg-gray-200"
+                onPress={handleMicPress}
+                disabled={isUploading}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="mic" size={20} color={isUploading ? "#d1d5db" : "#374151"} />
+              </TouchableOpacity>
+            )}
+            </View>
+          </>
+        )}
 
         {isUploading && (
           <View className="items-center mt-2">

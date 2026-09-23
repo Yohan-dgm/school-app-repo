@@ -1,11 +1,15 @@
 import React from "react";
 import { View, Text, Image, TouchableOpacity, Linking, ActivityIndicator } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSelector } from "react-redux";
 import { ChatMessage } from "./ChatTypes";
 import { format, isSameDay } from "date-fns";
 import { Swipeable } from "react-native-gesture-handler";
 import { resolveMediaUrl } from "../../../utils/mediaUtils";
 import MediaPreviewModal from "../../common/MediaPreviewModal";
+import * as ChatMediaCacheService from "../../../services/media/ChatMediaCacheService";
+import { RootState } from "../../../state-store/store";
+import VoiceNoteBubble from "./VoiceNoteBubble";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -33,7 +37,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const [imageLoading, setImageLoading] = React.useState(true);
   const [imageError, setImageError] = React.useState(false);
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
+  const [cachedLocalUri, setCachedLocalUri] = React.useState<string | null>(null);
+  const token = useSelector((state: RootState) => state.app.token);
   const timestamp = new Date(message.timestamp);
+
+  // Prewarm the on-device media cache for attachments in the background so
+  // repeat opens (and the full-screen preview) are instant. Images also
+  // swap their inline thumbnail to the cached local file once available.
+  React.useEffect(() => {
+    if (message.type !== "image" && message.type !== "video" && message.type !== "file") return;
+    const remoteUrl = resolveMediaUrl(message.attachment_url || message.content);
+    if (!remoteUrl) return;
+
+    let cancelled = false;
+    ChatMediaCacheService.getLocalUri(remoteUrl).then((existing) => {
+      if (cancelled) return;
+      if (existing) {
+        setCachedLocalUri(existing);
+        return;
+      }
+      ChatMediaCacheService.ensureCached(remoteUrl, token)
+        .then((path) => {
+          if (!cancelled && path) setCachedLocalUri(path);
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [message.type, message.attachment_url, message.content, token]);
 
   // Format timestamp with date context for messages not sent today
   const formatMessageTime = (date: Date): string => {
@@ -45,24 +78,50 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     return format(date, 'd MMM, HH:mm');
   };
 
-  // Splits a string into alternating plain-text and URL segments
-  const parseMessageWithLinks = (text: string) => {
+  // Splits a string into link / plain-text / bold segments. Bold uses
+  // WhatsApp's own *text* convention — set from the input's selection-based
+  // Bold button in ChatInputBar, parsed back out here for rendering since
+  // RN's TextInput can't render mixed-weight text while editing.
+  const parseMessageWithFormatting = (text: string) => {
     const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+\.[^\s]+)/gi;
-    const parts: { text: string; isLink: boolean }[] = [];
+    const BOLD_REGEX = /\*([^*]+)\*/g;
+
+    const linkParts: { text: string; isLink: boolean }[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
 
     while ((match = URL_REGEX.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push({ text: text.slice(lastIndex, match.index), isLink: false });
+        linkParts.push({ text: text.slice(lastIndex, match.index), isLink: false });
       }
-      parts.push({ text: match[0], isLink: true });
+      linkParts.push({ text: match[0], isLink: true });
       lastIndex = match.index + match[0].length;
     }
-
     if (lastIndex < text.length) {
-      parts.push({ text: text.slice(lastIndex), isLink: false });
+      linkParts.push({ text: text.slice(lastIndex), isLink: false });
     }
+
+    const parts: { text: string; isLink: boolean; isBold: boolean }[] = [];
+    linkParts.forEach((part) => {
+      if (part.isLink) {
+        parts.push({ ...part, isBold: false });
+        return;
+      }
+
+      let idx = 0;
+      let boldMatch: RegExpExecArray | null;
+      BOLD_REGEX.lastIndex = 0;
+      while ((boldMatch = BOLD_REGEX.exec(part.text)) !== null) {
+        if (boldMatch.index > idx) {
+          parts.push({ text: part.text.slice(idx, boldMatch.index), isLink: false, isBold: false });
+        }
+        parts.push({ text: boldMatch[1], isLink: false, isBold: true });
+        idx = boldMatch.index + boldMatch[0].length;
+      }
+      if (idx < part.text.length) {
+        parts.push({ text: part.text.slice(idx), isLink: false, isBold: false });
+      }
+    });
 
     return parts;
   };
@@ -75,14 +134,26 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   };
 
   const renderContent = () => {
-    let displayType = message.type;
-    
+    let displayType: ChatMessage["type"] | "audio" = message.type;
+
+    // Catch voice notes saved as "file" (same trick already used for video —
+    // the backend's `type` column doesn't have a distinct audio value)
+    if (displayType === "file") {
+      const isAudioFile =
+        message.metadata?.mime_type?.startsWith('audio/') ||
+        /\.(m4a|mp3|aac|wav|ogg)$/i.test(message.attachment_url || message.metadata?.original_filename || '');
+
+      if (isAudioFile) {
+        displayType = "audio" as any;
+      }
+    }
+
     // Catch legacy video messages saved as "file"
     if (displayType === "file") {
-      const isVideoFile = 
-        message.metadata?.mime_type?.startsWith('video/') || 
+      const isVideoFile =
+        message.metadata?.mime_type?.startsWith('video/') ||
         /\.(mp4|mov|avi|wmv|mkv)$/i.test(message.attachment_url || message.metadata?.original_filename || '');
-      
+
       if (isVideoFile) {
         displayType = "video" as any;
       }
@@ -90,11 +161,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     switch (displayType) {
       case "text": {
-        const parts = parseMessageWithLinks(message.content);
-        const hasLinks = parts.some((p) => p.isLink);
+        const parts = parseMessageWithFormatting(message.content);
+        const hasSpecialFormatting = parts.some((p) => p.isLink || p.isBold);
 
-        if (!hasLinks) {
-          // Fast path — no links, plain text as before
+        if (!hasSpecialFormatting) {
+          // Fast path — no links or bold, plain text as before
           return (
             <Text className={`text-[15px] leading-5 ${isMe ? "text-black" : "text-gray-900"}`}>
               {message.content}
@@ -112,20 +183,23 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                     color: isMe ? "#1d4ed8" : "#2563eb",
                     textDecorationLine: "underline",
                     textDecorationColor: isMe ? "#1d4ed8" : "#2563eb",
+                    fontWeight: part.isBold ? "700" : undefined,
                   }}
                   onPress={() => handleLinkPress(part.text)}
                 >
                   {part.text}
                 </Text>
               ) : (
-                <Text key={index}>{part.text}</Text>
+                <Text key={index} style={part.isBold ? { fontWeight: "700" } : undefined}>
+                  {part.text}
+                </Text>
               )
             )}
           </Text>
         );
       }
       case "image":
-        const imageUrl = resolveMediaUrl(message.attachment_url || message.content);
+        const imageUrl = cachedLocalUri || resolveMediaUrl(message.attachment_url || message.content);
         return (
           <TouchableOpacity 
             activeOpacity={0.9} 
@@ -159,6 +233,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               />
             )}
           </TouchableOpacity>
+        );
+      case "audio":
+        return (
+          <VoiceNoteBubble
+            remoteUrl={resolveMediaUrl(message.attachment_url || message.content)}
+            isMe={isMe}
+            durationMsHint={message.metadata?.duration_ms}
+            token={token}
+            onLongPress={() => onLongPress?.(message)}
+          />
         );
       case "video":
         const videoUrl = resolveMediaUrl(message.attachment_url || message.content);
@@ -225,11 +309,27 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   return (
     <View className={`${message.type === 'file' ? 'mb-2' : 'mb-4'} px-3 flex-row ${isMe ? "justify-end" : "justify-start"}`}>
+      <View style={{ position: 'relative' }}>
+        {/* Tail nub — small same-color square rotated 45°, centered on the
+            bubble's flat corner. Half sits behind the bubble (hidden by its
+            own opaque background, since it's declared first / stacks below),
+            half pokes out, reading as a small WhatsApp-style tail. */}
+        <View
+          style={{
+            position: 'absolute',
+            top: -1,
+            ...(isMe ? { right: -5 } : { left: -5 }),
+            width: 12,
+            height: 12,
+            backgroundColor: isMe ? '#E3F2FD' : '#FFFFFF',
+            transform: [{ rotate: '45deg' }],
+          }}
+        />
       <TouchableOpacity
         activeOpacity={0.8}
         onLongPress={() => onLongPress?.(message)}
-        className={`max-w-[85%] rounded-2xl ${message.type === 'file' ? 'px-2 py-1.5' : 'px-3 py-2'} shadow-sm ${
-          isMe 
+        className={`max-w-[85%] rounded-[18px] ${message.type === 'file' ? 'px-2 py-1.5' : 'px-3 py-2'} shadow-sm ${
+          isMe
             ? "bg-[#E3F2FD] rounded-tr-none border border-[#BBDEFB]" // Light Blue for own messages
             : "bg-white rounded-tl-none border border-gray-100"
         }`}
@@ -309,6 +409,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           </View>
         </View>
       </TouchableOpacity>
+      </View>
 
       {isPreviewVisible && (
         <MediaPreviewModal

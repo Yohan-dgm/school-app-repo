@@ -8,7 +8,7 @@ import ChatInputBar from "./ChatInputBar";
 import { useChunkedUpload } from "../../../hooks/useChunkedUpload";
 import MessageReceiptsModal from "./MessageReceiptsModal";
 import { useSelector, useDispatch } from "react-redux";
-import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, chatApi } from "../../../api/chat-api";
+import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, useUploadVoiceNoteMutation, chatApi } from "../../../api/chat-api";
 import RealTimeNotificationService from "../../../services/notifications/RealTimeNotificationService";
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
@@ -16,14 +16,22 @@ import * as Sharing from 'expo-sharing';
 import { resolveMediaUrl } from "../../../utils/mediaUtils";
 import MediaPreviewModal from "../../common/MediaPreviewModal";
 import { format, isSameDay } from "date-fns";
+import * as ChatMediaCacheService from "../../../services/media/ChatMediaCacheService";
+import { getAvatarColor } from "./chatAvatarColors";
 
 interface ChatViewProps {
   group: ChatGroup;
   onBack: () => void;
   onInfoPress: () => void;
+  onUploadStateChange?: (isUploading: boolean) => void;
+  // Vertical offset of this screen's own top edge from the true top of the
+  // device screen (e.g. ChatRoomModal's card margin) — needed so the
+  // keyboard-avoiding math below stays accurate now that this screen no
+  // longer starts at y=0.
+  extraTopOffset?: number;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
+const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploadStateChange, extraTopOffset = 0 }) => {
   const insets = useSafeAreaInsets();
   const user = useSelector((state: any) => state.app.user);
   const currentUserId = user?.id;
@@ -79,7 +87,13 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
   const members = React.useMemo(() => membersData?.data.members || [], [membersData]);
   const totalMembersCount = membersData?.data?.pagination?.total || group.members_count || members.length || 0;
 
-  const messages = React.useMemo(() => messagesData?.data.messages || [], [messagesData]);
+  // Cold-start fallback: paint instantly from the persisted snapshot of this
+  // group's last-known messages while the network request above resolves.
+  const cachedMessages = useSelector((state: any) => state.chatCache.messagesByGroup[String(group.id)]);
+  const messages = React.useMemo(
+    () => messagesData?.data.messages || cachedMessages || [],
+    [messagesData, cachedMessages]
+  );
   const hasMore = messagesData?.data.pagination.has_more || false;
   
   const [selectedMessage, setSelectedMessage] = React.useState<ChatMessage | null>(null);
@@ -91,14 +105,24 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     return currentGroup.current_user_role === 'admin' || user?.role === 'admin';
   }, [currentGroup.current_user_role, user?.role]);
 
-  const { uploadFile, isUploading, progress: uploadProgress } = useChunkedUpload();
-  
+  const { uploadFile, isUploading: isChunkedUploading, progress: uploadProgress } = useChunkedUpload();
+  const [uploadVoiceNote, { isLoading: isVoiceNoteUploading }] = useUploadVoiceNoteMutation();
+  const isUploading = isChunkedUploading || isVoiceNoteUploading;
+
+  // Report upload state up to the full-screen modal wrapper so its Android
+  // hardware-back handler can block leaving mid-upload (the modal now
+  // intercepts back presses via a real RN <Modal>, so this component's own
+  // BackHandler listener below is no longer the sole guard).
+  React.useEffect(() => {
+    onUploadStateChange?.(isUploading);
+  }, [isUploading, onUploadStateChange]);
+
   const flatListRef = React.useRef<FlatList>(null);
 
-  // Note: ChatView is rendered as a plain conditional view inside
-  // UniversalNotificationSystem (not a real navigator screen), so there is no
-  // stack transition to intercept here. Leaving-while-uploading is already
-  // guarded by the custom back button (below) and the hardware back handler.
+  // Note: ChatView is rendered inside a full-screen <Modal> (ChatRoomModal),
+  // not a real navigator screen, so there is no stack transition to intercept
+  // here. Leaving-while-uploading is already guarded by the custom close
+  // button (below) and the hardware back handler.
 
   // Hardware Back Button (Android)
   React.useEffect(() => {
@@ -110,11 +134,14 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         );
         return true; // Stop propagation
       }
-      return false;
+      // Close the full-screen modal instead of letting the press bubble to
+      // whatever screen is mounted underneath it.
+      onBack();
+      return true;
     });
 
     return () => backHandler.remove();
-  }, [isUploading]);
+  }, [isUploading, onBack]);
 
   // Typing indicator cleanup
   React.useEffect(() => {
@@ -262,8 +289,12 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       onMessageDeleted: (data) => {
         const groupId = Number(group.id);
         console.log("⚡ Real-time: Message deleted:", data.id);
+
+        let deletedAttachmentUrl: string | undefined;
         dispatch(
           chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
+            const found = draft.data.messages.find(m => String(m.id) === String(data.id));
+            if (found?.attachment_url) deletedAttachmentUrl = found.attachment_url;
             draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.id));
           })
         );
@@ -271,9 +302,15 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
         if (pageRef.current !== 1) {
           dispatch(
             chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
+              const found = draft.data.messages.find(m => String(m.id) === String(data.id));
+              if (!deletedAttachmentUrl && found?.attachment_url) deletedAttachmentUrl = found.attachment_url;
               draft.data.messages = draft.data.messages.filter(m => String(m.id) !== String(data.id));
             })
           );
+        }
+
+        if (deletedAttachmentUrl) {
+          ChatMediaCacheService.evict(resolveMediaUrl(deletedAttachmentUrl)).catch(() => {});
         }
 
         handleRefreshMessages();
@@ -536,19 +573,37 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
     } catch (error) {
       console.error("Failed to send/update message:", error);
       Alert.alert("Error", "Failed to process message. Please try again.");
+      // Re-throw so ChatInputBar knows the send failed and can restore the
+      // user's typed text instead of losing it.
+      throw error;
     }
   };
 
-  const handleSendAttachment = async (type: "image" | "file" | "video", file?: any) => {
+  const handleSendAttachment = async (
+    type: "image" | "file" | "video",
+    file?: any,
+    extraMetadata?: Record<string, any>
+  ) => {
     if (!file) return;
 
     try {
-      console.log(`📤 Starting chunked upload for ${type}:`, file.name);
-      // Use chunked upload for all attachments
-      const mediaData = await uploadFile(file.uri, file.name, file.type);
-      
+      // Voice notes go through a dedicated single-request upload endpoint,
+      // not the generic chunked media pipeline (which rejects audio server-
+      // side) — see UploadVoiceNoteAction.php. Voice notes are small enough
+      // that chunking isn't needed anyway.
+      let mediaData: { url: string; original_filename?: string; size?: number; mime_type?: string; width?: number; height?: number };
+
+      if (extraMetadata?.is_voice_note) {
+        console.log("📤 Uploading voice note:", file.name);
+        const result = await uploadVoiceNote({ chat_group_id: currentGroup.id, audio: file }).unwrap();
+        mediaData = result.data;
+      } else {
+        console.log(`📤 Starting chunked upload for ${type}:`, file.name);
+        mediaData = await uploadFile(file.uri, file.name, file.type);
+      }
+
       console.log("✅ Upload successful, sending message with media:", mediaData);
-      
+
       const response = await sendMessage({
         chat_group_id: currentGroup.id,
         type: type === "image" ? "image" : "file",
@@ -559,6 +614,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           mime_type: mediaData.mime_type,
           width: mediaData.width,
           height: mediaData.height,
+          ...extraMetadata,
         }
       }).unwrap();
 
@@ -566,6 +622,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       if (response?.data?.message) {
         handleNewMessage(response.data.message);
       }
+
+      // We already have these bytes on-device (just picked/recorded) — copy
+      // them straight into the media cache instead of re-downloading what
+      // was just uploaded (mirrors WhatsApp's instant self-echo).
+      ChatMediaCacheService.adoptLocalFile(resolveMediaUrl(mediaData.url), file.uri).catch(() => {});
 
       console.log("✅ Message sent successfully:", response);
     } catch (error: any) {
@@ -599,7 +660,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
 
     try {
       await deleteMessage({ message_id: msg.id }).unwrap();
-      
+
+      if (msg.attachment_url) {
+        ChatMediaCacheService.evict(resolveMediaUrl(msg.attachment_url)).catch(() => {});
+      }
+
       // Pessimistic cache update so sender sees the deletion instantly
       const patchCache = (pageToPatch: number) => {
         dispatch(
@@ -679,9 +744,12 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
-      {/* Header */}
+      {/* Header — this screen now lives inside a full-screen popup (no app
+          header above it clearing the status bar/notch anymore), so it
+          needs its own top safe-area padding. */}
       <View
-        className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100"
+        className="flex-row items-center justify-between px-4 pb-3 bg-white border-b border-gray-100"
+        style={{ paddingTop: insets.top + 12 }}
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
       >
         <TouchableOpacity 
@@ -694,16 +762,19 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
           }} 
           className="p-1"
         >
-          <MaterialIcons name="arrow-back-ios" size={24} color={isUploading ? "#d1d5db" : "black"} />
+          <MaterialIcons name="close" size={26} color={isUploading ? "#d1d5db" : "black"} />
         </TouchableOpacity>
         
         <TouchableOpacity 
           className="flex-row items-center flex-1 ml-4"
           onPress={onInfoPress}
         >
-          <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center">
-            <Text className="text-blue-600 font-bold text-sm">
-              {group.name.trim().split(' ').length >= 2 
+          <View
+            className="w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: getAvatarColor(group.name).bg }}
+          >
+            <Text className="font-bold text-sm" style={{ color: getAvatarColor(group.name).text }}>
+              {group.name.trim().split(' ').length >= 2
                 ? (group.name.trim().split(' ')[0][0] + group.name.trim().split(' ')[1][0]).toUpperCase()
                 : (group.name[0] || '?').toUpperCase()
               }
@@ -739,11 +810,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
             }
           }}
         >
-          <MaterialIcons 
-            name="push-pin" 
-            size={22} 
-            color={currentGroup.is_disabled ? "#3b82f6" : "#6b7280"} 
-            style={currentGroup.is_disabled ? { transform: [{ rotate: '45deg' }] } : {}}
+          <MaterialIcons
+            name="push-pin"
+            size={22}
+            color={currentGroup.is_pinned ? "#3b82f6" : "#6b7280"}
+            style={currentGroup.is_pinned ? { transform: [{ rotate: '45deg' }] } : {}}
           />
         </TouchableOpacity>
  
@@ -759,15 +830,26 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress }) => {
       {/*
         ── Keyboard-aware zone ────────────────────────────────────────────────
         Header is ABOVE this KAV so it never moves when keyboard opens.
-        iOS:     behavior="padding" + keyboardVerticalOffset = measured header height.
-                 This pushes the input bar above the keyboard correctly.
-        Android: softwareKeyboardLayoutMode="pan" (app.json) pans the whole window,
-                 so KAV must be a no-op (behavior=undefined) to avoid double-offset.
+        keyboardVerticalOffset = measured header height + extraTopOffset
+        (this screen's own offset from the true top of the device screen,
+        e.g. ChatRoomModal's card margin) — this pushes the input bar above
+        the keyboard correctly regardless of where on screen this card sits.
+
+        Android used to rely purely on softwareKeyboardLayoutMode="pan"
+        (app.json, an Activity-level window setting) with KAV disabled here.
+        Now that this screen renders inside a React Native <Modal> (a
+        separate Android Dialog window), that Activity-level setting is not
+        guaranteed to apply to the Dialog's own window — a known RN/Android
+        gotcha. KAV is enabled on Android too so the input bar reliably
+        clears the keyboard either way; TODO verify on a real Android device
+        that this doesn't double up with any OS-level pan that does end up
+        applying — if the input bar shifts up more than the keyboard height,
+        drop the Android side back to `undefined`.
       */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={headerHeight + extraTopOffset}
       >
 
       {/* Message List */}

@@ -3,6 +3,7 @@ import {
   View,
   Text,
   Image,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   Modal,
@@ -12,6 +13,7 @@ import {
   Platform,
   Animated,
   AppState,
+  ActivityIndicator,
 } from "react-native";
 
 import { useAuth } from "../../context/AuthContext";
@@ -50,6 +52,7 @@ import { useGetAppUpdateStatusQuery } from "../../api/user-management-api";
 import { BaseNotification } from "../../types/notifications";
 import { useRouter, usePathname } from "expo-router";
 import { useSessionRefresh } from "../../hooks/useSessionRefresh";
+import { useLazyGetMyStudentListQuery } from "../../api/student-header-api";
 
 const { width } = Dimensions.get("window");
 
@@ -114,7 +117,7 @@ const Header = () => {
       refetchOnMountOrArgChange: 30,
       refetchOnFocus: false,
       refetchOnReconnect: true,
-    }
+    },
   );
 
   // Chat API integration for unread chat counts
@@ -125,7 +128,7 @@ const Header = () => {
       refetchOnMountOrArgChange: 30,
       refetchOnFocus: false,
       refetchOnReconnect: true,
-    }
+    },
   );
 
   // App version checking API call
@@ -200,7 +203,7 @@ const Header = () => {
 
       if (isVersionMismatch) {
         console.log(
-          "⚠️ TESTING - Version mismatch detected, showing update overlay"
+          "⚠️ TESTING - Version mismatch detected, showing update overlay",
         );
         console.log("⚠️ TESTING - Overlay should be visible with:", {
           currentVersion: currentAppVersion,
@@ -225,7 +228,7 @@ const Header = () => {
       });
     } else {
       console.log(
-        "📱 TESTING - No version check data yet, ensuring overlay is hidden"
+        "📱 TESTING - No version check data yet, ensuring overlay is hidden",
       );
       dispatch(setShowVersionUpdateOverlay(false));
     }
@@ -371,6 +374,7 @@ const Header = () => {
   const [showStudentSelector, setShowStudentSelector] = useState(false);
   const [showStudentProfile, setShowStudentProfile] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState("");
 
   // Function to refresh student data using real login API
   const refreshStudentData = async (showAlerts = true) => {
@@ -409,7 +413,7 @@ const Header = () => {
 
       console.log(
         "🔄 Fresh login response:",
-        JSON.stringify(response, null, 2)
+        JSON.stringify(response, null, 2),
       );
 
       if (response?.success && response?.data) {
@@ -425,17 +429,17 @@ const Header = () => {
 
         dispatch(setSessionData(enhancedSessionData));
         console.log(
-          "✅ Student data refreshed successfully with real API data!"
+          "✅ Student data refreshed successfully with real API data!",
         );
 
         if (showAlerts) {
           alert(
-            `Student data refreshed! Found ${response.data.student_list?.length || 0} students.`
+            `Student data refreshed! Found ${response.data.student_list?.length || 0} students.`,
           );
         }
       } else {
         console.log(
-          "⚠️ Login API returned invalid response, falling back to cache clear..."
+          "⚠️ Login API returned invalid response, falling back to cache clear...",
         );
         await AsyncStorage.removeItem("persist:root");
         dispatch(logout());
@@ -461,7 +465,7 @@ const Header = () => {
 
         if (showAlerts) {
           alert(
-            "Error refreshing student data. Please try logging out and back in manually."
+            "Error refreshing student data. Please try logging out and back in manually.",
           );
         }
       }
@@ -485,7 +489,7 @@ const Header = () => {
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === "active" && sessionData?.data?.student_list) {
         console.log(
-          "🔄 App came to foreground, auto-refreshing student data..."
+          "🔄 App came to foreground, auto-refreshing student data...",
         );
         refreshStudentData(false); // Silent refresh (no alerts)
       }
@@ -493,7 +497,7 @@ const Header = () => {
 
     const subscription = AppState.addEventListener(
       "change",
-      handleAppStateChange
+      handleAppStateChange,
     );
 
     // Set up periodic refresh every 5 minutes
@@ -504,7 +508,7 @@ const Header = () => {
           refreshStudentData(false); // Silent refresh (no alerts)
         }
       },
-      5 * 60 * 1000
+      5 * 60 * 1000,
     ); // 5 minutes
 
     // Cleanup subscription and interval on unmount
@@ -534,7 +538,7 @@ const Header = () => {
           duration: 3000,
           useNativeDriver: false, // Keep false for color/shadow animations
         }),
-      ])
+      ]),
     );
 
     // Create shadow animation with glow effect
@@ -550,7 +554,7 @@ const Header = () => {
           duration: 2500,
           useNativeDriver: false, // Keep false for shadow animations
         }),
-      ])
+      ]),
     );
 
     // Create subtle rotation animation
@@ -559,7 +563,7 @@ const Header = () => {
         toValue: 1,
         duration: 8000,
         useNativeDriver: false, // Changed to false to avoid mixing native/JS drivers
-      })
+      }),
     );
 
     pulseAnimation.start();
@@ -598,8 +602,10 @@ const Header = () => {
   };
 
   const handleDropdownPress = () => {
-    // Show student selector modal
+    // Show student selector modal and load its list fresh from the
+    // backend (not the login-cached sessionData.data.student_list)
     setShowStudentSelector(true);
+    fetchMyStudentList();
   };
 
   // Simple notification processing following UniversalNotificationSystem pattern
@@ -647,7 +653,7 @@ const Header = () => {
 
       if (notificationsError?.status === 500 && notificationErrorCount >= 3) {
         console.error(
-          "🔔 Header - Multiple notification API failures detected, may need server-side investigation"
+          "🔔 Header - Multiple notification API failures detected, may need server-side investigation",
         );
       }
     }
@@ -661,7 +667,7 @@ const Header = () => {
     const handleAppStateChange = async (nextAppState) => {
       if (nextAppState === "active" && userId && userToken) {
         console.log(
-          "🔄 Header - App came to foreground, refreshing session data..."
+          "🔄 Header - App came to foreground, refreshing session data...",
         );
 
         try {
@@ -672,7 +678,7 @@ const Header = () => {
         } catch (error) {
           console.error(
             "❌ Header - Error refreshing data on foreground:",
-            error
+            error,
           );
         }
       }
@@ -680,7 +686,7 @@ const Header = () => {
 
     const subscription = AppState.addEventListener(
       "change",
-      handleAppStateChange
+      handleAppStateChange,
     );
     return () => subscription?.remove();
   }, [userId, userToken, refreshSession]);
@@ -718,19 +724,19 @@ const Header = () => {
           refreshSession()
             .then(() => {
               console.log(
-                "✅ Header - Session data refreshed on mount (delayed)"
+                "✅ Header - Session data refreshed on mount (delayed)",
               );
             })
             .catch((error) => {
               console.error(
                 "❌ Header - Error refreshing session data on mount:",
-                error
+                error,
               );
             });
         }, 2000); // 2 second delay
       } else {
         console.log(
-          "✅ Header - Session data is fresh, skipping refresh on mount"
+          "✅ Header - Session data is fresh, skipping refresh on mount",
         );
       }
     }
@@ -750,7 +756,7 @@ const Header = () => {
           console.error("❌ Header - Periodic session refresh failed:", error);
         }
       },
-      10 * 60 * 1000
+      10 * 60 * 1000,
     ); // 10 minutes
 
     return () => clearInterval(interval);
@@ -778,11 +784,11 @@ const Header = () => {
     // Transform student data using utility function
     const transformedStudent = transformStudentWithProfilePicture(
       student,
-      sessionData
+      sessionData,
     );
 
     console.log(
-      `🎓 Header - Using API calling name: "${transformedStudent.student_calling_name}" for student "${transformedStudent.name}"`
+      `🎓 Header - Using API calling name: "${transformedStudent.student_calling_name}" for student "${transformedStudent.name}"`,
     );
     console.log(`🎓 Header - Student grade_level_class data:`, {
       student_id: transformedStudent.id,
@@ -794,7 +800,7 @@ const Header = () => {
       {
         attachments: student.attachments,
         profileImage: transformedStudent.profileImage,
-      }
+      },
     );
 
     return transformedStudent;
@@ -858,6 +864,53 @@ const Header = () => {
     return transformed;
   }, [students, sessionData?.data?.id, sessionData?.id]);
 
+  // Student picker: fetched fresh from the backend every time the picker
+  // opens (see handleDropdownPress) instead of using the list cached at
+  // login (sessionData.data.student_list / transformedStudents above).
+  const [
+    fetchMyStudentList,
+    {
+      data: myStudentListData,
+      isFetching: isPickerLoading,
+      isError: isPickerError,
+      error: pickerError,
+    },
+  ] = useLazyGetMyStudentListQuery();
+
+  useEffect(() => {
+    if (pickerError) {
+      console.log(
+        "🎓 Header - get-my-student-list failed:",
+        JSON.stringify(pickerError, null, 2),
+      );
+    }
+  }, [pickerError]);
+
+  const pickerStudents = useMemo(() => {
+    const rawList = myStudentListData?.data?.student_list || [];
+    return rawList.map((student) =>
+      transformStudentWithProfilePicture(student, sessionData),
+    );
+  }, [myStudentListData, sessionData]);
+
+  // Student picker search — filters by calling name, full name, or
+  // admission number; case-insensitive, matches anywhere in the string.
+  const filteredStudents = useMemo(() => {
+    const query = studentSearchQuery.trim().toLowerCase();
+    if (!query) return pickerStudents;
+
+    return pickerStudents.filter((student) => {
+      const callingName = (student.student_calling_name || "").toLowerCase();
+      const fullName = (student.name || "").toLowerCase();
+      const admissionNumber = (student.admissionNumber || "").toLowerCase();
+      return (
+        callingName.includes(query) ||
+        fullName.includes(query) ||
+        admissionNumber.includes(query)
+      );
+    });
+  }, [pickerStudents, studentSearchQuery]);
+
   // Enhanced student selection logic for multiple students
   const currentStudent =
     selectedStudent || transformedStudents[0] || fallbackStudent;
@@ -868,10 +921,10 @@ const Header = () => {
   console.log(`🎓 Header - Total students: ${transformedStudents.length}`);
   console.log(`🎓 Header - Has multiple students: ${hasMultipleStudents}`);
   console.log(
-    `🎓 Header - Current student: ${currentStudent?.student_calling_name}`
+    `🎓 Header - Current student: ${currentStudent?.student_calling_name}`,
   );
   console.log(
-    `🎓 Header - Selected student ID: ${selectedStudent?.id || "none"}`
+    `🎓 Header - Selected student ID: ${selectedStudent?.id || "none"}`,
   );
 
   // Enhanced auto-select first student logic with proper dependency management
@@ -880,7 +933,7 @@ const Header = () => {
     if (hasStudents && !selectedStudent && transformedStudents.length > 0) {
       const firstStudent = transformedStudents[0];
       console.log(
-        `🎓 Header - Auto-selecting first student: ${firstStudent?.student_calling_name} (ID: ${firstStudent?.student_id})`
+        `🎓 Header - Auto-selecting first student: ${firstStudent?.student_calling_name} (ID: ${firstStudent?.student_id})`,
       );
       console.log(`🎓 Header - Auto-selected student class info:`, {
         student_calling_name: firstStudent?.student_calling_name,
@@ -894,11 +947,11 @@ const Header = () => {
     // If we have a selected student but it's not in the current list (e.g., after data refresh)
     else if (selectedStudent && transformedStudents.length > 0) {
       const studentExists = transformedStudents.find(
-        (student) => student.student_id === selectedStudent.student_id
+        (student) => student.student_id === selectedStudent.student_id,
       );
       if (!studentExists) {
         console.log(
-          `🎓 Header - Selected student no longer exists, auto-selecting first available: ${transformedStudents[0]?.student_calling_name}`
+          `🎓 Header - Selected student no longer exists, auto-selecting first available: ${transformedStudents[0]?.student_calling_name}`,
         );
         dispatch(setSelectedStudent(transformedStudents[0]));
       }
@@ -909,11 +962,11 @@ const Header = () => {
   useEffect(() => {
     if (selectedStudent) {
       console.log(
-        `🎓 Header - Student selection changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`
+        `🎓 Header - Student selection changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`,
       );
       console.log(
         `🎓 Header - Selected student details:`,
-        JSON.stringify(selectedStudent, null, 2)
+        JSON.stringify(selectedStudent, null, 2),
       );
     } else {
       console.log(`🎓 Header - No student currently selected`);
@@ -923,7 +976,7 @@ const Header = () => {
   // Simple unread count calculation following UniversalNotificationSystem pattern
   const allNotifications = notificationsData?.data || [];
   const unreadPushCount = allNotifications.filter(
-    (notification) => !notification.is_read
+    (notification) => !notification.is_read,
   ).length;
 
   const allChatThreads = chatThreadsData?.data?.threads || [];
@@ -953,12 +1006,14 @@ const Header = () => {
   };
 
   const handleNotificationPress = () => {
-    console.log("🔔 Header - Notification button pressed, navigating directly to chat section");
-    
+    console.log(
+      "🔔 Header - Notification button pressed, navigating directly to chat section",
+    );
+
     // Navigate to notification section based on user category
     // Using getUserCategoryName which returns folder-friendly names like 'principal', 'senior_management'
     const userCategoryName = getUserCategoryName(userCategory);
-    
+
     // The folders in src/app/authenticated are named after the category name (e.g. 'parent', 'educator', 'sport_coach')
     const notificationRoute = `/authenticated/${userCategoryName}/notifications`;
 
@@ -992,6 +1047,7 @@ const Header = () => {
     // });
     dispatch(setSelectedStudent(student));
     setShowStudentSelector(false);
+    setStudentSearchQuery("");
 
     // Close student profile modal if it's open to refresh with new student data
     if (showStudentProfile) {
@@ -1248,25 +1304,91 @@ const Header = () => {
           visible={showStudentSelector}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setShowStudentSelector(false)}
+          onRequestClose={() => {
+            setShowStudentSelector(false);
+            setStudentSearchQuery("");
+          }}
         >
           <TouchableOpacity
             style={styles.modalOverlay}
-            onPress={() => setShowStudentSelector(false)}
+            onPress={() => {
+              setShowStudentSelector(false);
+              setStudentSearchQuery("");
+            }}
           >
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>
-                {hasMultipleStudents
-                  ? `Select Student (${transformedStudents.length} available)`
+                {pickerStudents.length > 1
+                  ? `Select Student (${pickerStudents.length} available)`
                   : "Select Student"}
               </Text>
-              {hasStudents ? (
-                <FlatList
-                  data={transformedStudents}
-                  renderItem={renderStudentItem}
-                  keyExtractor={(item) => item.id.toString()}
-                  style={styles.studentList}
-                />
+
+              {pickerStudents.length > 1 && (
+                <View style={styles.searchContainer}>
+                  <MaterialIcons
+                    name="search"
+                    size={20}
+                    color="#999"
+                    style={styles.searchIcon}
+                  />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by name or admission number"
+                    placeholderTextColor="#999"
+                    value={studentSearchQuery}
+                    onChangeText={setStudentSearchQuery}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                  {studentSearchQuery.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setStudentSearchQuery("")}
+                      style={styles.searchClearButton}
+                    >
+                      <MaterialIcons name="close" size={18} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {isPickerLoading ? (
+                <View style={styles.noStudentsContainer}>
+                  <ActivityIndicator
+                    size="large"
+                    color={theme.colors.primary}
+                  />
+                  <Text style={styles.noStudentsText}>Loading students...</Text>
+                </View>
+              ) : isPickerError ? (
+                <View style={styles.noStudentsContainer}>
+                  <MaterialIcons name="error-outline" size={48} color="#ccc" />
+                  <Text style={styles.noStudentsText}>
+                    Couldn&apos;t load your students
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => fetchMyStudentList()}
+                  >
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : pickerStudents.length > 0 ? (
+                filteredStudents.length > 0 ? (
+                  <FlatList
+                    data={filteredStudents}
+                    renderItem={renderStudentItem}
+                    keyExtractor={(item) => item.id.toString()}
+                    style={styles.studentList}
+                    keyboardShouldPersistTaps="handled"
+                  />
+                ) : (
+                  <View style={styles.noStudentsContainer}>
+                    <MaterialIcons name="search-off" size={48} color="#ccc" />
+                    <Text style={styles.noStudentsText}>
+                      No students match “{studentSearchQuery}”
+                    </Text>
+                  </View>
+                )
               ) : (
                 <View style={styles.noStudentsContainer}>
                   <MaterialIcons name="school" size={48} color="#ccc" />
@@ -1562,6 +1684,29 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     textAlign: "center",
     marginBottom: theme.spacing.md,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    paddingHorizontal: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  searchIcon: {
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    fontFamily: theme.fonts.regular,
+    fontSize: 14,
+    color: theme.colors.text,
+  },
+  searchClearButton: {
+    padding: 4,
   },
   studentList: {
     maxHeight: 300,

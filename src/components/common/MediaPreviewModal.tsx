@@ -32,6 +32,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../state-store/store';
+import * as ChatMediaCacheService from '../../services/media/ChatMediaCacheService';
 
 interface MediaPreviewModalProps {
   visible: boolean;
@@ -161,8 +162,36 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
 
   // ── Video Player ────────────────────────────────────────────────
   const isVideo = mediaType === 'video' || /\.(mp4|mov|avi|wmv|mkv)$/i.test(mediaUrl || '');
-  
-  const player = useVideoPlayer(mediaUrl || '', (player) => {
+
+  // Play from the on-device cache once available so repeat opens don't
+  // re-stream the same video from the server. Starts on the remote url so
+  // first-ever playback isn't blocked on the cache check.
+  const [effectiveVideoUri, setEffectiveVideoUri] = React.useState<string | null>(mediaUrl);
+
+  useEffect(() => {
+    setEffectiveVideoUri(mediaUrl);
+    if (!isVideo || !mediaUrl) return;
+
+    let cancelled = false;
+    ChatMediaCacheService.getLocalUri(mediaUrl).then((cached) => {
+      if (cancelled) return;
+      if (cached) {
+        setEffectiveVideoUri(cached);
+        return;
+      }
+      ChatMediaCacheService.ensureCached(mediaUrl, token)
+        .then((path) => {
+          if (!cancelled && path) setEffectiveVideoUri(path);
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isVideo, mediaUrl, token]);
+
+  const player = useVideoPlayer(effectiveVideoUri || '', (player) => {
     if (isVideo) {
       player.loop = true;
       // Do NOT auto-play on mount — only play when modal is explicitly opened
@@ -181,6 +210,15 @@ const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
 
   const convertPdfToBase64 = async (pdfUrl: string) => {
     try {
+      // Prefer the on-device cache — avoids re-fetching + re-converting a
+      // PDF that's already been viewed once.
+      const cachedUri = await ChatMediaCacheService.ensureCached(pdfUrl, token).catch(() => null);
+      if (cachedUri) {
+        return await FileSystem.readAsStringAsync(cachedUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+
       const response = await fetch(pdfUrl, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

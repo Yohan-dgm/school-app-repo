@@ -29,7 +29,7 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
   selectedStudent,
 }) => {
   const [expandedSubjects, setExpandedSubjects] = useState<Set<number>>(
-    new Set()
+    new Set(),
   );
 
   const formatDate = (dateString: string) => {
@@ -168,7 +168,7 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
                 <View style={styles.studentDetailRow}>
                   <Text style={styles.detailLabel}>Grade:</Text>
                   <Text style={styles.detailValue}>
-                    {studentInfo.grade_level_name}
+                    {examReport.grade_level_name}
                   </Text>
                 </View>
               </View>
@@ -262,7 +262,7 @@ const DetailedReportCard: React.FC<DetailedReportCardProps> = ({
               const hasRemarks = Boolean(
                 subject.subject_remark &&
                   typeof subject.subject_remark === "string" &&
-                  subject.subject_remark.trim().length > 0
+                  subject.subject_remark.trim().length > 0,
               );
 
               return (

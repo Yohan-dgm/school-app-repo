@@ -12,6 +12,7 @@ import educatorFeedbackSlice from "./slices/educator/educatorFeedbackSliceWithAP
 import attendanceSlice from "./slices/educator/attendanceSlice";
 import studentAnalysisSlice from "./slices/educator/studentAnalysisSlice";
 import paymentSlice from "./slices/payment/paymentSlice";
+import chatCacheSlice from "./slices/chatCacheSlice";
 import { userPostsMiddleware } from "./middleware/user-posts-middleware";
 import { studentSelectionMiddleware } from "./middleware/student-selection-middleware";
 import { authResponseLogger } from "./middleware/auth-response-logger";
@@ -115,6 +116,7 @@ const rootReducer = combineReducers({
   attendance: attendanceSlice,
   studentAnalysis: studentAnalysisSlice,
   payment: paymentSlice,
+  chatCache: chatCacheSlice,
 });
 export type RootReducer = ReturnType<typeof rootReducer>;
 const persistedReducer = persistReducer<RootReducer>(
