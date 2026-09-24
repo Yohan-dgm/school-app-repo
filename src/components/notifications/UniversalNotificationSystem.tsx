@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
 // Remove useFocusEffect to avoid navigation context errors
 // import { useFocusEffect } from "@react-navigation/native";
@@ -535,12 +536,31 @@ export default function UniversalNotificationSystem({
   // };
 
   const handleNotificationPress = (notification: BaseNotification) => {
+    const isUnread = !(notification.is_read ?? notification.isRead);
+
+    // Discipline-record notifications deep-link straight into that
+    // student's Discipline Record drawer instead of the generic read-only
+    // details modal - action_url is set by DisciplineParentNotifier on the
+    // backend as "discipline-record?student_id={id}".
+    const disciplineMatch = notification.action_url?.match(
+      /^discipline-record\?student_id=(\d+)/,
+    );
+    if (disciplineMatch) {
+      if (isUnread) {
+        handleMarkAsRead(notification.id);
+      }
+      router.push({
+        pathname: "/authenticated/parent/student-profile",
+        params: { openDisciplineStudentId: disciplineMatch[1] },
+      });
+      return;
+    }
+
     // Open details modal
     setSelectedNotification(notification);
     setShowDetailsModal(true);
 
     // If notification is unread, mark it as read
-    const isUnread = !(notification.is_read ?? notification.isRead);
     if (isUnread) {
       handleMarkAsRead(notification.id);
     }

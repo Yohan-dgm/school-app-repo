@@ -9,26 +9,48 @@ import {
   Modal,
   Animated,
   Platform,
+  UIManager,
+  LayoutAnimation,
   HapticFeedback,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSelector } from "react-redux";
 import { theme } from "../../styles/theme";
 import { USER_CATEGORIES } from "../../constants/userCategories";
 
+// LayoutAnimation is opt-in on Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const animateLayout = () => {
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+};
+
 // Filter transformation utilities
 const transformFiltersForAPI = (filters) => {
+  // "To Date" must include the entire selected day. The backend compares
+  // with `created_at <= dateTo`, so a bare "YYYY-MM-DD" (midnight) would
+  // exclude almost every post actually made on that day - push it to the
+  // last millisecond of that calendar day instead.
+  let dateTo = "";
+  if (filters.dateRange?.end) {
+    const endOfDay = new Date(filters.dateRange.end);
+    endOfDay.setHours(23, 59, 59, 999);
+    dateTo = endOfDay.toISOString();
+  }
+
   return {
     search: filters.searchTerm || "",
     dateFrom: filters.dateRange?.start
-      ? filters.dateRange.start.toISOString().split("T")[0]
+      ? new Date(filters.dateRange.start).toISOString().split("T")[0]
       : "",
-    dateTo: filters.dateRange?.end
-      ? filters.dateRange.end.toISOString().split("T")[0]
-      : "",
+    dateTo,
     category: filters.category === "all" ? "" : filters.category || "",
     hashtags: filters.hashtags || [],
     searchFilterList: [], // Backend expects this parameter
@@ -169,7 +191,6 @@ const FilterBar = ({
   filters,
   onFilterChange,
   onClearFilters,
-  postsData = [],
   onAddPost,
   userCategory,
 }) => {
@@ -192,179 +213,14 @@ const FilterBar = ({
   const [datePickerMode, setDatePickerMode] = useState(null); // 'from' or 'to'
   const [showDateSection, setShowDateSection] = useState(false); // Toggle for date section visibility
 
-  // Modal states
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [showHashtagModal, setShowHashtagModal] = useState(false);
-
   // UI states
   const [isExpanded, setIsExpanded] = useState(false);
-  const [animatedHeight] = useState(new Animated.Value(80)); // Increased for better layout
 
   // Premium filter toggle animations
   const toggleScale = useRef(new Animated.Value(1)).current;
   const toggleRotation = useRef(new Animated.Value(0)).current;
   const badgeScale = useRef(new Animated.Value(0)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
-
-  // Generate dynamic categories and hashtags from posts data
-  const dynamicCategories = extractCategoriesFromPosts(postsData);
-  const dynamicHashtags = extractHashtagsFromPosts(postsData);
-
-  // Debug log for categories
-  // console.log(
-  //   "🏷️ FilterBar - Dynamic categories extracted:",
-  //   dynamicCategories
-  // );
-  // console.log("🏷️ FilterBar - Posts data count:", postsData?.length || 0);
-
-  // Combine default "All" category with dynamic categories
-  const categories = [
-    { value: "all", label: "All Posts", icon: "view-list", color: "#8E8E93" },
-    ...dynamicCategories,
-  ];
-
-  // console.log("🏷️ FilterBar - Final categories for modal:", categories);
-
-  // Use dynamic hashtags, fallback to default if no data
-  const availableHashtags =
-    dynamicHashtags.length > 0
-      ? dynamicHashtags
-      : [
-          {
-            value: "ScienceFair",
-            label: "#ScienceFair",
-            icon: "science",
-            color: "#5856D6",
-          },
-          {
-            value: "Achievement",
-            label: "#Achievement",
-            icon: "emoji-events",
-            color: "#FFD60A",
-          },
-          {
-            value: "Football",
-            label: "#Football",
-            icon: "sports-soccer",
-            color: "#34C759",
-          },
-          {
-            value: "Victory",
-            label: "#Victory",
-            icon: "military-tech",
-            color: "#FF9500",
-          },
-          {
-            value: "TeamSpirit",
-            label: "#TeamSpirit",
-            icon: "groups",
-            color: "#007AFF",
-          },
-          {
-            value: "MathTest",
-            label: "#MathTest",
-            icon: "calculate",
-            color: "#5856D6",
-          },
-          {
-            value: "Grade9",
-            label: "#Grade9",
-            icon: "school",
-            color: "#8E8E93",
-          },
-          { value: "Exam", label: "#Exam", icon: "quiz", color: "#FF3B30" },
-          {
-            value: "Drama",
-            label: "#Drama",
-            icon: "theater-comedy",
-            color: "#AF52DE",
-          },
-          {
-            value: "Theater",
-            label: "#Theater",
-            icon: "local-movies",
-            color: "#AF52DE",
-          },
-          {
-            value: "Performance",
-            label: "#Performance",
-            icon: "star",
-            color: "#FFD60A",
-          },
-          {
-            value: "Basketball",
-            label: "#Basketball",
-            icon: "sports-basketball",
-            color: "#FF9500",
-          },
-          {
-            value: "Tryouts",
-            label: "#Tryouts",
-            icon: "how-to-reg",
-            color: "#34C759",
-          },
-          {
-            value: "ArtExhibition",
-            label: "#ArtExhibition",
-            icon: "palette",
-            color: "#FF2D92",
-          },
-          {
-            value: "StudentArt",
-            label: "#StudentArt",
-            icon: "brush",
-            color: "#FF2D92",
-          },
-          {
-            value: "Creativity",
-            label: "#Creativity",
-            icon: "lightbulb",
-            color: "#FFD60A",
-          },
-        ];
-
-  // Calculate dynamic height based on active filters
-  const calculateHeight = () => {
-    let baseHeight = 48; // Collapsed height (reduced to match mainFilterBar height)
-    if (!isExpanded) return baseHeight;
-
-    let expandedHeight = 48; // Start with just the main filter bar height
-
-    // Add height for filter chips row
-    expandedHeight += 60; // Height for the filter chips
-
-    // Add height for date section if visible
-    if (showDateSection) {
-      expandedHeight += 200;
-    }
-
-    // Calculate active filters dynamically
-    const hasActiveFilters =
-      filters.dateRange.start ||
-      filters.dateRange.end ||
-      filters.hashtags.length > 0 ||
-      filters.category !== "all" ||
-      filters.searchTerm.trim() !== "";
-
-    if (hasActiveFilters) {
-      expandedHeight += 24; // Header section ("Active Filters" title)
-      expandedHeight += 56; // Fixed height for one row of filter chips (they scroll horizontally)
-      expandedHeight += 2; // Minimal bottom padding
-    }
-
-    return expandedHeight;
-  };
-
-  // Animation for expand/collapse
-  useEffect(() => {
-    const targetHeight = calculateHeight();
-
-    Animated.timing(animatedHeight, {
-      toValue: targetHeight,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [isExpanded, showDateSection, filters, animatedHeight]);
 
   const toggleExpanded = () => {
     // Add haptic feedback
@@ -395,6 +251,7 @@ const FilterBar = ({
       useNativeDriver: true,
     }).start();
 
+    animateLayout();
     setIsExpanded(!isExpanded);
   };
 
@@ -420,12 +277,14 @@ const FilterBar = ({
 
   // Remove individual date
   const removeFromDate = () => {
+    animateLayout();
     const newDateRange = { ...filters.dateRange };
     newDateRange.start = null;
     onFilterChange({ ...filters, dateRange: newDateRange });
   };
 
   const removeToDate = () => {
+    animateLayout();
     const newDateRange = { ...filters.dateRange };
     newDateRange.end = null;
     onFilterChange({ ...filters, dateRange: newDateRange });
@@ -433,39 +292,22 @@ const FilterBar = ({
 
   // Toggle date section visibility
   const toggleDateSection = () => {
+    animateLayout();
     setShowDateSection(!showDateSection);
-  };
-
-  // Remove individual hashtag
-  const removeHashtag = (hashtagToRemove) => {
-    const newHashtags = filters.hashtags.filter(
-      (tag) => tag !== hashtagToRemove,
-    );
-    onFilterChange({ ...filters, hashtags: newHashtags });
   };
 
   // Clear date range and hide date section
   const clearDateRange = () => {
+    animateLayout();
     onFilterChange({ ...filters, dateRange: { start: null, end: null } });
     setShowDateSection(false);
   };
 
   // Enhanced clear all filters
   const handleClearAll = () => {
+    animateLayout();
     onClearFilters();
     setShowDateSection(false);
-  };
-
-  const handleCategorySelect = (category) => {
-    onFilterChange({ ...filters, category });
-    setShowCategoryModal(false);
-  };
-
-  const handleHashtagSelect = (hashtag) => {
-    const newHashtags = filters.hashtags.includes(hashtag)
-      ? filters.hashtags.filter((tag) => tag !== hashtag)
-      : [...filters.hashtags, hashtag];
-    onFilterChange({ ...filters, hashtags: newHashtags });
   };
 
   const formatDate = (date) => {
@@ -477,11 +319,7 @@ const FilterBar = ({
 
   const hasActiveFilters = () => {
     return (
-      filters.searchTerm ||
-      filters.dateRange.start ||
-      filters.dateRange.end ||
-      filters.category !== "all" ||
-      filters.hashtags.length > 0
+      filters.searchTerm || filters.dateRange.start || filters.dateRange.end
     );
   };
 
@@ -489,8 +327,6 @@ const FilterBar = ({
     let count = 0;
     if (filters.searchTerm) count++;
     if (filters.dateRange.start || filters.dateRange.end) count++;
-    if (filters.category !== "all") count++;
-    if (filters.hashtags.length > 0) count += filters.hashtags.length;
     return count;
   };
 
@@ -543,12 +379,8 @@ const FilterBar = ({
     };
   }, [filters, badgeScale, glowOpacity]);
 
-  const selectedCategory = categories.find(
-    (cat) => cat.value === filters.category,
-  );
-
   return (
-    <Animated.View style={[styles.container, { height: animatedHeight }]}>
+    <View style={styles.container}>
       {/* Main Filter Bar */}
       <View style={styles.mainFilterBar}>
         {/* Search Bar */}
@@ -635,7 +467,8 @@ const FilterBar = ({
         </Animated.View>
 
         {/* Plus Button for Creating Posts - Show for non-Parents OR Grade/EY users */}
-        {(userCategory !== USER_CATEGORIES.PARENT || isGradeOrEYUser(userFullName)) && (
+        {(userCategory !== USER_CATEGORIES.PARENT ||
+          isGradeOrEYUser(userFullName)) && (
           <TouchableOpacity
             style={styles.addPostButton}
             onPress={onAddPost}
@@ -654,38 +487,6 @@ const FilterBar = ({
             showsHorizontalScrollIndicator={false}
             style={styles.filtersRow}
           >
-            {/* Category Filter */}
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                filters.category !== "all" && styles.activeFilterChip,
-              ]}
-              onPress={() => setShowCategoryModal(true)}
-            >
-              <Icon
-                name={selectedCategory?.icon || "view-list"}
-                size={16}
-                color={
-                  filters.category !== "all"
-                    ? "#FFFFFF"
-                    : selectedCategory?.color || "#8E8E93"
-                }
-              />
-              <Text
-                style={[
-                  styles.filterChipText,
-                  filters.category !== "all" && styles.activeFilterChipText,
-                ]}
-              >
-                {selectedCategory?.label || "Category"}
-              </Text>
-              <Icon
-                name="expand-more"
-                size={16}
-                color={filters.category !== "all" ? "#FFFFFF" : "#8E8E93"}
-              />
-            </TouchableOpacity>
-
             {/* Date Range Filter */}
             <TouchableOpacity
               style={[
@@ -840,7 +641,10 @@ const FilterBar = ({
               <View style={styles.dateQuickActions}>
                 <TouchableOpacity
                   style={styles.quickActionButton}
-                  onPress={() => setShowDateSection(false)}
+                  onPress={() => {
+                    animateLayout();
+                    setShowDateSection(false);
+                  }}
                 >
                   <Icon name="keyboard-arrow-up" size={16} color="#8E8E93" />
                   <Text style={styles.quickActionText}>Hide</Text>
@@ -866,8 +670,6 @@ const FilterBar = ({
           {/* Selected Filters Display */}
           {(filters.dateRange.start ||
             filters.dateRange.end ||
-            filters.hashtags.length > 0 ||
-            filters.category !== "all" ||
             filters.searchTerm.trim() !== "") && (
             <View style={styles.selectedFiltersSection}>
               <View style={styles.selectedFiltersHeader}>
@@ -911,49 +713,6 @@ const FilterBar = ({
                     </TouchableOpacity>
                   </View>
                 )}
-
-                {/* Category Chip */}
-                {filters.category !== "all" && (
-                  <View style={styles.selectedFilterChip}>
-                    <Icon name="category" size={14} color="#FF9500" />
-                    <Text style={styles.selectedFilterText}>
-                      {
-                        categories.find((cat) => cat.value === filters.category)
-                          ?.label
-                      }
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() =>
-                        onFilterChange({ ...filters, category: "all" })
-                      }
-                    >
-                      <Icon name="close" size={14} color="#8E8E93" />
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Hashtag Chips */}
-                {filters.hashtags.map((hashtag, index) => {
-                  return (
-                    <View key={index} style={styles.selectedFilterChip}>
-                      <Text style={styles.hashtagSymbol}>#</Text>
-                      <Text style={styles.selectedFilterText}>{hashtag}</Text>
-                      <TouchableOpacity onPress={() => removeHashtag(hashtag)}>
-                        <Icon name="close" size={14} color="#8E8E93" />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-
-                {/* Add Hashtag Button */}
-                <TouchableOpacity
-                  style={styles.addHashtagChip}
-                  onPress={() => setShowHashtagModal(true)}
-                >
-                  <Icon name="tag" size={14} color="#FF2D92" />
-                  <Text style={styles.addHashtagText}>Add Tags</Text>
-                  <Icon name="add" size={14} color="#FF2D92" />
-                </TouchableOpacity>
 
                 {/* Search Term Chip */}
                 {filters.searchTerm.trim() !== "" && (
@@ -1016,112 +775,7 @@ const FilterBar = ({
           </TouchableOpacity>
         </Modal>
       )}
-
-      {/* Category Selection Modal */}
-      <Modal
-        visible={showCategoryModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Category</Text>
-              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <Icon name="close" size={24} color="#8E8E93" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.categoryList}>
-              {categories.map((category) => (
-                <TouchableOpacity
-                  key={category.value}
-                  style={[
-                    styles.categoryOption,
-                    filters.category === category.value &&
-                      styles.selectedCategoryOption,
-                  ]}
-                  onPress={() => handleCategorySelect(category.value)}
-                >
-                  <Icon
-                    name={category.icon}
-                    size={20}
-                    color={
-                      filters.category === category.value
-                        ? "#FFFFFF"
-                        : category.color
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.categoryOptionText,
-                      filters.category === category.value &&
-                        styles.selectedCategoryOptionText,
-                    ]}
-                  >
-                    {category.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Hashtag Selection Modal */}
-      <Modal
-        visible={showHashtagModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowHashtagModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Hashtags</Text>
-              <TouchableOpacity onPress={() => setShowHashtagModal(false)}>
-                <Icon name="close" size={24} color="#8E8E93" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.hashtagList}>
-              {availableHashtags.map((hashtag) => (
-                <TouchableOpacity
-                  key={hashtag.value}
-                  style={[
-                    styles.hashtagOption,
-                    filters.hashtags.includes(hashtag.value) &&
-                      styles.selectedHashtagOption,
-                  ]}
-                  onPress={() => handleHashtagSelect(hashtag.value)}
-                >
-                  <Icon
-                    name={hashtag.icon}
-                    size={20}
-                    color={
-                      filters.hashtags.includes(hashtag.value)
-                        ? "#FFFFFF"
-                        : hashtag.color
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.hashtagOptionText,
-                      filters.hashtags.includes(hashtag.value) &&
-                        styles.selectedHashtagOptionText,
-                    ]}
-                  >
-                    {hashtag.label}
-                  </Text>
-                  {filters.hashtags.includes(hashtag.value) && (
-                    <Icon name="check" size={20} color="#FFFFFF" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </Animated.View>
+    </View>
   );
 };
 
@@ -1130,7 +784,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E5EA",
-    overflow: "hidden",
   },
   mainFilterBar: {
     flexDirection: "row",
@@ -1307,114 +960,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: "500",
   },
-  activeHashtagsRow: {
-    marginBottom: 8,
-  },
-  activeHashtagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
-  },
-  activeHashtagText: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginHorizontal: 4,
-  },
-  removeHashtagButton: {
-    marginLeft: 4,
-    padding: 2,
-  },
-  dateRangeDisplay: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#E3F2FD",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  dateRangeText: {
-    fontSize: 14,
-    color: "#007AFF",
-    marginHorizontal: 8,
-    fontWeight: "500",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "70%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E5EA",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#000000",
-  },
-  categoryList: {
-    paddingHorizontal: 20,
-  },
-  categoryOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F2F2F7",
-  },
-  selectedCategoryOption: {
-    backgroundColor: theme.colors.primary + "20",
-  },
-  categoryOptionText: {
-    fontSize: 16,
-    color: "#000000",
-    marginLeft: 12,
-    flex: 1,
-  },
-  selectedCategoryOptionText: {
-    color: theme.colors.primary,
-    fontWeight: "600",
-  },
-  hashtagList: {
-    paddingHorizontal: 20,
-  },
-  hashtagOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F2F2F7",
-  },
-  selectedHashtagOption: {
-    backgroundColor: theme.colors.primary + "20",
-  },
-  hashtagOptionText: {
-    fontSize: 16,
-    color: "#000000",
-    marginLeft: 12,
-    flex: 1,
-  },
-  selectedHashtagOptionText: {
-    color: theme.colors.primary,
-    fontWeight: "600",
-  },
   // Selected Filters Section Styles
   selectedFiltersSection: {
     marginTop: 12,
@@ -1468,29 +1013,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     fontWeight: "500",
   },
-  hashtagSymbol: {
-    fontSize: 12,
-    color: "#3b5998",
-    fontWeight: "bold",
-  },
-  addHashtagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#FF2D92",
-    borderStyle: "dashed",
-  },
-  addHashtagText: {
-    fontSize: 12,
-    color: "#FF2D92",
-    marginHorizontal: 4,
-    fontWeight: "500",
-  },
   // Date Range Section Styles
   dateRangeSection: {
     marginTop: 12,
@@ -1538,7 +1060,7 @@ const styles = StyleSheet.create({
   },
   datePickerButtonActive: {
     borderColor: "#007AFF",
-    backgroundColor: "maroon",
+    backgroundColor: "#E3F2FD",
   },
   datePickerButtonText: {
     fontSize: 13,

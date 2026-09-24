@@ -509,7 +509,7 @@ const MediaViewer = ({
                       }
                     : mediaItem.thumbnail
                 }
-                style={styles.postImage}
+                style={styles.videoThumbnailImage}
               />
               <View style={styles.videoOverlay}>
                 <Icon name="play-circle-filled" size={60} color="#FFFFFF" />
@@ -975,6 +975,13 @@ const styles = StyleSheet.create({
   postImage: {
     width: "100%",
     height: 200,
+    borderRadius: 12,
+    resizeMode: "cover",
+  },
+
+  videoThumbnailImage: {
+    width: "100%",
+    aspectRatio: 16 / 9,
     borderRadius: 12,
     resizeMode: "cover",
   },

@@ -36,6 +36,7 @@ import SectionalHeadModal from "./modals/SectionalHeadModal";
 import MyFeedbackModal from "./modals/MyFeedbackModal";
 import StudentAchievementModal from "../../educator/dashboard/modals/StudentAchievementModal";
 import DisciplineManagementModal from "../../educator/dashboard/modals/DisciplineManagementModal";
+import SectionAccessManagementModal from "./modals/SectionAccessManagementModal";
 import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
 import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
@@ -1158,6 +1159,10 @@ function PrincipalDashboardMain() {
     setActiveModal("discipline_management");
   };
 
+  const openSectionAccessManagementModal = () => {
+    setActiveModal("section_access_management");
+  };
+
   const openMyClassDrawer = () => {
     console.log("🔔 Opening Grade Level Class Selection Drawer...");
     setShowClassSelectionDrawer(true);
@@ -1464,6 +1469,15 @@ function PrincipalDashboardMain() {
           },
         ]
       : []),
+    {
+      id: "section_access_management",
+      title: "Section Access Management",
+      subtitle: "Grant or revoke gated dashboard sections",
+      icon: "admin-panel-settings" as keyof typeof MaterialIcons.glyphMap,
+      color: "#0057FF",
+      gradient: ["#0057FF", "#3d7cff"] as [string, string],
+      onPress: openSectionAccessManagementModal,
+    },
   ];
 
   return (
@@ -1539,6 +1553,10 @@ function PrincipalDashboardMain() {
         visible={activeModal === "discipline_management"}
         onClose={handleCloseModal}
       />
+      <SectionAccessManagementModal
+        visible={activeModal === "section_access_management"}
+        onClose={handleCloseModal}
+      />
       <AcademicReportsModal ref={academicReportsModalRef} />
       <SchoolFacilitiesModal ref={schoolFacilitiesModalRef} />
       <FinancialOverviewModal ref={financialOverviewModalRef} />
@@ -1573,7 +1591,8 @@ function PrincipalDashboardMain() {
         activeModal !== "sectional_heads" &&
         activeModal !== "my_feedback" &&
         activeModal !== "student_achievement" &&
-        activeModal !== "discipline_management" && (
+        activeModal !== "discipline_management" &&
+        activeModal !== "section_access_management" && (
           <FullScreenModal
             visible={!!activeModal}
             onClose={handleCloseModal}

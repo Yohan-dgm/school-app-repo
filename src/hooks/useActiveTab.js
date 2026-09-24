@@ -25,6 +25,10 @@ export const useActiveTab = () => {
     "/authenticated/educator/user-actions": "userActions",
     "/authenticated/educator/notifications": "notifications",
 
+    // Canteen routes
+    "/authenticated/canteen": "canteen",
+    "/authenticated/canteen/notifications": "notifications",
+
     // Sport Coach routes
     "/authenticated/sport_coach": "training",
     "/authenticated/sport_coach/training": "training",
@@ -87,6 +91,8 @@ export const useActiveTab = () => {
       return "dashboard";
     case USER_CATEGORIES.MANAGEMENT:
       return "analytics";
+    case USER_CATEGORIES.CANTEEN:
+      return "canteen";
     default:
       return "activityFeed";
   }

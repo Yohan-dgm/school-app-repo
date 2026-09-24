@@ -21,6 +21,43 @@ export interface GetMySectionAccessResponse {
   metadata: any;
 }
 
+export interface GrantableUser {
+  id: number;
+  full_name: string;
+  username: string;
+  user_category: number;
+}
+
+export interface GetGrantableUserListResponse {
+  status: string;
+  message: string;
+  data: GrantableUser[];
+  metadata: any;
+}
+
+export interface SectionAccessGrant {
+  id: number;
+  section_key: string;
+  user_id: number;
+  granted_by: number;
+  created_at: string;
+  user?: { id: number; full_name: string; username: string };
+}
+
+export interface GetSectionAccessListDataResponse {
+  status: string;
+  message: string;
+  data: SectionAccessGrant[];
+  metadata: any;
+}
+
+export interface SectionAccessMutationResponse {
+  status: string;
+  message: string;
+  data: any;
+  metadata: any;
+}
+
 export const sectionAccessApi = apiServer1.injectEndpoints({
   endpoints: (builder) => ({
     getMySectionAccess: builder.query<GetMySectionAccessResponse, void>({
@@ -31,10 +68,63 @@ export const sectionAccessApi = apiServer1.injectEndpoints({
       }),
       providesTags: ["SectionAccess"],
     }),
+
+    searchGrantableUsers: builder.query<
+      GetGrantableUserListResponse,
+      { search_phrase?: string }
+    >({
+      query: (params) => ({
+        url: "api/section-access-management/section-access/get-grantable-user-list",
+        method: "POST",
+        body: params,
+      }),
+    }),
+
+    getSectionAccessListData: builder.query<
+      GetSectionAccessListDataResponse,
+      { section_key: string }
+    >({
+      query: (params) => ({
+        url: "api/section-access-management/section-access/get-section-access-list-data",
+        method: "POST",
+        body: params,
+      }),
+      providesTags: ["SectionAccess"],
+    }),
+
+    grantSectionAccess: builder.mutation<
+      SectionAccessMutationResponse,
+      { user_id: number; section_key: string }
+    >({
+      query: (params) => ({
+        url: "api/section-access-management/section-access/grant-section-access",
+        method: "POST",
+        body: params,
+      }),
+      invalidatesTags: ["SectionAccess"],
+    }),
+
+    revokeSectionAccess: builder.mutation<
+      SectionAccessMutationResponse,
+      { user_id: number; section_key: string }
+    >({
+      query: (params) => ({
+        url: "api/section-access-management/section-access/revoke-section-access",
+        method: "POST",
+        body: params,
+      }),
+      invalidatesTags: ["SectionAccess"],
+    }),
   }),
 });
 
-export const { useGetMySectionAccessQuery } = sectionAccessApi;
+export const {
+  useGetMySectionAccessQuery,
+  useSearchGrantableUsersQuery,
+  useGetSectionAccessListDataQuery,
+  useGrantSectionAccessMutation,
+  useRevokeSectionAccessMutation,
+} = sectionAccessApi;
 
 /**
  * Convenience hook: returns whether the logged-in user has been granted

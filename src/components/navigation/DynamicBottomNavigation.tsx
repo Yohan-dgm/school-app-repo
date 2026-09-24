@@ -24,12 +24,14 @@ interface DynamicBottomNavigationProps {
   navigationConfig: NavigationConfig;
   activeTab?: string;
   onTabPress: (tabId: string) => void;
+  badgedTabIds?: string[];
 }
 
 const DynamicBottomNavigation: React.FC<DynamicBottomNavigationProps> = ({
   navigationConfig,
   activeTab,
   onTabPress,
+  badgedTabIds,
 }) => {
   const animatedValue = useSharedValue(0);
   const scaleValue = useSharedValue(1);
@@ -86,6 +88,8 @@ const DynamicBottomNavigation: React.FC<DynamicBottomNavigationProps> = ({
       backgroundColor: isActive ? theme.colors.primary : "white",
     }));
 
+    const showBadge = badgedTabIds?.includes(tab.id);
+
     return (
       <TouchableOpacity
         key={tab.id}
@@ -95,6 +99,7 @@ const DynamicBottomNavigation: React.FC<DynamicBottomNavigationProps> = ({
       >
         <Animated.View style={[styles.tabItem, animatedTabStyle]}>
           <IconComponent {...iconProps} />
+          {showBadge && <View style={styles.tabBadgeDot} />}
         </Animated.View>
       </TouchableOpacity>
     );
@@ -162,6 +167,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  tabBadgeDot: {
+    position: "absolute",
+    top: 6,
+    right: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#DC2626",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
   },
 });
 

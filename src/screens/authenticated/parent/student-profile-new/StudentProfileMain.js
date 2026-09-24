@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -45,7 +46,7 @@ import { useGetNotificationsQuery } from "../../../../api/notifications";
 
 // House logo and color mapping
 const getHouseInfo = (houseName) => {
-  if (!houseName || houseName === "Unknown Housesssss") {
+  if (!houseName || houseName === "Unknown House") {
     return { isValid: false, color: "#999999", logo: null };
   }
 
@@ -82,6 +83,8 @@ const getHouseInfo = (houseName) => {
 
 const StudentProfileMain = () => {
   const dispatch = useDispatch();
+  const { openDisciplineStudentId } = useLocalSearchParams();
+  const consumedDisciplineParamRef = useRef(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showExamsDrawer, setShowExamsDrawer] = useState(false);
   const [showReportCardsDrawer, setShowReportCardsDrawer] = useState(false);
@@ -285,6 +288,28 @@ const StudentProfileMain = () => {
       dispatch(setSelectedStudent(students[0]));
     }
   }, [students, selectedStudent, dispatch]);
+
+  // Deep-link from a discipline notification tap (UniversalNotificationSystem)
+  // - select the named student and auto-open the Discipline Record drawer.
+  // Guarded by a ref so closing the drawer manually doesn't reopen it while
+  // the route param is still present.
+  useEffect(() => {
+    if (
+      !openDisciplineStudentId ||
+      students.length === 0 ||
+      consumedDisciplineParamRef.current === openDisciplineStudentId
+    ) {
+      return;
+    }
+    const match = students.find(
+      (s) => String(s.id) === String(openDisciplineStudentId),
+    );
+    if (match) {
+      consumedDisciplineParamRef.current = openDisciplineStudentId;
+      dispatch(setSelectedStudent(match));
+      setShowDisciplineDrawer(true);
+    }
+  }, [openDisciplineStudentId, students, dispatch]);
 
   // Reset detailed data when student changes
   useEffect(() => {
@@ -524,12 +549,30 @@ const StudentProfileMain = () => {
                           {detailedStudentData.gradeLevel}
                         </Text>
                       </View>
-                      <View style={styles.detailRow}>
+                      {/* <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>School House</Text>
-                        <Text style={styles.detailValue}>
-                          {detailedStudentData.schoolHouse}
-                        </Text>
-                      </View>
+                        {(() => {
+                          const houseInfo = getHouseInfo(
+                            detailedStudentData.schoolHouse,
+                          );
+                          return (
+                            <View
+                              style={[
+                                styles.houseTablet,
+                                {
+                                  backgroundColor: houseInfo.isValid
+                                    ? houseInfo.color
+                                    : "#999999",
+                                },
+                              ]}
+                            >
+                              <Text style={styles.houseTabletText}>
+                                {detailedStudentData.schoolHouse || "No House"}
+                              </Text>
+                            </View>
+                          );
+                        })()}
+                      </View> */}
                       {detailedStudentData.schoolStudiedBefore !==
                         "Not provided" && (
                         <View style={styles.detailRow}>
@@ -701,6 +744,133 @@ const StudentProfileMain = () => {
           )}
         </TouchableOpacity>
 
+        {/* Student Analytics Section */}
+        <View style={styles.analyticsSection}>
+          <Text style={styles.analyticsSectionTitle}>Student Analytics</Text>
+          <TouchableOpacity
+            style={styles.analyticsCard}
+            onPress={handleAnalyticsPress}
+            activeOpacity={0.85}
+          >
+            <View style={styles.analyticsIconWrapper}>
+              <MaterialIcons name="analytics" size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.analyticsCardContent}>
+              <Text style={styles.analyticsCardTitle}>
+                Growth & Development Dashboard
+              </Text>
+              <Text style={styles.analyticsCardSubtitle}>
+                Track learning curves, behavior reports, and intelligence
+                ratings.
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#920734" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Academic Cards */}
+        <View style={styles.academicCardsSection}>
+          {/* <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowExamsDrawer(true)}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="quiz" size={32} color="#6366F1" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Exams</Text>
+              <Text style={styles.cardSubtitle}>
+                View exam schedules & results
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity> */}
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowReportCardsDrawer(true)}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="assignment" size={22} color="maroon" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Exams</Text>
+              <Text style={styles.cardSubtitle}>
+                Academic performance reports
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={handleAttendancePress}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="event-available" size={22} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Student Attendance</Text>
+              <Text style={styles.cardSubtitle}>
+                View attendance records and reports
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowDisciplineDrawer(true)}
+          >
+            {hasUnreadDisciplineNotification && (
+              <View style={styles.unreadDot} />
+            )}
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="rule" size={22} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Discipline Record</Text>
+              <Text style={styles.cardSubtitle}>
+                Conduct rating & discipline history
+              </Text>
+            </View>
+            {currentDisciplineSummary && (
+              <View
+                style={[
+                  styles.disciplineMarksBadge,
+                  {
+                    backgroundColor: getConductRatingColor(
+                      currentDisciplineSummary.conduct_rating,
+                    ),
+                  },
+                ]}
+              >
+                <Text style={styles.disciplineMarksBadgeText}>
+                  {currentDisciplineSummary.remaining_marks}/
+                  {currentDisciplineSummary.baseline_marks}
+                </Text>
+              </View>
+            )}
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.academicCard}
+            onPress={() => setShowCanteenDrawer(true)}
+          >
+            <View style={styles.cardIcon}>
+              <MaterialIcons name="restaurant" size={22} color="#920734" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Canteen</Text>
+              <Text style={styles.cardSubtitle}>
+                Order meals & view past orders
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+
         {/* Achievement Badges Section */}
         <View style={styles.badgesSection}>
           <View style={styles.badgesTitleContainer}>
@@ -791,133 +961,6 @@ const StudentProfileMain = () => {
               )}
             </>
           )}
-        </View>
-
-        {/* Academic Cards */}
-        <View style={styles.academicCardsSection}>
-          {/* <TouchableOpacity
-            style={styles.academicCard}
-            onPress={() => setShowExamsDrawer(true)}
-          >
-            <View style={styles.cardIcon}>
-              <MaterialIcons name="quiz" size={32} color="#6366F1" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Exams</Text>
-              <Text style={styles.cardSubtitle}>
-                View exam schedules & results
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity> */}
-
-          <TouchableOpacity
-            style={styles.academicCard}
-            onPress={() => setShowReportCardsDrawer(true)}
-          >
-            <View style={styles.cardIcon}>
-              <MaterialIcons name="assignment" size={32} color="maroon" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Exams</Text>
-              <Text style={styles.cardSubtitle}>
-                Academic performance reports
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.academicCard}
-            onPress={handleAttendancePress}
-          >
-            <View style={styles.cardIcon}>
-              <MaterialIcons name="event-available" size={32} color="#920734" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Student Attendance</Text>
-              <Text style={styles.cardSubtitle}>
-                View attendance records and reports
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.academicCard}
-            onPress={() => setShowDisciplineDrawer(true)}
-          >
-            {hasUnreadDisciplineNotification && (
-              <View style={styles.unreadDot} />
-            )}
-            <View style={styles.cardIcon}>
-              <MaterialIcons name="rule" size={32} color="#920734" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Discipline Record</Text>
-              <Text style={styles.cardSubtitle}>
-                Conduct rating & discipline history
-              </Text>
-            </View>
-            {currentDisciplineSummary && (
-              <View
-                style={[
-                  styles.disciplineMarksBadge,
-                  {
-                    backgroundColor: getConductRatingColor(
-                      currentDisciplineSummary.conduct_rating,
-                    ),
-                  },
-                ]}
-              >
-                <Text style={styles.disciplineMarksBadgeText}>
-                  {currentDisciplineSummary.remaining_marks}/
-                  {currentDisciplineSummary.baseline_marks}
-                </Text>
-              </View>
-            )}
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.academicCard}
-            onPress={() => setShowCanteenDrawer(true)}
-          >
-            <View style={styles.cardIcon}>
-              <MaterialIcons name="restaurant" size={32} color="#920734" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Canteen</Text>
-              <Text style={styles.cardSubtitle}>
-                Order meals & view past orders
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Student Analytics Section */}
-        <View style={styles.analyticsSection}>
-          <Text style={styles.analyticsSectionTitle}>Student Analytics</Text>
-          <TouchableOpacity
-            style={styles.analyticsCard}
-            onPress={handleAnalyticsPress}
-            activeOpacity={0.85}
-          >
-            <View style={styles.analyticsIconWrapper}>
-              <MaterialIcons name="analytics" size={30} color="#FFFFFF" />
-            </View>
-            <View style={styles.analyticsCardContent}>
-              <Text style={styles.analyticsCardTitle}>
-                Growth & Development Dashboard
-              </Text>
-              <Text style={styles.analyticsCardSubtitle}>
-                Track learning curves, behavior reports, and intelligence
-                ratings.
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color="#920734" />
-          </TouchableOpacity>
         </View>
 
         {/* Modern Stats Cards */}
@@ -1513,11 +1556,11 @@ const styles = StyleSheet.create({
   // Premium Badges Styles
   badgesSection: {
     marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   badgesSectionTitle: {
     fontFamily: theme.fonts.bold,
-    fontSize: 18,
+    fontSize: 15,
     color: "#000000",
     marginBottom: 1,
   },
@@ -1551,11 +1594,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 1,
-    marginTop: -10,
+    marginTop: -6,
   },
   badgeLogoImage: {
-    width: 88,
-    height: 88,
+    width: 60,
+    height: 60,
     resizeMode: "contain",
   },
   badgeName: {
@@ -1572,14 +1615,14 @@ const styles = StyleSheet.create({
   // Academic Cards Styles
   academicCardsSection: {
     marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-    gap: 12,
+    marginBottom: theme.spacing.sm,
+    gap: 8,
   },
   academicCard: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: theme.spacing.lg,
+    borderRadius: 14,
+    padding: theme.spacing.sm,
     alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
@@ -1588,33 +1631,33 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   cardIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: theme.spacing.md,
+    marginRight: theme.spacing.sm,
   },
   cardContent: {
     flex: 1,
   },
   cardTitle: {
     fontFamily: theme.fonts.bold,
-    fontSize: 16,
+    fontSize: 14,
     color: "#000000",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   cardSubtitle: {
     fontFamily: theme.fonts.regular,
-    fontSize: 14,
+    fontSize: 12,
     color: "#6B7280",
   },
   disciplineMarksBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginRight: 6,
   },
   disciplineMarksBadgeText: {
     fontFamily: theme.fonts.bold,
@@ -1767,7 +1810,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
   badgesHeaderActions: {
     flexDirection: "row",
@@ -1786,21 +1829,21 @@ const styles = StyleSheet.create({
   // Student Analytics Styles
   analyticsSection: {
     marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
   },
   analyticsSectionTitle: {
     fontFamily: theme.fonts.bold,
-    fontSize: 18,
+    fontSize: 15,
     color: "#000000",
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
   analyticsCard: {
     flexDirection: "row",
     backgroundColor: "#FDF2F4",
     borderWidth: 1,
     borderColor: "#F3D5DC",
-    borderRadius: 16,
-    padding: theme.spacing.lg,
+    borderRadius: 14,
+    padding: theme.spacing.sm,
     alignItems: "center",
     shadowColor: "#920734",
     shadowOffset: { width: 0, height: 4 },
@@ -1809,28 +1852,28 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   analyticsIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#920734",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: theme.spacing.md,
+    marginRight: theme.spacing.sm,
   },
   analyticsCardContent: {
     flex: 1,
   },
   analyticsCardTitle: {
     fontFamily: theme.fonts.bold,
-    fontSize: 16,
+    fontSize: 14,
     color: "#920734",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   analyticsCardSubtitle: {
     fontFamily: theme.fonts.regular,
-    fontSize: 13,
+    fontSize: 12,
     color: "#4B5563",
-    lineHeight: 18,
+    lineHeight: 16,
   },
 });
 

@@ -13,10 +13,7 @@ export default function CanteenLayout() {
     <DynamicUserLayout userCategory={userCategory}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="menu-management" />
-        <Stack.Screen name="orders" />
-        <Stack.Screen name="inventory" />
-        <Stack.Screen name="user-actions" />
+        <Stack.Screen name="notifications" />
       </Stack>
     </DynamicUserLayout>
   );

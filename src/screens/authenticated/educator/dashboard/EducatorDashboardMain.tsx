@@ -41,12 +41,18 @@ import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer
 import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
 import { useHasSectionAccess } from "../../../../api/section-access-api";
+import { useGetCanteenOrderListDataQuery } from "../../../../api/canteen-management-api";
 import { USER_CATEGORIES } from "../../../../constants/userCategories";
 
 // Section-access key gating the Discipline Management dashboard item below -
 // visible to users granted this key (via the section_access table), or to
 // Principals outright (see hasDisciplineManagementAccess below).
 const DISCIPLINE_MANAGEMENT_SECTION_KEY = "discipline_management";
+
+// Section-access key gating the Canteen Management dashboard item below -
+// visible to users granted this key (via the section_access table), or to
+// Principals outright, same convention as Discipline Management.
+const CANTEEN_MANAGEMENT_SECTION_KEY = "canteen_management";
 
 const { width } = Dimensions.get("window");
 
@@ -62,6 +68,7 @@ export interface DashboardItem {
   color: string;
   gradient: [string, string];
   onPress: () => void;
+  badge?: boolean;
 }
 
 function EducatorDashboardMain() {
@@ -95,6 +102,18 @@ function EducatorDashboardMain() {
     DISCIPLINE_MANAGEMENT_SECTION_KEY,
   );
   const hasDisciplineManagementAccess = hasSectionAccessGrant || isPrincipal;
+  const hasCanteenManagementGrant = useHasSectionAccess(
+    CANTEEN_MANAGEMENT_SECTION_KEY,
+  );
+  const hasCanteenManagementAccess = hasCanteenManagementGrant || isPrincipal;
+
+  // Red dot on the Canteen Management card while any order is Pending.
+  const { data: pendingCanteenOrdersData } = useGetCanteenOrderListDataQuery(
+    { status: "Pending", page: 1, page_size: 1 },
+    { skip: !hasCanteenManagementAccess },
+  );
+  const hasPendingCanteenOrders =
+    (pendingCanteenOrdersData?.data?.total ?? 0) > 0;
 
   // Animation values
   const fabScale = useSharedValue(1);
@@ -377,15 +396,22 @@ function EducatorDashboardMain() {
       gradient: ["#10B981", "#059669"],
       onPress: openMyFeedbackModal,
     },
-    {
-      id: "canteen_management",
-      title: "Canteen Management",
-      subtitle: "Manage meal plans & view orders",
-      icon: "restaurant",
-      color: "#F59E0B",
-      gradient: ["#F59E0B", "#FBBF24"],
-      onPress: openCanteenManagementModal,
-    },
+    // Gated: only visible to users granted the "canteen_management"
+    // section-access key, or to Principals outright
+    ...(hasCanteenManagementAccess
+      ? [
+          {
+            id: "canteen_management",
+            title: "Canteen Management",
+            subtitle: "Manage meal plans & view orders",
+            icon: "restaurant" as keyof typeof MaterialIcons.glyphMap,
+            color: "#F59E0B",
+            gradient: ["#F59E0B", "#FBBF24"] as [string, string],
+            onPress: openCanteenManagementModal,
+            badge: hasPendingCanteenOrders,
+          },
+        ]
+      : []),
     // Gated: only visible to users granted the "discipline_management"
     // section-access key
     ...(hasDisciplineManagementAccess

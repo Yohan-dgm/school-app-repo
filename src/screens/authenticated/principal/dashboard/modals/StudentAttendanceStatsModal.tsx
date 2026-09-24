@@ -65,27 +65,39 @@ const AttendanceCount = ({
 
 const StudentAttendanceStatsModal: React.FC<
   StudentAttendanceStatsModalProps
-> = ({ visible, onClose, gradeLevelClassId: initialClassId, gradeLevelClassName: initialClassName }) => {
+> = ({
+  visible,
+  onClose,
+  gradeLevelClassId: initialClassId,
+  gradeLevelClassName: initialClassName,
+}) => {
   // Internal class selection state
-  const [selectedClassId, setSelectedClassId] = useState<number | null>(initialClassId || null);
-  const [selectedClassName, setSelectedClassName] = useState<string>(initialClassName || "");
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(
+    initialClassId || null,
+  );
+  const [selectedClassName, setSelectedClassName] = useState<string>(
+    initialClassName || "",
+  );
 
   const [selectedGrade, setSelectedGrade] = useState<number | null>(null);
-  const [selectedFilterType, setSelectedFilterType] = useState<FilterType>("month");
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  const [selectedFilterType, setSelectedFilterType] =
+    useState<FilterType>("month");
+  const [selectedYear, setSelectedYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [selectedMonth, setSelectedMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
 
   // Fetch grade levels with classes for selection
-  const {
-    data: gradeLevelsData,
-    isLoading: isLoadingClasses,
-  } = useGetGradeLevelsWithClassesQuery(
-    {
-      page_size: 50,
-      page: 1,
-    },
-    { skip: !visible }
-  );
+  const { data: gradeLevelsData, isLoading: isLoadingClasses } =
+    useGetGradeLevelsWithClassesQuery(
+      {
+        page_size: 50,
+        page: 1,
+      },
+      { skip: !visible },
+    );
 
   // Flatten classes for selection
   const allClasses = useMemo(() => {
@@ -93,12 +105,14 @@ const StudentAttendanceStatsModal: React.FC<
 
     const classes: (GradeLevelClass & { gradeLevelName: string })[] = [];
     gradeLevelsData.data.data.forEach((gradeLevel: GradeLevelWithClasses) => {
-      gradeLevel.grade_level_class_list.forEach((classItem: GradeLevelClass) => {
-        classes.push({
-          ...classItem,
-          gradeLevelName: gradeLevel.name,
-        });
-      });
+      gradeLevel.grade_level_class_list.forEach(
+        (classItem: GradeLevelClass) => {
+          classes.push({
+            ...classItem,
+            gradeLevelName: gradeLevel.name,
+          });
+        },
+      );
     });
     return classes;
   }, [gradeLevelsData]);
@@ -110,7 +124,7 @@ const StudentAttendanceStatsModal: React.FC<
     const params: any = {
       grade_level_class_id: selectedClassId,
       filter_type: selectedFilterType,
-      year: selectedYear
+      year: selectedYear,
     };
 
     if (selectedFilterType === "month") {
@@ -122,14 +136,21 @@ const StudentAttendanceStatsModal: React.FC<
 
   const { data, isLoading, error, refetch } = useGetStudentAttendanceStatsQuery(
     queryParams!,
-    { skip: !visible || !queryParams, refetchOnMountOrArgChange: true }
+    { skip: !visible || !queryParams, refetchOnMountOrArgChange: true },
   );
 
   // Log API response for debugging
   React.useEffect(() => {
     if (visible) {
-      console.log("📊 Student Attendance Stats Modal - Query Params:", queryParams);
-      console.log("📊 Student Attendance Stats Modal - API Response:", { data, isLoading, error });
+      console.log(
+        "📊 Student Attendance Stats Modal - Query Params:",
+        queryParams,
+      );
+      console.log("📊 Student Attendance Stats Modal - API Response:", {
+        data,
+        isLoading,
+        error,
+      });
       if (error) {
         console.error("❌ Student Attendance Stats Error:", error);
       }
@@ -160,7 +181,7 @@ const StudentAttendanceStatsModal: React.FC<
       grade.students.sort(
         (a, b) =>
           b.total_attendance_records - a.total_attendance_records ||
-          a.full_name.localeCompare(b.full_name)
+          a.full_name.localeCompare(b.full_name),
       );
     });
 
@@ -225,7 +246,11 @@ const StudentAttendanceStatsModal: React.FC<
     <FullScreenModal
       visible={visible}
       onClose={onClose}
-      title={selectedClassName ? `Attendance Stats - ${selectedClassName}` : "Student Attendance Statistics"}
+      title={
+        selectedClassName
+          ? `Attendance Stats - ${selectedClassName}`
+          : "Student Attendance Statistics"
+      }
       backgroundColor="#f5f7fa"
     >
       <ScrollView
@@ -257,20 +282,25 @@ const StudentAttendanceStatsModal: React.FC<
                   ]}
                   onPress={() => {
                     setSelectedClassId(classItem.id);
-                    setSelectedClassName(`${classItem.name} - ${classItem.gradeLevelName}`);
+                    setSelectedClassName(
+                      `${classItem.name} - ${classItem.gradeLevelName}`,
+                    );
                   }}
                   activeOpacity={0.7}
                 >
                   <MaterialIcons
                     name="class"
                     size={18}
-                    color={selectedClassId === classItem.id ? "#fff" : "#059669"}
+                    color={
+                      selectedClassId === classItem.id ? "#fff" : "#059669"
+                    }
                   />
                   <View style={styles.classChipTextContainer}>
                     <Text
                       style={[
                         styles.classChipText,
-                        selectedClassId === classItem.id && styles.classChipTextActive,
+                        selectedClassId === classItem.id &&
+                          styles.classChipTextActive,
                       ]}
                     >
                       {classItem.name}
@@ -278,7 +308,8 @@ const StudentAttendanceStatsModal: React.FC<
                     <Text
                       style={[
                         styles.classChipSubtext,
-                        selectedClassId === classItem.id && styles.classChipSubtextActive,
+                        selectedClassId === classItem.id &&
+                          styles.classChipSubtextActive,
                       ]}
                     >
                       {classItem.gradeLevelName}
@@ -294,7 +325,9 @@ const StudentAttendanceStatsModal: React.FC<
         {!selectedClassId && !isLoadingClasses && (
           <View style={styles.centerContainer}>
             <MaterialIcons name="school" size={64} color="#ccc" />
-            <Text style={styles.noClassText}>Please select a class to view statistics</Text>
+            <Text style={styles.noClassText}>
+              Please select a class to view statistics
+            </Text>
           </View>
         )}
 
@@ -312,9 +345,9 @@ const StudentAttendanceStatsModal: React.FC<
             <MaterialIcons name="error-outline" size={48} color="#DC2626" />
             <Text style={styles.errorText}>Unable to load statistics</Text>
             <Text style={styles.errorDetails}>
-              {error && 'status' in error
+              {error && "status" in error
                 ? `Error ${error.status}`
-                : 'Please check your connection'}
+                : "Please check your connection"}
             </Text>
             <TouchableOpacity style={styles.retryButton} onPress={refetch}>
               <MaterialIcons name="refresh" size={18} color="#FFFFFF" />
@@ -339,7 +372,8 @@ const StudentAttendanceStatsModal: React.FC<
                     key={option.id}
                     style={[
                       styles.filterChip,
-                      selectedFilterType === option.id && styles.filterChipActive,
+                      selectedFilterType === option.id &&
+                        styles.filterChipActive,
                     ]}
                     onPress={() => setSelectedFilterType(option.id)}
                     activeOpacity={0.7}
@@ -347,12 +381,15 @@ const StudentAttendanceStatsModal: React.FC<
                     <MaterialIcons
                       name="filter-list"
                       size={16}
-                      color={selectedFilterType === option.id ? "#fff" : "#059669"}
+                      color={
+                        selectedFilterType === option.id ? "#fff" : "#059669"
+                      }
                     />
                     <Text
                       style={[
                         styles.filterChipText,
-                        selectedFilterType === option.id && styles.filterChipTextActive,
+                        selectedFilterType === option.id &&
+                          styles.filterChipTextActive,
                       ]}
                     >
                       {option.label}
@@ -462,7 +499,8 @@ const StudentAttendanceStatsModal: React.FC<
                       <Text
                         style={[
                           styles.gradeChipText,
-                          selectedGrade === grade.id && styles.gradeChipTextActive,
+                          selectedGrade === grade.id &&
+                            styles.gradeChipTextActive,
                         ]}
                       >
                         {grade.name}
@@ -470,7 +508,8 @@ const StudentAttendanceStatsModal: React.FC<
                       <View
                         style={[
                           styles.gradeChipBadge,
-                          selectedGrade === grade.id && styles.gradeChipBadgeActive,
+                          selectedGrade === grade.id &&
+                            styles.gradeChipBadgeActive,
                         ]}
                       >
                         <Text
@@ -493,9 +532,7 @@ const StudentAttendanceStatsModal: React.FC<
             {selectedGrade && (
               <View style={styles.studentListSection}>
                 <View style={styles.listHeader}>
-                  <Text style={styles.listTitle}>
-                    Students
-                  </Text>
+                  <Text style={styles.listTitle}>Students</Text>
                   <View style={styles.countBadge}>
                     <Text style={styles.countBadgeText}>
                       {filteredStudents.length}
@@ -505,7 +542,11 @@ const StudentAttendanceStatsModal: React.FC<
 
                 {filteredStudents.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <MaterialIcons name="people-outline" size={40} color="#ccc" />
+                    <MaterialIcons
+                      name="people-outline"
+                      size={40}
+                      color="#ccc"
+                    />
                     <Text style={styles.emptyStateText}>
                       No students found for this grade
                     </Text>
@@ -517,7 +558,11 @@ const StudentAttendanceStatsModal: React.FC<
                         {/* Student Info */}
                         <View style={styles.studentHeader}>
                           <View style={styles.studentAvatar}>
-                            <MaterialIcons name="person" size={20} color="#059669" />
+                            <MaterialIcons
+                              name="person"
+                              size={20}
+                              color="#059669"
+                            />
                           </View>
                           <View style={styles.studentInfo}>
                             <Text style={styles.studentName} numberOfLines={1}>
@@ -528,9 +573,13 @@ const StudentAttendanceStatsModal: React.FC<
                             </Text>
                           </View>
                           <View style={styles.totalBadge}>
-                            <Text style={styles.totalBadgeLabel}>Total Days</Text>
+                            <Text style={styles.totalBadgeLabel}>
+                              Total Days
+                            </Text>
                             <Text style={styles.totalBadgeValue}>
-                              {student.in_time_count + student.out_time_count + student.absent_count}
+                              {student.in_time_count +
+                                student.out_time_count +
+                                student.absent_count}
                             </Text>
                           </View>
                         </View>
@@ -539,7 +588,9 @@ const StudentAttendanceStatsModal: React.FC<
                         <View style={styles.attendanceCounts}>
                           <AttendanceCount
                             icon="check-circle"
-                            count={student.in_time_count + student.out_time_count}
+                            count={
+                              student.in_time_count + student.out_time_count
+                            }
                             color="#10B981"
                             label="Present"
                           />

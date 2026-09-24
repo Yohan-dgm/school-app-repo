@@ -28,7 +28,7 @@ export interface CanteenMealPlan {
   updated_at: string;
 }
 
-export type CanteenOrderStatus = "Pending" | "Cancelled";
+export type CanteenOrderStatus = "Pending" | "Completed" | "Cancelled";
 
 export interface CanteenOrderItem {
   id: number;
@@ -46,6 +46,7 @@ export interface CanteenOrderStudentRef {
   full_name_with_title: string;
   admission_number: string;
   grade_level_class_id: number;
+  grade_level_class?: { id: number; name: string } | null;
 }
 
 export interface CanteenOrder {
@@ -130,7 +131,7 @@ export interface CreateCanteenOrderParams {
 }
 
 export interface GetMyCanteenOrderListDataParams {
-  student_id: number;
+  status?: CanteenOrderStatus;
   page_size: number;
   page: number;
 }
@@ -148,6 +149,13 @@ export interface CanteenOrderListResponse
 
 export interface CanteenOrderMutationResponse
   extends ApiEnvelope<CanteenOrder> {}
+
+export interface MealOrderSummaryItem {
+  meal_plan_id: number;
+  meal_plan_title: string;
+  total_quantity: number;
+  order_count: number;
+}
 
 // ===== API ENDPOINTS =====
 
@@ -268,6 +276,38 @@ export const canteenManagementApi = apiServer1.injectEndpoints({
       ],
     }),
 
+    updateCanteenOrderStatus: builder.mutation<
+      CanteenOrderMutationResponse,
+      { id: number; status: "Pending" | "Completed" | "Cancelled" }
+    >({
+      query: (params) => ({
+        url: "api/canteen-management/canteen-order/update-canteen-order-status",
+        method: "POST",
+        body: params,
+      }),
+      invalidatesTags: [
+        "MyCanteenOrderList",
+        "CanteenOrderList",
+        "CanteenMealPlanList",
+      ],
+    }),
+
+    completeAllPendingCanteenOrders: builder.mutation<
+      ApiEnvelope<{ updated_count: number }>,
+      { search_phrase?: string; order_date?: string }
+    >({
+      query: (params) => ({
+        url: "api/canteen-management/canteen-order/complete-all-pending-canteen-orders",
+        method: "POST",
+        body: params,
+      }),
+      invalidatesTags: [
+        "MyCanteenOrderList",
+        "CanteenOrderList",
+        "CanteenMealPlanList",
+      ],
+    }),
+
     getMyCanteenOrderListData: builder.query<
       CanteenOrderListResponse,
       GetMyCanteenOrderListDataParams
@@ -291,6 +331,18 @@ export const canteenManagementApi = apiServer1.injectEndpoints({
       }),
       providesTags: ["CanteenOrderList"],
     }),
+
+    getTodayMealOrderSummary: builder.query<
+      ApiEnvelope<MealOrderSummaryItem[]>,
+      { date?: string } | void
+    >({
+      query: (params) => ({
+        url: "api/canteen-management/canteen-order/get-today-meal-order-summary",
+        method: "POST",
+        body: params || {},
+      }),
+      providesTags: ["CanteenOrderList"],
+    }),
   }),
 });
 
@@ -302,8 +354,11 @@ export const {
   useDeleteMealPlanMutation,
   useCreateCanteenOrderMutation,
   useCancelCanteenOrderMutation,
+  useUpdateCanteenOrderStatusMutation,
+  useCompleteAllPendingCanteenOrdersMutation,
   useGetMyCanteenOrderListDataQuery,
   useGetCanteenOrderListDataQuery,
+  useGetTodayMealOrderSummaryQuery,
 } = canteenManagementApi;
 
 // ===== UI UTILITIES =====
@@ -314,6 +369,8 @@ export const getCanteenOrderStatusColor = (
   switch (status) {
     case "Pending":
       return "#D97706";
+    case "Completed":
+      return "#16A34A";
     case "Cancelled":
       return "#6B7280";
     default:

@@ -4,7 +4,13 @@ import { formatMediaStorageUrl } from "../utils/postUtils";
 // Define the activity feed API slice with RTK Query
 export const activityFeedApi = apiServer1
   .enhanceEndpoints({
-    addTagTypes: ["ActivityFeed", "SchoolPosts", "ClassPosts", "StudentPosts"],
+    addTagTypes: [
+      "ActivityFeed",
+      "SchoolPosts",
+      "ClassPosts",
+      "StudentPosts",
+      "ClassPostComments",
+    ],
   })
   .injectEndpoints({
     overrideExisting: true, // Fix RTK Query endpoint override warnings
@@ -310,6 +316,44 @@ export const activityFeedApi = apiServer1
         }),
         invalidatesTags: (result, error, { id }) => [
           { type: "StudentPosts", id },
+        ],
+      }),
+
+      // ===== CLASS POST COMMENTS API =====
+      getClassPostComments: build.query({
+        query: ({ post_id, page = 1, page_size = 10, order = "asc" }) => ({
+          url: "api/activity-feed-management/class-posts/comments/list",
+          method: "POST",
+          body: { post_id, page, page_size, order },
+        }),
+        providesTags: (result, error, { post_id }) => [
+          { type: "ClassPostComments", id: post_id },
+        ],
+        transformResponse: (response: any) => response?.data ?? response,
+      }),
+
+      createClassPostComment: build.mutation({
+        query: ({ post_id, content }) => ({
+          url: "api/activity-feed-management/class-posts/comments/create",
+          method: "POST",
+          body: { post_id, content },
+        }),
+        invalidatesTags: (result, error, { post_id }) => [
+          { type: "ClassPostComments", id: post_id },
+          { type: "ClassPosts", id: post_id },
+        ],
+        transformResponse: (response: any) => response?.data ?? response,
+      }),
+
+      deleteClassPostComment: build.mutation({
+        query: ({ id, post_id }) => ({
+          url: "api/activity-feed-management/class-posts/comments/delete",
+          method: "POST",
+          body: { id },
+        }),
+        invalidatesTags: (result, error, { post_id }) => [
+          { type: "ClassPostComments", id: post_id },
+          { type: "ClassPosts", id: post_id },
         ],
       }),
 
@@ -1223,6 +1267,9 @@ export const {
   useCreateSchoolPostMutation,
   useCreateClassPostMutation,
   useCreateStudentPostMutation,
+  useGetClassPostCommentsQuery,
+  useCreateClassPostCommentMutation,
+  useDeleteClassPostCommentMutation,
 } = activityFeedApi;
 
 /*

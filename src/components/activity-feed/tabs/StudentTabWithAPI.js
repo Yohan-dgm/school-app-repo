@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,23 +6,16 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
-  Dimensions,
   FlatList,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import Icon from "react-native-vector-icons/MaterialIcons";
-import PostSkeleton from "../../ui/PostSkeleton";
 import { theme } from "../../../styles/theme";
-import MediaViewer from "../../media/MediaViewer";
-import Constants from "expo-constants";
-
-// Import media utilities
-import {
-  buildActivityFeedMediaUrl,
-  buildVideoThumbnailUrl,
-} from "../../../utils/mediaUtils";
-import { TextWithLinks } from "../../common/TextWithLinks";
+import PostSkeleton from "../../ui/PostSkeleton";
+import PostCard from "../PostCard";
+import PostsEmptyState from "../PostsEmptyState";
+import { usePostFeedPagination } from "../../../hooks/usePostFeedPagination";
 
 // Import API hooks and slice actions
 import {
@@ -31,87 +24,15 @@ import {
   useDeleteStudentPostMutation,
 } from "../../../api/activity-feed-api";
 import {
-  setLoading,
-  setRefreshing,
   setPosts,
-  setAllPosts as setAllPostsAction,
-  setError,
-  setFilters,
   clearFilters,
   toggleLike,
   revertLike,
   getUserLikeState,
 } from "../../../state-store/slices/school-life/school-posts-slice";
+import { transformFiltersForAPI } from "../FilterBar";
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-
-// Get API base URL from environment
-const API_BASE_URL =
-  Constants.expoConfig?.extra?.EXPO_PUBLIC_BASE_URL_API_SERVER_1 ||
-  process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 ||
-  "http://192.168.1.9:9999";
-
-// Helper function to transform media data from backend API
-const transformMediaData = (mediaArray) => {
-  if (!mediaArray || !Array.isArray(mediaArray)) return [];
-
-  return mediaArray
-    .map((mediaItem) => {
-      // Use the new media URL builder to construct proper URLs
-      const filename =
-        mediaItem.filename ||
-        `file.${mediaItem.type === "image" ? "jpg" : mediaItem.type === "video" ? "mp4" : "pdf"}`;
-      const mediaUrl = buildActivityFeedMediaUrl(mediaItem.url, filename);
-
-      let thumbnailUrl = null;
-      if (mediaItem.thumbnail_url) {
-        // Extract filename from thumbnail URL or use a default
-        const thumbnailFilename =
-          mediaItem.thumbnail_url.split("/").pop() || "thumbnail.jpg";
-        thumbnailUrl = buildVideoThumbnailUrl(
-          mediaItem.thumbnail_url,
-          thumbnailFilename,
-        );
-      }
-
-      switch (mediaItem.type) {
-        case "image":
-          return {
-            type: "image",
-            uri: mediaUrl,
-            id: mediaItem.id,
-            filename: filename,
-            size: mediaItem.size || 0,
-          };
-
-        case "video":
-          return {
-            type: "video",
-            uri: mediaUrl,
-            thumbnail: thumbnailUrl || mediaUrl, // Use thumbnail or fallback to video URL
-            id: mediaItem.id,
-            filename: filename,
-            size: mediaItem.size || 0,
-          };
-
-        case "pdf":
-          return {
-            type: "pdf",
-            uri: mediaUrl,
-            fileName: filename,
-            fileSize: mediaItem.size
-              ? `${(mediaItem.size / 1024 / 1024).toFixed(1)} MB`
-              : "Unknown size",
-            id: mediaItem.id,
-          };
-
-        default:
-          console.warn("Unknown media type:", mediaItem.type);
-          return null;
-      }
-    })
-    .filter(Boolean); // Remove null values
-};
+const FILTER_DEBOUNCE_MS = 400;
 
 const StudentTabWithAPI = ({
   userCategory,
@@ -121,333 +42,129 @@ const StudentTabWithAPI = ({
 }) => {
   const dispatch = useDispatch();
 
-  // Debug filters being passed to component
-  useEffect(() => {
-    console.log("🎯 StudentTabWithAPI - Filters received:", filters);
-  }, [filters]);
-
-  // Redux state with safe defaults
   const schoolPostsState = useSelector((state) => state.schoolPosts || {});
   const {
     posts = [],
     loading = false,
     refreshing = false,
     error = null,
-    likedPosts = {},
   } = schoolPostsState;
 
-  // Get current user and selected student from global state
-  const { user: currentUser, selectedStudent } = useSelector((state) => state.app);
+  const { user: currentUser, selectedStudent } = useSelector(
+    (state) => state.app,
+  );
 
   // API hooks - using dedicated student posts API
   const [getStudentPosts] = useLazyGetStudentPostsQuery();
   const [likeStudentPost] = useLikeStudentPostMutation();
   const [deleteStudentPost] = useDeleteStudentPostMutation();
 
-  // Local state for pagination and data
-  const [allPostsLocal, setAllPostsLocal] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreData, setHasMoreData] = useState(true);
+  const isPersonal = mode === "personal";
+  const canFetchStudentPosts = isPersonal || !!selectedStudent?.student_id;
 
-  // Load student posts with pagination
-  const loadPosts = useCallback(
-    async (pageNum = 1, isLoadMore = false) => {
-      try {
-        if (isLoadMore) {
-          setIsLoadingMore(true);
-        } else {
-          dispatch(setLoading(true));
-        }
+  // Fetch one page of student posts (tab-specific request shape/response parsing)
+  const fetchStudentPostsPage = useCallback(
+    async (pageNum) => {
+      const apiFilters = transformFiltersForAPI(filters || {});
 
-        console.log(
-          `🔄 Loading student posts - page ${pageNum}${isLoadMore ? " (load more)" : ""}...`,
-        );
+      const response = await getStudentPosts({
+        student_id: isPersonal ? null : selectedStudent.student_id,
+        created_by_me: isPersonal,
+        page: pageNum,
+        limit: 10,
+        filters: {
+          search: apiFilters.search,
+          category: apiFilters.category,
+          date_from: apiFilters.dateFrom,
+          date_to: apiFilters.dateTo,
+          hashtags: apiFilters.hashtags,
+        },
+      }).unwrap();
 
-        // Check if we have selected student with student_id
-        if (mode !== "personal" && !selectedStudent?.student_id) {
-          console.log("❌ No selected student available");
-          dispatch(setError("No student selected"));
-          dispatch(setLoading(false));
-          setIsLoadingMore(false);
-          return;
-        }
-
-        // Load student posts using dedicated API with pagination
-        const response = await getStudentPosts({
-          student_id: mode === "personal" ? null : selectedStudent.student_id,
-          created_by_me: mode === "personal",
-          page: pageNum,
-          limit: 10, // Load 10 posts per page for optimization
-          filters: {
-            search: "",
-            category: "",
-            date_from: "",
-            date_to: "",
-            hashtags: [],
-          },
-        }).unwrap();
-
-        if (response.status === "successful") {
-          const newPostsData = Array.isArray(response.data)
-            ? response.data
-            : response.data.posts || [];
-
-          console.log(
-            `✅ Successfully loaded ${newPostsData.length} student posts for page ${pageNum}`,
-          );
-
-          // Handle pagination info
-          const paginationInfo = response.pagination || {};
-          const hasMore = paginationInfo.has_more || false;
-
-          if (isLoadMore) {
-            // Append new posts to existing posts with deduplication
-            setAllPostsLocal((prevPosts) => {
-              // Create a Set of existing post IDs for fast lookup
-              const existingIds = new Set(prevPosts.map((post) => post.id));
-              // Filter out posts that already exist
-              const uniqueNewPosts = newPostsData.filter(
-                (post) => !existingIds.has(post.id),
-              );
-              console.log(
-                `🔍 Student Deduplication: ${newPostsData.length} new posts, ${uniqueNewPosts.length} unique posts added`,
-              );
-              return [...prevPosts, ...uniqueNewPosts];
-            });
-          } else {
-            // Replace posts (initial load or refresh)
-            setAllPostsLocal(newPostsData);
-          }
-
-          setHasMoreData(hasMore);
-          setCurrentPage(pageNum);
-          dispatch(setError(null));
-        } else {
-          dispatch(setError(response.message || "Failed to load posts"));
-        }
-      } catch (error) {
-        console.error("Error in loadPosts (Student Tab):", {
-          error: error,
-          status: error?.status,
-          data: error?.data,
-          message: error?.message,
-          page: pageNum,
-          isLoadMore,
-          timestamp: new Date().toISOString(),
-        });
-
-        // Handle different error types gracefully
-        let errorMessage = "An unexpected error occurred";
-        if (error?.status === 500) {
-          errorMessage = "Server error - please try again later";
-        } else if (error?.status === 401) {
-          errorMessage = "Authentication required - please log in again";
-        } else if (error?.status === 403) {
-          errorMessage = "Access denied - insufficient permissions";
-        } else if (error?.message) {
-          errorMessage = error.message;
-        }
-
-        dispatch(setError(errorMessage));
-      } finally {
-        dispatch(setLoading(false));
-        setIsLoadingMore(false);
+      if (response.status !== "successful") {
+        throw new Error(response.message || "Failed to load posts");
       }
+
+      const newPosts = Array.isArray(response.data)
+        ? response.data
+        : response.data.posts || [];
+
+      return {
+        posts: newPosts,
+        hasMore: response.pagination?.has_more || false,
+      };
     },
-    [dispatch, getStudentPosts, selectedStudent?.student_id],
+    [getStudentPosts, isPersonal, selectedStudent?.student_id, filters],
   );
 
-  // Simple filtering function for additional filters (search, category, etc.)
-  const filterPostsLocally = useCallback((postsToFilter, currentFilters) => {
-    if (!postsToFilter || postsToFilter.length === 0) return [];
-
-    console.log(
-      "🔍 Student Tab - Applying additional filters:",
-      currentFilters,
-    );
-
-    return postsToFilter.filter((post) => {
-      // Search term filter
-      if (
-        currentFilters.searchTerm &&
-        currentFilters.searchTerm.trim() &&
-        currentFilters.searchTerm !== ""
-      ) {
-        const searchTerm = currentFilters.searchTerm.toLowerCase();
-        const titleMatch = post.title?.toLowerCase().includes(searchTerm);
-        const contentMatch = post.content?.toLowerCase().includes(searchTerm);
-        if (!titleMatch && !contentMatch) return false;
-      }
-
-      // Category filter
-      if (
-        currentFilters.category &&
-        currentFilters.category !== "all" &&
-        currentFilters.category !== ""
-      ) {
-        if (
-          post.category?.toLowerCase() !== currentFilters.category.toLowerCase()
-        ) {
-          return false;
-        }
-      }
-
-      // Hashtags filter
-      if (currentFilters.hashtags && currentFilters.hashtags.length > 0) {
-        const postHashtags = post.hashtags || [];
-        const hasMatchingHashtag = currentFilters.hashtags.some((filterTag) =>
-          postHashtags.some((postTag) =>
-            postTag.toLowerCase().includes(filterTag.toLowerCase()),
-          ),
-        );
-        if (!hasMatchingHashtag) return false;
-      }
-
-      // Date range filter
-      if (currentFilters.dateRange?.start || currentFilters.dateRange?.end) {
-        const postDate = new Date(post.created_at);
-
-        if (currentFilters.dateRange.start) {
-          const startDate = new Date(currentFilters.dateRange.start);
-          if (postDate < startDate) return false;
-        }
-
-        if (currentFilters.dateRange.end) {
-          const endDate = new Date(currentFilters.dateRange.end);
-          if (postDate > endDate) return false;
-        }
-      }
-
-      return true;
-    });
-  }, []);
+  const {
+    allPostsLocal,
+    setAllPostsLocal,
+    isLoadingMore,
+    load: loadPosts,
+    loadMore: handleLoadMore,
+    refresh: handleRefresh,
+    reset: resetPagination,
+  } = usePostFeedPagination(fetchStudentPostsPage, canFetchStudentPosts);
 
   // Clear any existing filters when component mounts
   useEffect(() => {
-    console.log(
-      "🧹 Clearing any existing filters on component mount (Student Tab)",
-    );
     dispatch(clearFilters());
   }, [dispatch]);
 
-  // Load student posts when selectedStudent.student_id changes or mode changes
+  // Load student posts whenever the fetch-relevant params change
   useEffect(() => {
-    if (mode === "personal" || selectedStudent?.student_id) {
-      console.log(
-        `🔄 Student Tab - Loading posts (mode: ${mode}, student_id: ${selectedStudent?.student_id})`,
-      );
-      // Reset pagination when student or mode changes
-      setCurrentPage(1);
-      setHasMoreData(true);
-      setAllPostsLocal([]);
+    resetPagination();
+    loadPosts(1, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPersonal, selectedStudent?.student_id]);
+
+  // Re-fetch from the backend (search/category/date/hashtag filtering all
+  // happen server-side now) whenever the user's filters change, debounced so
+  // typing in the search box doesn't fire a request per keystroke.
+  const isFirstFiltersRun = useRef(true);
+  useEffect(() => {
+    if (isFirstFiltersRun.current) {
+      isFirstFiltersRun.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      resetPagination();
       loadPosts(1, false);
-    }
-  }, [mode, selectedStudent?.student_id, loadPosts]);
+    }, FILTER_DEBOUNCE_MS);
 
-  // Debug allPostsLocal changes
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
+
+  // Keep Redux in sync with the (already backend-filtered) posts
   useEffect(() => {
-    console.log(
-      "🔄 allPostsLocal changed (Student Tab):",
-      allPostsLocal?.length || 0,
+    dispatch(
+      setPosts({
+        posts: allPostsLocal,
+        pagination: {
+          current_page: 1,
+          total: allPostsLocal.length,
+          has_more: false,
+        },
+      }),
     );
-  }, [allPostsLocal]);
-
-  // Frontend filtering for additional filters (search, category, etc.)
-  const filteredPosts = useMemo(() => {
-    console.log("🚀 useMemo filteredPosts is executing! (Student Tab)");
-    if (!allPostsLocal || allPostsLocal.length === 0) {
-      console.log(
-        "❌ No student posts available (Student Tab):",
-        allPostsLocal?.length || 0,
-      );
-      return [];
-    }
-
-    console.log("🔍 Filtering Debug (Student Tab):", {
-      studentPostsCount: allPostsLocal.length,
-      filters,
-      selectedStudent: selectedStudent?.student_calling_name,
-      student_id: selectedStudent?.student_id,
-    });
-
-    // Apply additional filtering (search, category, hashtags, date)
-    const filtered = filterPostsLocally(allPostsLocal, filters || {});
-    console.log(
-      "🔍 Additional filtering applied - filtered posts:",
-      filtered.length,
-    );
-    return filtered;
-  }, [allPostsLocal, filters, filterPostsLocally]);
-
-  // Update Redux state when filtered posts change
-  useEffect(() => {
-    if (filteredPosts) {
-      console.log(
-        `🔍 Student filtering complete: ${filteredPosts.length} posts match criteria`,
-      );
-      dispatch(
-        setPosts({
-          posts: filteredPosts,
-          pagination: {
-            current_page: 1,
-            total: filteredPosts.length,
-            has_more: false,
-          },
-        }),
-      );
-    }
-  }, [filteredPosts, dispatch]);
-
-  // Handle refresh - reload first page
-  const handleRefresh = useCallback(() => {
-    if (mode === "personal" || selectedStudent?.student_id) {
-      setCurrentPage(1);
-      setHasMoreData(true);
-      setAllPostsLocal([]); // Clear current posts
-      loadPosts(1, false); // Reload first page
-    }
-  }, [mode, selectedStudent?.student_id, loadPosts]);
-
-  // Handle load more - fetch next page
-  const handleLoadMore = useCallback(() => {
-    if (
-      hasMoreData &&
-      !isLoadingMore &&
-      !loading &&
-      (mode === "personal" || selectedStudent?.student_id)
-    ) {
-      const nextPage = currentPage + 1;
-      console.log(`📄 Student Tab - Loading more posts - page ${nextPage}`);
-      loadPosts(nextPage, true);
-    }
-  }, [
-    hasMoreData,
-    isLoadingMore,
-    loading,
-    currentPage,
-    mode,
-    selectedStudent?.student_id,
-    loadPosts,
-  ]);
+  }, [allPostsLocal, dispatch]);
 
   // Handle delete post
   const handleDeletePost = useCallback(
-    async (postId) => {
+    (postId) => {
       Alert.alert(
         "Delete Post",
         "Are you sure you want to delete this post? This action cannot be undone.",
         [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
+          { text: "Cancel", style: "cancel" },
           {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
               try {
-                // Optimistic update - remove post from local state immediately
                 setAllPostsLocal((prevPosts) =>
                   prevPosts.filter((post) => post.id !== postId),
                 );
@@ -456,11 +173,8 @@ const StudentTabWithAPI = ({
                   id: postId,
                 }).unwrap();
 
-                if (response.success) {
-                  console.log("✅ Student post deleted successfully");
-                } else {
-                  // Revert optimistic update on failure
-                  loadPosts(1, false); // Reload posts to restore state
+                if (!response.success) {
+                  loadPosts(1, false);
                   Alert.alert(
                     "Error",
                     response.message || "Failed to delete post",
@@ -468,8 +182,7 @@ const StudentTabWithAPI = ({
                 }
               } catch (error) {
                 console.error("❌ Error deleting student post:", error);
-                // Revert optimistic update on error
-                loadPosts(1, false); // Reload posts to restore state
+                loadPosts(1, false);
                 Alert.alert(
                   "Error",
                   error?.data?.message ||
@@ -481,7 +194,7 @@ const StudentTabWithAPI = ({
         ],
       );
     },
-    [deleteStudentPost, loadPosts],
+    [deleteStudentPost, loadPosts, setAllPostsLocal],
   );
 
   // Handle like/unlike
@@ -494,7 +207,6 @@ const StudentTabWithAPI = ({
         ? post.likes_count - 1
         : post.likes_count + 1;
 
-      // Optimistic update
       dispatch(
         toggleLike({
           postId: post.id,
@@ -510,7 +222,6 @@ const StudentTabWithAPI = ({
         }).unwrap();
 
         if (response.status === "successful") {
-          // Update with actual server response
           dispatch(
             toggleLike({
               postId: post.id,
@@ -521,7 +232,6 @@ const StudentTabWithAPI = ({
         }
       } catch (error) {
         console.error("Error liking post:", error);
-        // Revert optimistic update on error using dedicated revertLike action
         dispatch(
           revertLike({
             postId: post.id,
@@ -529,132 +239,61 @@ const StudentTabWithAPI = ({
             likesCount: post.likes_count,
           }),
         );
-
-        if (__DEV__) {
-          Alert.alert(
-            "API Error",
-            "Like functionality requires backend implementation. Please check the backend API endpoints.",
-          );
-        }
       }
     },
-    [likedPosts, dispatch, likeStudentPost],
+    [schoolPostsState, dispatch, likeStudentPost],
   );
 
-  // Render post item (same as others but with student-specific styling)
-  const renderPost = ({ item: post }) => {
-    // Use user-specific like state helper function
-    const isLiked =
-      getUserLikeState(schoolPostsState, post.id) || post.is_liked_by_user;
+  const renderPost = useCallback(
+    ({ item: post }) => {
+      const isLiked =
+        getUserLikeState(schoolPostsState, post.id) || post.is_liked_by_user;
 
+      return (
+        <PostCard
+          post={post}
+          currentUserId={currentUser?.id}
+          isLiked={isLiked}
+          onLike={handleLike}
+          onDelete={handleDeletePost}
+          extraContent={
+            isPersonal && (
+              <View style={styles.studentIndicator}>
+                <Text style={styles.studentText}>
+                  Student:{" "}
+                  {post.student_name ||
+                    selectedStudent?.student_calling_name ||
+                    "Unknown"}{" "}
+                  (ID:{" "}
+                  {post.student_admission_number ||
+                    selectedStudent?.student_id ||
+                    "N/A"}
+                  )
+                </Text>
+              </View>
+            )
+          }
+        />
+      );
+    },
+    [
+      schoolPostsState,
+      currentUser?.id,
+      handleLike,
+      handleDeletePost,
+      isPersonal,
+      selectedStudent,
+    ],
+  );
+
+  const renderFooter = () => {
+    if (!isLoadingMore) return null;
     return (
-      <View style={styles.postContainer}>
-        {/* Student indicator - Show only in My Posts mode */}
-        {mode === "personal" && (
-          <View style={styles.studentIndicator}>
-            <Text style={styles.studentText}>
-              Student: {post.student_name || selectedStudent?.student_calling_name || "Unknown"} (ID:{" "}
-              {post.student_admission_number || selectedStudent?.student_id || "N/A"})
-            </Text>
-          </View>
-        )}
-
-        {/* Post Header */}
-        <View style={styles.postHeader}>
-          {/* <Image
-            source={
-              post.author_image
-                ? { uri: post.author_image }
-                : require("../../../assets/images/sample-profile.png")
-            }
-            style={styles.authorImage}
-          /> */}
-          <View style={styles.authorInfo}>
-            <Text style={styles.authorName}>{post.title}</Text>
-            <Text style={styles.timestamp}>
-              {new Date(post.created_at).toLocaleDateString()} • {post.category}
-            </Text>
-          </View>
-
-          {/* Delete Button - Visible only to post creator */}
-          {currentUser?.id === post.created_by && (
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={() => handleDeletePost(post.id)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Icon name="delete" size={20} color="#FF6B6B" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Post Content */}
-        <TextWithLinks style={styles.postContent}>{post.content}</TextWithLinks>
-
-        {/* Media */}
-        {post.media && post.media.length > 0 && (
-          <MediaViewer
-            media={transformMediaData(post.media)}
-            style={styles.mediaContainer}
-          />
-        )}
-
-        {/* Hashtags */}
-        {post.hashtags && post.hashtags.length > 0 && (
-          <View style={styles.hashtagContainer}>
-            {post.hashtags.map((hashtag, index) => (
-              <Text key={`${post.id}-hashtag-${index}`} style={styles.hashtag}>
-                #{hashtag}
-              </Text>
-            ))}
-          </View>
-        )}
-
-        {/* Post Actions */}
-        <View style={styles.postActions}>
-          <TouchableOpacity
-            style={[styles.actionButton, isLiked && styles.likedButton]}
-            onPress={() => handleLike(post)}
-          >
-            <Icon
-              name={isLiked ? "thumb-up" : "thumb-up-off-alt"}
-              size={20}
-              color={isLiked ? "#3b5998" : "#666"}
-            />
-            <Text style={[styles.actionText, isLiked && styles.likedText]}>
-              {post.likes_count}
-            </Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.loadingFooter}>
+        <ActivityIndicator size="small" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Loading more posts...</Text>
       </View>
     );
-  };
-
-  // Render footer with load more button or loading indicator
-  const renderFooter = () => {
-    if (isLoadingMore) {
-      return (
-        <View style={styles.loadingFooter}>
-          <ActivityIndicator size="small" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading more posts...</Text>
-        </View>
-      );
-    }
-
-    if (hasMoreData && allPostsLocal.length > 0) {
-      return (
-        <View style={styles.loadMoreContainer}>
-          <TouchableOpacity
-            style={styles.loadMoreButton}
-            onPress={handleLoadMore}
-          >
-            <Text style={styles.loadMoreText}>Load More</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return null;
   };
 
   // Show loading skeleton on initial load
@@ -701,15 +340,21 @@ const StudentTabWithAPI = ({
         ListFooterComponent={renderFooter}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              {selectedStudent
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === "android"}
+        ListEmptyComponent={
+          <PostsEmptyState
+            icon="person"
+            title="No Student Posts"
+            message={
+              selectedStudent
                 ? `No posts found for ${selectedStudent.student_calling_name}`
-                : "No student selected or no student posts available"}
-            </Text>
-          </View>
-        )}
+                : "No student selected or no student posts available"
+            }
+          />
+        }
       />
     </View>
   );
@@ -724,18 +369,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingBottom: 100,
   },
-  postContainer: {
-    backgroundColor: "white",
-    marginHorizontal: 15,
-    marginVertical: 5,
-    borderRadius: 10,
-    padding: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   studentIndicator: {
     backgroundColor: "#fff3e0",
     paddingHorizontal: 8,
@@ -749,81 +382,6 @@ const styles = StyleSheet.create({
     color: "#f57c00",
     fontWeight: "600",
   },
-  postHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  authorImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 10,
-  },
-  authorInfo: {
-    flex: 1,
-  },
-  deleteButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 107, 107, 0.1)",
-  },
-  authorName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  timestamp: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  postContent: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  mediaContainer: {
-    marginVertical: 10,
-  },
-  hashtagContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginVertical: 5,
-  },
-  hashtag: {
-    color: "#3b5998",
-    fontSize: 12,
-    marginRight: 8,
-    marginBottom: 4,
-  },
-  postActions: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 5,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-  },
-  likedButton: {
-    backgroundColor: "#e3f2fd",
-  },
-  actionText: {
-    marginLeft: 5,
-    fontSize: 14,
-    color: "#666",
-  },
-  likedText: {
-    color: "#3b5998",
-  },
   loadingFooter: {
     paddingVertical: 20,
     alignItems: "center",
@@ -832,21 +390,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     color: "#666",
-  },
-  loadMoreContainer: {
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  loadMoreButton: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  loadMoreText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
   },
   errorContainer: {
     flex: 1,
@@ -870,17 +413,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 50,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#666",
-    textAlign: "center",
   },
 });
 

@@ -468,36 +468,17 @@ const SECURITY_NAVIGATION: NavigationConfig = {
   defaultTab: "activityFeed",
 };
 
-// Canteen Navigation Configuration
+// Canteen Navigation Configuration - restricted to just the canteen
+// management screen plus notifications; canteen-role users don't get the
+// rest of the generic dashboard tabs other categories see.
 const CANTEEN_NAVIGATION: NavigationConfig = {
   tabs: [
     {
-      id: "activityFeed",
-      icon: "home",
-      iconFamily: "MaterialIcons",
-      title: "Activity Feed",
-      route: "index",
-    },
-    {
-      id: "schoolCalendar",
-      icon: "calendar-today",
-      iconFamily: "MaterialIcons",
-      title: "School Calendar",
-      route: "school-calendar",
-    },
-    {
-      id: "menuManagement",
+      id: "canteen",
       icon: "restaurant",
       iconFamily: "MaterialIcons",
-      title: "Menu",
-      route: "menu-management",
-    },
-    {
-      id: "userActions",
-      icon: "dashboard",
-      iconFamily: "MaterialIcons",
-      title: "User Actions",
-      route: "user-actions",
+      title: "Canteen",
+      route: "index",
     },
     {
       id: "notifications",
@@ -507,7 +488,7 @@ const CANTEEN_NAVIGATION: NavigationConfig = {
       route: "notifications",
     },
   ],
-  defaultTab: "activityFeed",
+  defaultTab: "canteen",
 };
 
 // Navigation Configuration Map

@@ -50,6 +50,13 @@ export const handleNavigationPress = (
         router.push(`${baseRoute}/user-actions`);
         break;
 
+      // Canteen-specific navigation
+      case "canteen":
+        console.log("✅ Navigate to Canteen");
+        console.log(`🔄 Calling router.push('${baseRoute}/')`);
+        router.push(`${baseRoute}/`);
+        break;
+
       // Common navigation (works for both parent and educator)
       case "schoolCalendar":
         console.log("✅ Navigate to School Calendar");
@@ -127,6 +134,9 @@ export const getNavigationRoutes = (userCategory = null) => {
     // Educator routes
     home: `${baseRoute}/`,
     userActions: `${baseRoute}/user-actions`,
+
+    // Canteen routes
+    canteen: `${baseRoute}/`,
 
     // Common routes
     schoolCalendar: `${baseRoute}/school-calendar`,

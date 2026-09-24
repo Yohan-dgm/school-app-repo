@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   useCreateClassPostMutation,
   useUploadMediaMutation,
 } from "../../api/activity-feed-api";
+import { useGetGradeLevelsWithClassesQuery } from "../../api/grade-level-api";
 import {
   createPostData,
   createMediaUploadFormData,
@@ -42,12 +43,15 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
   const [postTitle, setPostTitle] = useState("");
   const [postContent, setPostContent] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("announcement");
-  const [selectedGrade, setSelectedGrade] = useState(null);
+  const [selectedClassId, setSelectedClassId] = useState(null);
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadStep, setUploadStep] = useState("");
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [uploadProgress, setUploadProgress] = useState({
+    current: 0,
+    total: 0,
+  });
   const [isLoadingMedia, setIsLoadingMedia] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState("");
 
@@ -64,29 +68,31 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
   // API hooks
   const [createClassPost] = useCreateClassPostMutation();
-  const { uploadFile, isUploading: isMediaUploading, progress: mediaProgress } = useActivityFeedChunkedUpload();
+  const {
+    uploadFile,
+    isUploading: isMediaUploading,
+    progress: mediaProgress,
+  } = useActivityFeedChunkedUpload();
+  const {
+    data: gradeLevelsData,
+    isLoading: gradeLevelsLoading,
+    error: gradeLevelsError,
+  } = useGetGradeLevelsWithClassesQuery({ page_size: 100, page: 1 });
 
   // Get global state
   const { sessionData, user } = useSelector((state) => state.app);
 
-  // Available grades for class posts (Grade 1-12 = 1-12, EY 1-3 = 13-15)
-  const gradeOptions = [
-    { label: "Grade 1", value: 1 },
-    { label: "Grade 2", value: 2 },
-    { label: "Grade 3", value: 3 },
-    { label: "Grade 4", value: 4 },
-    { label: "Grade 5", value: 5 },
-    { label: "Grade 6", value: 6 },
-    { label: "Grade 7", value: 7 },
-    { label: "Grade 8", value: 8 },
-    { label: "Grade 9", value: 9 },
-    { label: "Grade 10", value: 10 },
-    { label: "Grade 11", value: 11 },
-    { label: "Grade 12", value: 12 },
-    { label: "EY 1", value: 13 },
-    { label: "EY 2", value: 14 },
-    { label: "EY 3", value: 15 },
-  ];
+  // Real grade-level classes fetched from backend, flattened into one
+  // searchable list showing only the class name (no grade level prefix).
+  const classOptions = useMemo(() => {
+    const grades = gradeLevelsData?.data?.data || [];
+    return grades.flatMap((grade) =>
+      (grade.grade_level_class_list || []).map((classItem) => ({
+        label: classItem.name,
+        value: classItem.id,
+      })),
+    );
+  }, [gradeLevelsData]);
 
   // Available categories for class posts with maroon theme (aligned with backend type enum)
   const categories = [
@@ -122,7 +128,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
     setPostTitle("");
     setPostContent("");
     setSelectedCategory("announcement");
-    setSelectedGrade(null);
+    setSelectedClassId(null);
     setSelectedMedia([]);
     setSelectedTags([]);
     setUploadStep("");
@@ -156,7 +162,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
     setSelectedTags((prev) =>
       prev.includes(tagId)
         ? prev.filter((id) => id !== tagId)
-        : [...prev, tagId]
+        : [...prev, tagId],
     );
   };
 
@@ -165,12 +171,13 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
     try {
       if (Platform.OS === "ios") {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
           setIsLoadingMedia(false);
           Alert.alert(
             "Permission needed",
-            "Please grant camera roll permissions to add images."
+            "Please grant camera roll permissions to add images.",
           );
           return;
         }
@@ -184,42 +191,82 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
       if (!result.canceled) {
         const validMedia = [];
+        const failedFiles = [];
         let hasOversizedFiles = false;
 
         for (const asset of result.assets) {
           let processableUri = asset.uri;
           let fileSize = asset.fileSize || asset.size || 0;
-          let mimeType = asset.mimeType || (asset.type === "video" ? "video/mp4" : "image/jpeg");
+          let mimeType =
+            asset.mimeType ||
+            (asset.type === "video" ? "video/mp4" : "image/jpeg");
           const isVideo = asset.type === "video";
+          const originalName =
+            asset.fileName ||
+            asset.name ||
+            `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
+          let fileName = originalName;
+          let conversionFailed = false;
 
           if (!isVideo) {
+            // Always force JPEG output (this also converts HEIC/HEIC-family
+            // images, which the backend does not accept, into a supported format).
+            let compressed = null;
             try {
               console.log("🖼️ Compressing image before upload...");
-              const compressed = await ImageManipulator.manipulateAsync(
+              compressed = await ImageManipulator.manipulateAsync(
                 asset.uri,
                 [{ resize: { width: 1200 } }],
-                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
               );
+            } catch (error) {
+              console.error("Error compressing image (with resize):", error);
+              try {
+                // Some HEIC assets fail when resize + format conversion run
+                // together — retry with just the format conversion.
+                compressed = await ImageManipulator.manipulateAsync(
+                  asset.uri,
+                  [],
+                  { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+                );
+              } catch (retryError) {
+                console.error(
+                  "Error compressing image (retry without resize):",
+                  retryError,
+                );
+              }
+            }
+
+            if (compressed) {
               processableUri = compressed.uri;
               mimeType = "image/jpeg";
-              
-              const fileInfo = await FileSystem.getInfoAsync(compressed.uri, { size: true });
-              if (fileInfo.exists && fileInfo.size) {
-                fileSize = fileInfo.size;
+              fileName = fileName.replace(/\.[^./]+$/, "") + ".jpg";
+
+              try {
+                const fileInfo = await FileSystem.getInfoAsync(compressed.uri, {
+                  size: true,
+                });
+                if (fileInfo.exists && fileInfo.size) {
+                  fileSize = fileInfo.size;
+                }
+              } catch (infoError) {
+                console.error("Error reading compressed file size:", infoError);
               }
-            } catch (error) {
-              console.error("Error compressing image:", error);
+            } else {
+              conversionFailed = true;
             }
           }
 
-          if (fileSize > MAX_FILE_SIZE) {
+          if (conversionFailed) {
+            failedFiles.push(originalName);
+          } else if (fileSize > MAX_FILE_SIZE) {
             hasOversizedFiles = true;
           } else {
             validMedia.push({
               id: Date.now() + Math.random(),
               type: isVideo ? "video" : "image",
               uri: processableUri,
-              name: asset.fileName || asset.name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+              name: fileName,
               size: fileSize,
               mimeType: mimeType,
             });
@@ -229,7 +276,14 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
         if (hasOversizedFiles) {
           Alert.alert(
             "File Too Large",
-            "One or more selected files exceed the 50MB limit and were not added. Please select smaller files."
+            "One or more selected files exceed the 50MB limit and were not added. Please select smaller files.",
+          );
+        }
+
+        if (failedFiles.length > 0) {
+          Alert.alert(
+            "Couldn't Process File",
+            `Could not process: ${failedFiles.join(", ")}. Please try a different photo.`,
           );
         }
 
@@ -239,7 +293,10 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
       }
     } catch (error) {
       console.error("❌ Error in pickImage:", error);
-      Alert.alert("Error", "Failed to select media. Please try again or check app permissions.");
+      Alert.alert(
+        "Error",
+        "Failed to select media. Please try again or check app permissions.",
+      );
     } finally {
       setIsLoadingMedia(false);
     }
@@ -278,7 +335,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
         if (hasOversizedFiles) {
           Alert.alert(
             "File Too Large",
-            "One or more selected documents exceed the 50MB limit and were not added. Please select smaller files."
+            "One or more selected documents exceed the 50MB limit and were not added. Please select smaller files.",
           );
         }
 
@@ -318,15 +375,14 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
       return;
     }
 
-    if (!selectedGrade) {
+    if (!selectedClassId) {
       setIsSubmitting(false);
       setUploadStep("");
-      Alert.alert("Warning!", "Please select a grade for your class post");
+      Alert.alert("Warning!", "Please select a class for your class post");
       return;
     }
 
     try {
-
       console.log("🚀 Starting class post creation with two-step process");
 
       let uploadedMedia = [];
@@ -342,18 +398,22 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
           // 50MB Check
           if (item.size > MAX_FILE_SIZE) {
-            console.warn(`❌ File too large: ${item.name} (${item.size} bytes)`);
+            console.warn(
+              `❌ File too large: ${item.name} (${item.size} bytes)`,
+            );
             setIsSubmitting(false);
             setUploadStep("");
             Alert.alert(
               "File Too Large",
-              "The file you're trying to upload exceeds the 50MB limit. Please contact the IT team for assistance with larger files."
+              "The file you're trying to upload exceeds the 50MB limit. Please contact the IT team for assistance with larger files.",
             );
             return;
           }
 
           try {
-            console.log(`📎 Uploading file ${i + 1}/${selectedMedia.length}: ${item.name}`);
+            console.log(
+              `📎 Uploading file ${i + 1}/${selectedMedia.length}: ${item.name}`,
+            );
             const result = await uploadFile(item.uri, item.name, item.mimeType);
             uploadedMedia.push(result);
           } catch (uploadError) {
@@ -362,13 +422,16 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
             setUploadStep("");
             Alert.alert(
               "Upload Failed",
-              `Failed to upload ${item.name}. ${uploadError.message || "Please try again."}`
+              `Failed to upload ${item.name}. ${uploadError.message || "Please try again."}`,
             );
             return;
           }
         }
-        
-        console.log("📎 ✅ All media files uploaded successfully:", uploadedMedia);
+
+        console.log(
+          "📎 ✅ All media files uploaded successfully:",
+          uploadedMedia,
+        );
       }
 
       setUploadStep("posting");
@@ -378,8 +441,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
         title: postTitle,
         category: selectedCategory,
         content: postContent,
-        grade: selectedGrade,
-        class_id: selectedGrade, // Use selectedGrade as class_id
+        class_id: selectedClassId,
         author_id:
           sessionData?.user_id || sessionData?.data?.user_id || user?.id,
         hashtags: convertTagsToHashtags(selectedTags, availableTags),
@@ -389,7 +451,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
       // Create JSON payload with uploaded media URLs (two-step)
       console.log(
         "📎 🔍 PRE-CREATION DEBUG - uploadedMedia structure:",
-        JSON.stringify(uploadedMedia, null, 2)
+        JSON.stringify(uploadedMedia, null, 2),
       );
       console.log("📎 🔍 PRE-CREATION DEBUG - uploadedMedia analysis:");
       if (uploadedMedia && uploadedMedia.length > 0) {
@@ -413,7 +475,7 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
       console.log(
         "📤 Submitting post with JSON payload (two-step):",
-        jsonPayload
+        jsonPayload,
       );
 
       // Debug: Verify user filename preservation between upload and post creation
@@ -441,11 +503,11 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
           if (isUserIntentPreserved) {
             console.log(
-              `✅ SUCCESS: Media ${index} preserves user intent with filename: ${userFilename}`
+              `✅ SUCCESS: Media ${index} preserves user intent with filename: ${userFilename}`,
             );
           } else {
             console.warn(
-              `⚠️ Media ${index}: Could not preserve user intent, using: ${userFilename}`
+              `⚠️ Media ${index}: Could not preserve user intent, using: ${userFilename}`,
             );
           }
         });
@@ -454,12 +516,12 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
       const response = await createClassPost(jsonPayload).unwrap();
       console.log("✅ Class post created successfully:", response);
 
-      const selectedGradeLabel =
-        gradeOptions.find((g) => g.value === selectedGrade)?.label ||
-        "the selected grade";
+      const selectedClassLabel =
+        classOptions.find((c) => c.value === selectedClassId)?.label ||
+        "the selected class";
       Alert.alert(
         "Success!",
-        `Class post created successfully for ${selectedGradeLabel}!`
+        `Class post created successfully for ${selectedClassLabel}!`,
       );
 
       // Reset and close
@@ -489,43 +551,48 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
 
   const renderGradeSelector = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Select Grade</Text>
+      <Text style={styles.sectionTitle}>Select Class</Text>
       <View style={styles.gradeDropdownContainer}>
-        <Dropdown
-          style={styles.gradeDropdown}
-          placeholderStyle={styles.gradeDropdownPlaceholder}
-          selectedTextStyle={styles.gradeDropdownSelectedText}
-          inputSearchStyle={styles.gradeDropdownSearchInput}
-          iconStyle={styles.gradeDropdownIcon}
-          data={gradeOptions}
-          search
-          maxHeight={300}
-          labelField="label"
-          valueField="value"
-          placeholder="Choose a grade..."
-          searchPlaceholder="Search grades..."
-          value={selectedGrade}
-          onFocus={() => console.log("Grade dropdown focused")}
-          onBlur={() => console.log("Grade dropdown blurred")}
-          onChange={(item) => {
-            setSelectedGrade(item.value);
-            console.log("Selected grade:", item);
-          }}
-          renderRightIcon={() => (
-            <Icon
-              style={styles.gradeDropdownIcon}
-              color={theme.colors.primary}
-              name="arrow-drop-down"
-              size={20}
-            />
-          )}
-        />
-        {selectedGrade && (
+        {gradeLevelsLoading ? (
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+        ) : gradeLevelsError ? (
+          <Text style={styles.classLoadErrorText}>
+            Failed to load classes. Please try again.
+          </Text>
+        ) : (
+          <Dropdown
+            style={styles.gradeDropdown}
+            placeholderStyle={styles.gradeDropdownPlaceholder}
+            selectedTextStyle={styles.gradeDropdownSelectedText}
+            inputSearchStyle={styles.gradeDropdownSearchInput}
+            iconStyle={styles.gradeDropdownIcon}
+            data={classOptions}
+            search
+            maxHeight={300}
+            labelField="label"
+            valueField="value"
+            placeholder="Choose a class..."
+            searchPlaceholder="Search classes..."
+            value={selectedClassId}
+            onChange={(item) => {
+              setSelectedClassId(item.value);
+            }}
+            renderRightIcon={() => (
+              <Icon
+                style={styles.gradeDropdownIcon}
+                color={theme.colors.primary}
+                name="arrow-drop-down"
+                size={20}
+              />
+            )}
+          />
+        )}
+        {selectedClassId && (
           <View style={styles.selectedGradeIndicator}>
             <Icon name="check-circle" size={16} color={theme.colors.primary} />
             <Text style={styles.selectedGradeText}>
               Selected:{" "}
-              {gradeOptions.find((g) => g.value === selectedGrade)?.label}
+              {classOptions.find((c) => c.value === selectedClassId)?.label}
             </Text>
           </View>
         )}
@@ -538,10 +605,10 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
       <Icon name="class" size={16} color={theme.colors.primary} />
       <Text style={styles.classInfoText}>
         Posting to:{" "}
-        {selectedGrade
-          ? gradeOptions.find((g) => g.value === selectedGrade)?.label ||
-            `Grade ${selectedGrade}`
-          : "Select Grade First"}
+        {selectedClassId
+          ? classOptions.find((c) => c.value === selectedClassId)?.label ||
+            "Selected class"
+          : "Select Class First"}
       </Text>
     </View>
   );
@@ -642,7 +709,9 @@ const ClassPostDrawer = ({ visible, onClose, onPostCreated }) => {
           <Text style={styles.mediaButtonText}>Add Documents</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.sectionTitlespan}>(max 10 images/max 50mb video)</Text>
+      <Text style={styles.sectionTitlespan}>
+        (max 10 images/max 50mb video)
+      </Text>
 
       {isLoadingMedia && (
         <View style={styles.loadingContainer}>
@@ -888,6 +957,12 @@ const styles = StyleSheet.create({
     color: "maroon",
     fontWeight: "600",
     marginLeft: 6,
+  },
+  classLoadErrorText: {
+    fontSize: 14,
+    color: "#F44336",
+    textAlign: "center",
+    paddingVertical: 8,
   },
   content: {
     flex: 1,

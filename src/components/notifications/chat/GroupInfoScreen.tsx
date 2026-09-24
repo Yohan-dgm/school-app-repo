@@ -29,6 +29,10 @@ import { getAvatarColor } from "./chatAvatarColors";
 
 type InfoTab = "members" | "media" | "documents";
 
+// Above this member count, the list switches to an admins-only view to keep
+// it scannable for very large groups.
+const LARGE_GROUP_MEMBER_THRESHOLD = 30;
+
 interface GroupInfoScreenProps {
   chat: ChatGroup;
   onBack: () => void;
@@ -282,7 +286,7 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
       {/* Member List Header */}
       <View className="mt-4 bg-white border-t border-gray-100 px-4 py-4 flex-row items-center justify-between border-b border-gray-50">
         <Text className="text-gray-900 font-bold text-base">
-          {totalMembers >= 20 ? "Group Admins" : "Members"}
+          {totalMembers >= LARGE_GROUP_MEMBER_THRESHOLD ? "Group Admins" : "Members"}
         </Text>
         {isAdmin && (
           <TouchableOpacity 
@@ -383,7 +387,7 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
     </View>
   );
 
-  const displayedMembers = totalMembers >= 20
+  const displayedMembers = totalMembers >= LARGE_GROUP_MEMBER_THRESHOLD
     ? members.filter((m: ChatMember) => m.id.toString() === chat.created_by?.toString() || m.role === 'admin')
     : members;
 
@@ -417,7 +421,7 @@ const GroupInfoScreen: React.FC<GroupInfoScreenProps> = ({
               </View>
             ) : null
           }
-          onEndReached={totalMembers >= 20 ? undefined : loadMore}
+          onEndReached={totalMembers >= LARGE_GROUP_MEMBER_THRESHOLD ? undefined : loadMore}
           onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}
         />

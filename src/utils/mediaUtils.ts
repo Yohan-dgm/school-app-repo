@@ -139,6 +139,70 @@ export const buildVideoThumbnailUrl = (
 };
 
 /**
+ * Transform raw post media items (from the activity feed API) into the shape
+ * MediaViewer expects. Identical logic was previously duplicated in
+ * SchoolTabWithAPI.js, ClassTabWithAPI.js, and StudentTabWithAPI.js.
+ */
+export const transformMediaData = (mediaArray?: any[]): any[] => {
+  if (!mediaArray || !Array.isArray(mediaArray)) return [];
+
+  return mediaArray
+    .map((mediaItem) => {
+      const filename =
+        mediaItem.filename ||
+        `file.${mediaItem.type === "image" ? "jpg" : mediaItem.type === "video" ? "mp4" : "pdf"}`;
+      const mediaUrl = buildActivityFeedMediaUrl(mediaItem.url, filename);
+
+      let thumbnailUrl = null;
+      if (mediaItem.thumbnail_url) {
+        const thumbnailFilename =
+          mediaItem.thumbnail_url.split("/").pop() || "thumbnail.jpg";
+        thumbnailUrl = buildVideoThumbnailUrl(
+          mediaItem.thumbnail_url,
+          thumbnailFilename,
+        );
+      }
+
+      switch (mediaItem.type) {
+        case "image":
+          return {
+            type: "image",
+            uri: mediaUrl,
+            id: mediaItem.id,
+            filename: filename,
+            size: mediaItem.size || 0,
+          };
+
+        case "video":
+          return {
+            type: "video",
+            uri: mediaUrl,
+            thumbnail: thumbnailUrl || mediaUrl,
+            id: mediaItem.id,
+            filename: filename,
+            size: mediaItem.size || 0,
+          };
+
+        case "pdf":
+          return {
+            type: "pdf",
+            uri: mediaUrl,
+            fileName: filename,
+            fileSize: mediaItem.size
+              ? `${(mediaItem.size / 1024 / 1024).toFixed(1)} MB`
+              : "Unknown size",
+            id: mediaItem.id,
+          };
+
+        default:
+          console.warn("Unknown media type:", mediaItem.type);
+          return null;
+      }
+    })
+    .filter(Boolean);
+};
+
+/**
  * Build proper user profile image URL using the same pattern as activity feed media
  * Format: https://school-app.toyar.lk/get-user-profile-image?id=123&filename=file.ext&mime_type=image/jpeg
  * Or: https://school-app.toyar.lk/get-user-profile-image?url=/path/to/image&filename=file.ext&mime_type=image/jpeg
@@ -308,6 +372,7 @@ export default {
   buildVideoThumbnailUrl,
   buildUserProfileImageUrl,
   buildStudentAttachmentImageUrl,
+  transformMediaData,
   isValidMediaUrl,
   resolveMediaUrl,
   getMimeType,

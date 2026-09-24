@@ -88,6 +88,7 @@ interface DashboardItem {
   color: string;
   gradient: [string, string];
   onPress: () => void;
+  badge?: boolean;
 }
 
 interface EnhancedDashboardGridProps {
@@ -148,6 +149,7 @@ const EnhancedDashboardCard: React.FC<{
       >
         {/* Clean white card */}
         <View style={styles.card}>
+          {item.badge && <View style={styles.cardBadgeDot} />}
           {/* Pastel gradient icon container */}
           <LinearGradient
             colors={colorScheme.gradient}
@@ -215,6 +217,7 @@ const styles = StyleSheet.create({
     height: 80,
     flexDirection: "row",
     alignItems: "center",
+    position: "relative",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -223,6 +226,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
+  },
+  cardBadgeDot: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#DC2626",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    zIndex: 1,
   },
   // Pastel gradient icon container
   iconContainer: {
