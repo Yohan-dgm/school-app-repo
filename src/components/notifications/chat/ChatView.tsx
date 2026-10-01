@@ -8,7 +8,9 @@ import ChatInputBar from "./ChatInputBar";
 import { useChunkedUpload } from "../../../hooks/useChunkedUpload";
 import MessageReceiptsModal from "./MessageReceiptsModal";
 import { useSelector, useDispatch } from "react-redux";
-import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, useUploadVoiceNoteMutation, chatApi } from "../../../api/chat-api";
+import { useGetChatMessagesQuery, useSendChatMessageMutation, useMarkChatAsReadMutation, useToggleChatGroupPinMutation, useUpdateChatMessageMutation, useDeleteChatMessageMutation, useGetChatGroupMembersQuery, useReactToMessageMutation, useSetChatFocusMutation, useUploadVoiceNoteMutation, useCreatePollMutation, useVotePollMutation, useClosePollMutation, useLazyGetPollDetailsQuery, chatApi } from "../../../api/chat-api";
+import CreatePollModal from "./CreatePollModal";
+import PollVotersModal from "./PollVotersModal";
 import RealTimeNotificationService from "../../../services/notifications/RealTimeNotificationService";
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
@@ -68,6 +70,10 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
   const [deleteMessage] = useDeleteChatMessageMutation();
   const [reactToMessage] = useReactToMessageMutation();
   const [setFocus] = useSetChatFocusMutation();
+  const [createPoll] = useCreatePollMutation();
+  const [votePoll] = useVotePollMutation();
+  const [closePoll] = useClosePollMutation();
+  const [triggerGetPollDetails] = useLazyGetPollDetailsQuery();
 
   const dispatch = useDispatch<any>();
   
@@ -100,6 +106,9 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
   const [showActionMenu, setShowActionMenu] = React.useState(false);
   const [editingMessage, setEditingMessage] = React.useState<ChatMessage | null>(null);
   const [showReceiptsModal, setShowReceiptsModal] = React.useState(false);
+  const [showCreatePollModal, setShowCreatePollModal] = React.useState(false);
+  const [votingPollMessageId, setVotingPollMessageId] = React.useState<string | number | null>(null);
+  const [votersModalMessage, setVotersModalMessage] = React.useState<ChatMessage | null>(null);
 
   const isAdmin = React.useMemo(() => {
     return currentGroup.current_user_role === 'admin' || user?.role === 'admin';
@@ -254,36 +263,52 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
         });
         
         const groupId = Number(group.id);
+
+        // Poll updates broadcast to EVERY member with the same generic
+        // (non-personalized) poll payload — my_voted_option_ids in it is
+        // always empty, since the server never knows which recipient is
+        // reading it. Preserve whatever this client already knew about its
+        // own vote instead of letting the broadcast wipe it out.
+        const mergeMessage = (existing: ChatMessage) => {
+          if (updatedMessage.poll && existing.poll) {
+            return {
+              ...existing,
+              ...updatedMessage,
+              reactions: updatedMessage.reactions,
+              poll: { ...updatedMessage.poll, my_voted_option_ids: existing.poll.my_voted_option_ids },
+            };
+          }
+          return { ...existing, ...updatedMessage, reactions: updatedMessage.reactions };
+        };
+
         dispatch(
           chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: pageRef.current }, (draft) => {
             console.log("🔍 Checking cache for message ID:", updatedMessage.id, "Cache size:", draft.data.messages.length);
             const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
             if (index !== -1) {
               console.log("✅ Match found at index", index, ". Updating reactions.");
-              draft.data.messages[index] = { 
-                ...draft.data.messages[index], 
-                ...updatedMessage,
-                reactions: updatedMessage.reactions // Explicitly ensure reactions are copied
-              };
+              draft.data.messages[index] = mergeMessage(draft.data.messages[index]);
             } else {
               console.log("⚠️ Message not found in current cache. ID search was for:", updatedMessage.id);
             }
           })
         );
-        
+
         // Also update page 1 if we're not on it
         if (pageRef.current !== 1) {
           dispatch(
             chatApi.util.updateQueryData('getChatMessages', { chat_group_id: groupId, page: 1 }, (draft) => {
               const index = draft.data.messages.findIndex(m => String(m.id) === String(updatedMessage.id));
               if (index !== -1) {
-                draft.data.messages[index] = { ...draft.data.messages[index], ...updatedMessage };
+                draft.data.messages[index] = mergeMessage(draft.data.messages[index]);
               }
             })
           );
         }
 
-        // Trigger refetch for guaranteed correctness
+        // Trigger refetch for guaranteed correctness (safe for poll data —
+        // see getChatMessages' merge() in chat-api.ts, which preserves any
+        // field the fresh network response doesn't itself carry, like `poll`).
         handleRefreshMessages();
       },
       onMessageDeleted: (data) => {
@@ -578,6 +603,110 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
       throw error;
     }
   };
+
+  const patchPollInCache = (chatMessageId: string | number, poll: any) => {
+    const patch = (pageToPatch: number) => {
+      dispatch(
+        chatApi.util.updateQueryData('getChatMessages', { chat_group_id: Number(currentGroup.id), page: pageToPatch }, (draft) => {
+          const idx = draft.data.messages.findIndex(m => String(m.id) === String(chatMessageId));
+          if (idx !== -1) {
+            draft.data.messages[idx] = { ...draft.data.messages[idx], poll };
+          }
+        })
+      );
+    };
+    patch(pageRef.current);
+    if (pageRef.current !== 1) patch(1);
+  };
+
+  const handleCreatePoll = async (payload: { question: string; options: string[]; allows_multiple_answers: boolean }) => {
+    try {
+      const response = await createPoll({
+        chat_group_id: currentGroup.id,
+        question: payload.question,
+        options: payload.options,
+        allows_multiple_answers: payload.allows_multiple_answers,
+      }).unwrap();
+
+      if (response?.data?.message) {
+        handleNewMessage(response.data.message);
+      }
+      setShowCreatePollModal(false);
+    } catch (error: any) {
+      console.error("Failed to create poll:", error);
+      Alert.alert("Error", error?.data?.message || "Failed to create poll. Please try again.");
+    }
+  };
+
+  const handleVotePoll = async (message: ChatMessage, optionIds: (string | number)[]) => {
+    setVotingPollMessageId(message.id);
+    try {
+      const response = await votePoll({ chat_message_id: message.id, option_ids: optionIds }).unwrap();
+      if (response?.data?.poll) {
+        patchPollInCache(message.id, response.data.poll);
+      }
+    } catch (error: any) {
+      console.error("Failed to vote on poll:", error);
+      Alert.alert("Error", error?.data?.message || "Failed to record your vote. Please try again.");
+    } finally {
+      setVotingPollMessageId(null);
+    }
+  };
+
+  const handleClosePoll = (message: ChatMessage) => {
+    Alert.alert(
+      "End Poll",
+      "Nobody will be able to vote after this. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "End Poll",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await closePoll({ chat_message_id: message.id }).unwrap();
+              if (response?.data?.poll) {
+                patchPollInCache(message.id, response.data.poll);
+              }
+            } catch (error: any) {
+              console.error("Failed to close poll:", error);
+              Alert.alert("Error", error?.data?.message || "Failed to end the poll.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleViewPollVoters = (message: ChatMessage) => {
+    setVotersModalMessage(message);
+  };
+
+  // Hydrate poll messages that arrived via the regular history fetch (which
+  // never carries poll data — see GetChatMessagesResDTO) rather than a
+  // realtime broadcast, e.g. scrolling back to an older poll, or a cold
+  // app restart where the user's own earlier vote needs restoring.
+  const hydratedPollIdsRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    const idsNeedingHydration: (string | number)[] = (messages as ChatMessage[])
+      .filter((m: ChatMessage) => m.type === "poll" && !m.poll && !hydratedPollIdsRef.current.has(String(m.id)))
+      .map((m: ChatMessage) => m.id);
+
+    if (idsNeedingHydration.length === 0) return;
+
+    idsNeedingHydration.forEach((id: string | number) => hydratedPollIdsRef.current.add(String(id)));
+
+    triggerGetPollDetails({ chat_message_ids: idsNeedingHydration })
+      .unwrap()
+      .then((response) => {
+        const polls = response?.data?.polls || [];
+        polls.forEach(({ chat_message_id, poll }) => patchPollInCache(chat_message_id, poll));
+      })
+      .catch(() => {
+        // Allow retry on the next render if hydration failed.
+        idsNeedingHydration.forEach((id: string | number) => hydratedPollIdsRef.current.delete(String(id)));
+      });
+  }, [messages]);
 
   const handleSendAttachment = async (
     type: "image" | "file" | "video",
@@ -894,6 +1023,11 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
                   }}
                   onLongPress={handleMessageLongPress}
                   onReactionPress={(emoji) => handleToggleReaction(item, emoji)}
+                  isAdmin={isAdmin}
+                  isPollVoting={votingPollMessageId !== null && String(votingPollMessageId) === String(item.id)}
+                  onVotePoll={handleVotePoll}
+                  onClosePoll={handleClosePoll}
+                  onViewPollVoters={handleViewPollVoters}
                   onDelete={(msg) => {
                     Alert.alert(
                       "Delete Message",
@@ -1074,6 +1208,7 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
             isAdmin={isAdmin}
             isUploading={isUploading}
             uploadProgress={uploadProgress}
+            onCreatePoll={isAdmin ? () => setShowCreatePollModal(true) : undefined}
             onTyping={() => {
               RealTimeNotificationService.sendTypingIndicator(Number(currentGroup.id), user?.full_name || 'Someone');
             }}
@@ -1084,6 +1219,16 @@ const ChatView: React.FC<ChatViewProps> = ({ group, onBack, onInfoPress, onUploa
         visible={showReceiptsModal}
         onClose={() => setShowReceiptsModal(false)}
         message={selectedMessage}
+      />
+      <CreatePollModal
+        visible={showCreatePollModal}
+        onClose={() => setShowCreatePollModal(false)}
+        onCreate={handleCreatePoll}
+      />
+      <PollVotersModal
+        visible={votersModalMessage !== null}
+        chatMessageId={votersModalMessage?.id ?? null}
+        onClose={() => setVotersModalMessage(null)}
       />
 
       {isPreviewVisible && (

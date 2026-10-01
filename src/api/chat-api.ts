@@ -1,5 +1,6 @@
+import * as FileSystem from "expo-file-system";
 import { apiServer1 } from "./api-server-1";
-import { ChatGroup, ChatMember, ChatMessage, MessageReceipt, User } from "../components/notifications/chat/ChatTypes";
+import { ChatGroup, ChatMember, ChatMessage, MessageReceipt, PollSummary, PollVoterOption, User } from "../components/notifications/chat/ChatTypes";
 
 export interface GetChatThreadsRequest {
   page?: number;
@@ -242,6 +243,54 @@ export interface UploadVoiceNoteResponse {
     size: number;
     mime_type: string;
   };
+}
+
+export interface CreatePollRequest {
+  chat_group_id: string | number;
+  question: string;
+  options: string[];
+  allows_multiple_answers?: boolean;
+}
+
+export interface CreatePollResponse {
+  success: boolean;
+  message: string;
+  data: { message: ChatMessage };
+}
+
+export interface VotePollRequest {
+  chat_message_id: string | number;
+  option_ids: (string | number)[];
+}
+
+export interface VotePollResponse {
+  success: boolean;
+  message: string;
+  data: { poll: PollSummary };
+}
+
+export interface ClosePollRequest {
+  chat_message_id: string | number;
+}
+
+export interface GetPollDetailsRequest {
+  chat_message_ids: (string | number)[];
+}
+
+export interface GetPollDetailsResponse {
+  success: boolean;
+  message: string;
+  data: { polls: { chat_message_id: string | number; poll: PollSummary }[] };
+}
+
+export interface GetPollVotersRequest {
+  chat_message_id: string | number;
+}
+
+export interface GetPollVotersResponse {
+  success: boolean;
+  message: string;
+  data: { options: PollVoterOption[] };
 }
 
 export interface GetMessageReadReceiptsResponse {
@@ -507,17 +556,51 @@ export const chatApi = apiServer1.injectEndpoints({
       ],
     }),
 
+    // A real device-picked audio file (a full mp3 track, say) is far bigger
+    // than the short clips the old in-app recorder ever produced, and RN's
+    // fetch() polyfill (what the rest of this file's `query:` mutations use
+    // under the hood) is unreliable for multipart bodies of that size — it
+    // was failing with a bare "Network request failed" before even reaching
+    // the server. expo-file-system's uploadAsync hands the request to the
+    // native platform's own upload APIs instead, which don't have that
+    // limitation, so this uses a custom queryFn rather than `query:`.
     uploadVoiceNote: builder.mutation<UploadVoiceNoteResponse, UploadVoiceNoteRequest>({
-      query: (data) => {
-        const formData = new FormData();
-        formData.append("chat_group_id", data.chat_group_id.toString());
-        formData.append("audio", data.audio);
+      async queryFn(data, { getState }) {
+        try {
+          const state = getState() as any;
+          const token = state?.app?.token;
+          // fetchBaseQuery (used elsewhere in this file) joins baseUrl+path
+          // for us; here we're bypassing it, so the slash has to be added
+          // explicitly — without it "https://host.tld" + "api/..." fuses
+          // into a single bogus hostname ("host.tldapi").
+          const baseUrl = (process.env.EXPO_PUBLIC_BASE_URL_API_SERVER_1 || "").replace(/\/+$/, "");
+          const url = `${baseUrl}/api/communication-management/chats/voice-notes/upload`;
 
-        return {
-          url: "api/communication-management/chats/voice-notes/upload",
-          method: "POST",
-          body: formData,
-        };
+          const result = await FileSystem.uploadAsync(url, data.audio.uri, {
+            httpMethod: "POST",
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: "audio",
+            mimeType: data.audio.type,
+            parameters: {
+              chat_group_id: data.chat_group_id.toString(),
+            },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+
+          if (result.status < 200 || result.status >= 300) {
+            let message = `Upload failed (${result.status})`;
+            try {
+              message = JSON.parse(result.body)?.message || message;
+            } catch {}
+            return { error: { status: result.status, data: message } as any };
+          }
+
+          return { data: JSON.parse(result.body) as UploadVoiceNoteResponse };
+        } catch (error: any) {
+          return {
+            error: { status: "FETCH_ERROR", error: error?.message || "Upload failed" } as any,
+          };
+        }
       },
     }),
 
@@ -528,6 +611,50 @@ export const chatApi = apiServer1.injectEndpoints({
         body: data,
       }),
       invalidatesTags: ["ChatThreads"],
+    }),
+
+    createPoll: builder.mutation<CreatePollResponse, CreatePollRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/polls/create",
+        method: "POST",
+        body: data,
+      }),
+    }),
+
+    votePoll: builder.mutation<VotePollResponse, VotePollRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/polls/vote",
+        method: "POST",
+        body: data,
+      }),
+    }),
+
+    closePoll: builder.mutation<VotePollResponse, ClosePollRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/polls/close",
+        method: "POST",
+        body: data,
+      }),
+    }),
+
+    // Batched, called once per loaded page of poll messages — aggregate
+    // results only, never voter identities (see getPollVoters below).
+    getPollDetails: builder.query<GetPollDetailsResponse, GetPollDetailsRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/polls/details",
+        method: "POST",
+        body: data,
+      }),
+    }),
+
+    // Admin-only (also enforced server-side) — the only query that ever
+    // returns voter identity.
+    getPollVoters: builder.query<GetPollVotersResponse, GetPollVotersRequest>({
+      query: (data) => ({
+        url: "api/communication-management/chats/polls/voters",
+        method: "POST",
+        body: data,
+      }),
     }),
 
     deleteChatGroup: builder.mutation<any, DeleteChatGroupRequest>({
@@ -592,6 +719,13 @@ export const {
   useGetChatGroupMediaQuery,
   useUploadVoiceNoteMutation,
   useSetChatGroupVoiceNoteMutation,
+  useCreatePollMutation,
+  useVotePollMutation,
+  useClosePollMutation,
+  useGetPollDetailsQuery,
+  useLazyGetPollDetailsQuery,
+  useGetPollVotersQuery,
+  useLazyGetPollVotersQuery,
   useDeleteChatGroupMutation,
   useSearchChatUsersQuery,
   useToggleChatGroupPinMutation,

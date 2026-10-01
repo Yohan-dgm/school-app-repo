@@ -5,7 +5,6 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImageManipulator from "expo-image-manipulator";
-import { useVoiceRecorder } from "../../../hooks/useVoiceRecorder";
 
 interface ChatInputBarProps {
   onSendMessage: (text: string) => void | Promise<void>;
@@ -17,14 +16,25 @@ interface ChatInputBarProps {
   isUploading?: boolean;
   uploadProgress?: number;
   onTyping?: () => void;
+  onCreatePoll?: () => void;
 }
 
-const formatRecordingTime = (millis: number): string => {
-  const totalSeconds = Math.max(0, Math.floor(millis / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-};
+// Extensions UploadVoiceNoteAction.php actually accepts server-side —
+// checked client-side too so picking an unsupported audio file fails fast
+// with a friendly message instead of a wasted upload-then-reject round trip.
+const SUPPORTED_VOICE_NOTE_EXTENSIONS = ["m4a", "mp3", "aac", "wav", "caf"];
+// Some providers (iCloud placeholders, "Recently Added"/media-library
+// items surfaced through the Files picker, etc.) hand back a name with no
+// extension or an unexpected one even for a perfectly normal mp3/m4a —
+// mimeType is checked too so a valid pick from one of those isn't
+// wrongly flagged as unsupported just because the filename looked odd.
+const SUPPORTED_VOICE_NOTE_MIME_TYPES = [
+  "audio/mp4", "audio/x-m4a", "audio/m4a",
+  "audio/mpeg", "audio/mp3",
+  "audio/aac", "audio/aacp", "audio/x-aac",
+  "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave",
+  "audio/x-caf", "audio/caf",
+];
 
 const ChatInputBar: React.FC<ChatInputBarProps> = ({ 
   onSendMessage, 
@@ -35,14 +45,14 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
   isAdmin = false,
   isUploading = false,
   uploadProgress = 0,
-  onTyping
+  onTyping,
+  onCreatePoll
 }) => {
   const insets = useSafeAreaInsets();
   const [message, setMessage] = React.useState(initialValue);
   const [showAttachments, setShowAttachments] = React.useState(false);
-  const [recordedNote, setRecordedNote] = React.useState<{ uri: string; durationMillis: number } | null>(null);
+  const [pendingVoiceNote, setPendingVoiceNote] = React.useState<{ uri: string; name: string; type: string; size?: number } | null>(null);
   const [selection, setSelection] = React.useState({ start: 0, end: 0 });
-  const voiceRecorder = useVoiceRecorder();
 
   const hasTextSelection = selection.end > selection.start;
 
@@ -68,32 +78,67 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
     setSelection({ start: newCursor, end: newCursor });
   };
 
-  const handleMicPress = async () => {
-    Keyboard.dismiss();
-    await voiceRecorder.start();
-  };
+  const handlePickVoiceNote = async () => {
+    try {
+      Keyboard.dismiss();
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+      });
 
-  const handleStopRecording = async () => {
-    const result = await voiceRecorder.stop();
-    if (result) {
-      setRecordedNote(result);
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const extension = (asset.name.split(".").pop() || "").trim().toLowerCase();
+      const mimeType = (asset.mimeType || "").trim().toLowerCase();
+      const extensionOk = SUPPORTED_VOICE_NOTE_EXTENSIONS.includes(extension);
+      const mimeOk = SUPPORTED_VOICE_NOTE_MIME_TYPES.includes(mimeType);
+
+      // Only block when NEITHER signal recognizes the format — the picker
+      // was already filtered to audio/*, so an inconclusive name/mimeType
+      // pair is far more likely to be a provider quirk than an actually
+      // unsupported file.
+      if (!extensionOk && !mimeOk) {
+        Alert.alert(
+          "Unsupported Format",
+          "Please select an M4A, MP3, AAC, WAV, or CAF audio file."
+        );
+        return;
+      }
+
+      // Matches UploadVoiceNoteAction.php's own 20MB cap — fail fast
+      // instead of running a doomed upload for an oversized file.
+      if (asset.size && asset.size > 20 * 1024 * 1024) {
+        Alert.alert("File Too Large", "Please select an audio file smaller than 20MB.");
+        return;
+      }
+
+      setPendingVoiceNote({
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType || "audio/m4a",
+        size: asset.size,
+      });
+      setShowAttachments(false);
+    } catch (error) {
+      console.error("Error picking voice note:", error);
+      Alert.alert("Error", "Failed to pick audio file");
     }
   };
 
-  const handleDiscardRecording = async () => {
-    await voiceRecorder.discard();
-    setRecordedNote(null);
+  const handleDiscardVoiceNote = () => {
+    setPendingVoiceNote(null);
   };
 
   const handleSendVoiceNote = () => {
-    if (!recordedNote) return;
+    if (!pendingVoiceNote) return;
     const file = {
-      uri: recordedNote.uri,
-      name: `voice-note-${Date.now()}.m4a`,
-      type: "audio/m4a",
+      uri: pendingVoiceNote.uri,
+      name: pendingVoiceNote.name,
+      type: pendingVoiceNote.type,
     };
-    onSendAttachment("file", file, { duration_ms: recordedNote.durationMillis, is_voice_note: true });
-    setRecordedNote(null);
+    onSendAttachment("file", file, { is_voice_note: true });
+    setPendingVoiceNote(null);
   };
 
   // Update input when initialValue changes (e.g., when editing starts)
@@ -249,7 +294,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
             <Text className="text-[10px] text-gray-600">Gallery</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity 
+          <TouchableOpacity
             className="items-center"
             onPress={handlePickDocument}
           >
@@ -257,6 +302,31 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
               <MaterialIcons name="insert-drive-file" size={24} color="white" />
             </View>
             <Text className="text-[10px] text-gray-600">Document</Text>
+          </TouchableOpacity>
+
+          {onCreatePoll && (
+            <TouchableOpacity
+              className="items-center"
+              onPress={() => {
+                setShowAttachments(false);
+                onCreatePoll();
+              }}
+            >
+              <View className="w-12 h-12 bg-blue-600 rounded-full items-center justify-center mb-1">
+                <MaterialIcons name="poll" size={24} color="white" />
+              </View>
+              <Text className="text-[10px] text-gray-600">Poll</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            className="items-center"
+            onPress={handlePickVoiceNote}
+          >
+            <View className="w-12 h-12 bg-purple-500 rounded-full items-center justify-center mb-1">
+              <MaterialIcons name="mic" size={24} color="white" />
+            </View>
+            <Text className="text-[10px] text-gray-600">Voice</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -289,29 +359,15 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
           </View>
         )}
 
-        {voiceRecorder.isRecording ? (
-          <View className="flex-row items-center px-2 py-1">
-            <View className="w-2.5 h-2.5 rounded-full bg-red-500 mr-2" />
-            <Text className="flex-1 text-gray-700 font-semibold">
-              Recording... {formatRecordingTime(voiceRecorder.durationMillis)}
-            </Text>
-            <TouchableOpacity
-              className="p-3 rounded-full bg-red-500 ml-1"
-              onPress={handleStopRecording}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="stop" size={20} color="white" />
-            </TouchableOpacity>
-          </View>
-        ) : recordedNote ? (
+        {pendingVoiceNote ? (
           <View className="flex-row items-center px-1 py-1">
-            <TouchableOpacity className="p-2" onPress={handleDiscardRecording} activeOpacity={0.7}>
+            <TouchableOpacity className="p-2" onPress={handleDiscardVoiceNote} activeOpacity={0.7}>
               <MaterialIcons name="delete-outline" size={24} color="#ef4444" />
             </TouchableOpacity>
             <View className="flex-1 flex-row items-center bg-gray-100 rounded-full px-4 py-2.5 mx-1">
               <MaterialIcons name="mic" size={18} color="#2563eb" />
-              <Text className="text-gray-700 font-semibold ml-2">
-                Voice note · {formatRecordingTime(recordedNote.durationMillis)}
+              <Text className="text-gray-700 font-semibold ml-2" numberOfLines={1}>
+                {pendingVoiceNote.name}
               </Text>
             </View>
             <TouchableOpacity
@@ -369,7 +425,7 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
               />
             </View>
 
-            {message.trim() ? (
+            {message.trim() && (
               <TouchableOpacity
                 className={`p-3 rounded-full ml-1 ${!isUploading ? "bg-green-600" : "bg-gray-200"}`}
                 onPress={handleSend}
@@ -381,15 +437,6 @@ const ChatInputBar: React.FC<ChatInputBarProps> = ({
                 ) : (
                   <MaterialIcons name="send" size={20} color="white" />
                 )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                className="p-3 rounded-full ml-1 bg-gray-200"
-                onPress={handleMicPress}
-                disabled={isUploading}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons name="mic" size={20} color={isUploading ? "#d1d5db" : "#374151"} />
               </TouchableOpacity>
             )}
             </View>

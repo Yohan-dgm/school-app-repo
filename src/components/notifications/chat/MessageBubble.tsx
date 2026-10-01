@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Image, TouchableOpacity, Linking, ActivityIndicator } from "react-native";
+import { View, Text, Image, TouchableOpacity, Linking, ActivityIndicator, useWindowDimensions } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useSelector } from "react-redux";
 import { ChatMessage } from "./ChatTypes";
@@ -10,6 +10,7 @@ import MediaPreviewModal from "../../common/MediaPreviewModal";
 import * as ChatMediaCacheService from "../../../services/media/ChatMediaCacheService";
 import { RootState } from "../../../state-store/store";
 import VoiceNoteBubble from "./VoiceNoteBubble";
+import PollBubble from "./PollBubble";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -21,18 +22,28 @@ interface MessageBubbleProps {
   onDelete?: (message: ChatMessage) => void;
   onReactionPress?: (emoji: string) => void;
   currentUserId?: string | number;
+  isAdmin?: boolean;
+  isPollVoting?: boolean;
+  onVotePoll?: (message: ChatMessage, optionIds: (string | number)[]) => void;
+  onClosePoll?: (message: ChatMessage) => void;
+  onViewPollVoters?: (message: ChatMessage) => void;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ 
-  message, 
-  isMe, 
-  showSenderName, 
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  isMe,
+  showSenderName,
   canViewReceipts,
   onShowReceipts,
   onLongPress,
   onDelete,
   onReactionPress,
-  currentUserId
+  currentUserId,
+  isAdmin,
+  isPollVoting,
+  onVotePoll,
+  onClosePoll,
+  onViewPollVoters
 }) => {
   const [imageLoading, setImageLoading] = React.useState(true);
   const [imageError, setImageError] = React.useState(false);
@@ -40,6 +51,28 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const [cachedLocalUri, setCachedLocalUri] = React.useState<string | null>(null);
   const token = useSelector((state: RootState) => state.app.token);
   const timestamp = new Date(message.timestamp);
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Poll bubbles need a real, known width applied to the OUTER bubble
+  // itself — not just to PollBubble's own root — because the outer
+  // TouchableOpacity below is shrink-to-fit (max-w-[85%], no fixed width).
+  // A shrink-to-fit parent sizing itself around a child that's also trying
+  // to compute its own width creates a circular layout dependency that RN's
+  // Yoga engine can resolve ambiguously (this was the actual root cause of
+  // poll option rows appearing to overflow/get cut off, even with
+  // overflow:hidden set — that only clips AFTER Yoga has already resolved a
+  // wrong size). Giving the outer bubble an explicit width up front removes
+  // the ambiguity: every descendant, including PollBubble, now lays out
+  // against a definitely-known parent size.
+  const ROW_HORIZONTAL_PADDING = 24; // px-3 on the message row (both sides)
+  const BUBBLE_OWN_PADDING = 26; // px-3 + border on the bubble itself (both sides)
+  const SAFETY_MARGIN = 10;
+  const maxOuterWidth = (screenWidth - ROW_HORIZONTAL_PADDING) * 0.85;
+  const pollOuterWidth = Math.max(
+    200 + BUBBLE_OWN_PADDING,
+    Math.min(Math.round(maxOuterWidth - SAFETY_MARGIN), 340 + BUBBLE_OWN_PADDING)
+  );
+  const pollContentWidth = pollOuterWidth - BUBBLE_OWN_PADDING;
 
   // Prewarm the on-device media cache for attachments in the background so
   // repeat opens (and the full-screen preview) are instant. Images also
@@ -244,6 +277,34 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             onLongPress={() => onLongPress?.(message)}
           />
         );
+      case "poll":
+        if (!message.poll) {
+          // Still hydrating aggregate poll data (see ChatView's
+          // getPollDetails effect) — show a lightweight placeholder instead
+          // of an empty bubble.
+          return (
+            <View style={{ minWidth: 160 }} className="flex-row items-center py-1">
+              <ActivityIndicator size="small" color={isMe ? "black" : "#2563eb"} />
+              <Text className={`ml-2 text-[13px] ${isMe ? "text-black/70" : "text-gray-500"}`}>
+                Loading poll...
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <PollBubble
+            question={message.content}
+            poll={message.poll}
+            isMe={isMe}
+            width={pollContentWidth}
+            isAdmin={isAdmin}
+            isCreator={currentUserId !== undefined && String(message.sender_id ?? message.user_id) === String(currentUserId)}
+            isVoting={isPollVoting}
+            onVote={(optionIds) => onVotePoll?.(message, optionIds)}
+            onClosePoll={() => onClosePoll?.(message)}
+            onViewVoters={() => onViewPollVoters?.(message)}
+          />
+        );
       case "video":
         const videoUrl = resolveMediaUrl(message.attachment_url || message.content);
         return (
@@ -328,11 +389,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       <TouchableOpacity
         activeOpacity={0.8}
         onLongPress={() => onLongPress?.(message)}
-        className={`max-w-[85%] rounded-[18px] ${message.type === 'file' ? 'px-2 py-1.5' : 'px-3 py-2'} shadow-sm ${
+        className={`max-w-[85%] rounded-[18px] ${message.type === 'file' ? 'px-2 py-1.5' : 'px-3 py-2'} shadow-sm ${message.type === 'poll' ? 'overflow-hidden' : ''} ${
           isMe
             ? "bg-[#E3F2FD] rounded-tr-none border border-[#BBDEFB]" // Light Blue for own messages
             : "bg-white rounded-tl-none border border-gray-100"
         }`}
+        style={message.type === 'poll' ? { width: pollOuterWidth, maxWidth: pollOuterWidth } : undefined}
       >
         <View className="flex-row items-center justify-between mb-1">
           {showSenderName && !isMe && (

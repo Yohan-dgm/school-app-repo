@@ -211,104 +211,77 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
       >
         {/* Card Header */}
         <View style={styles.header}>
-          <View style={styles.categorySection}>
-            <View style={styles.categoryIcon}>
-              <MaterialIcons
-                name="psychology"
-                size={20}
-                color={feedbackCardTheme.primary}
-              />
-            </View>
-            <View style={styles.categoryInfo}>
+          <View style={styles.categoryIcon}>
+            <MaterialIcons
+              name="psychology"
+              size={16}
+              color={feedbackCardTheme.primary}
+            />
+          </View>
+
+          <View style={styles.categoryInfo}>
+            <View style={styles.categoryTitleRow}>
               <Text style={styles.categoryTitle} numberOfLines={1}>
                 {feedback.category.name}
               </Text>
-              <Text style={styles.categorySubtitle}>
-                {getRatingText(ratingValue)}
-              </Text>
+              {!isActive && (
+                <View style={styles.inactiveBadge}>
+                  <Text style={styles.inactiveBadgeText}>Inactive</Text>
+                </View>
+              )}
             </View>
-            {!isActive && (
-              <View style={styles.inactiveBadge}>
-                <Text style={styles.inactiveBadgeText}>Inactive</Text>
-              </View>
-            )}
+            <Text style={styles.metaText} numberOfLines={1}>
+              {feedback.created_by.call_name_with_title} •{" "}
+              {formatDate(feedback.created_at)}
+            </Text>
           </View>
 
-          <AnimatedStarRating
-            rating={ratingValue}
-            size={18}
-            animationDelay={getStarAnimationDelay()}
-            showRatingText={false}
-            compact={true}
-          />
-        </View>
-
-        {/* Rating Badge */}
-        <View style={styles.ratingBadgeContainer}>
-          <View
-            style={[
-              styles.ratingBadge,
-              { backgroundColor: getRatingColor(ratingValue) + "15" },
-            ]}
-          >
+          <View style={styles.ratingCompact}>
+            <AnimatedStarRating
+              rating={ratingValue}
+              size={12}
+              animationDelay={getStarAnimationDelay()}
+              showRatingText={false}
+              compact={true}
+            />
             <Text
               style={[
-                styles.ratingBadgeText,
+                styles.ratingCompactText,
                 { color: getRatingColor(ratingValue) },
               ]}
             >
-              {ratingValue.toFixed(1)} • {getRatingText(ratingValue)}
+              {ratingValue.toFixed(1)}
             </Text>
           </View>
         </View>
 
-        {/* Comment Section */}
+        {/* Comment */}
         {getMainComment() && (
-          <View style={styles.commentSection}>
-            <Text style={styles.commentLabel}>Feedback Comment</Text>
-            <Text style={styles.commentText} numberOfLines={3}>
-              {getMainComment()}
-            </Text>
-          </View>
+          <Text style={styles.commentText} numberOfLines={2}>
+            {getMainComment()}
+          </Text>
         )}
 
-        {/* Meta Information */}
-        <View style={styles.metaSection}>
-          <View style={styles.creatorInfo}>
-            <MaterialIcons
-              name="person"
-              size={16}
-              color={feedbackCardTheme.grayMedium}
-            />
-            <Text style={styles.creatorText}>
-              {feedback.created_by.call_name_with_title}
-            </Text>
-          </View>
-          <Text style={styles.dateText}>{formatDate(feedback.created_at)}</Text>
-        </View>
-
-        {/* Evaluations Button */}
+        {/* Evaluations Link */}
         {feedback.evaluations && feedback.evaluations.length > 0 && (
           <TouchableOpacity
-            style={styles.evaluationsButton}
+            style={styles.evaluationsRow}
             onPress={handleEvaluationsPress}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <View style={styles.evaluationsButtonContent}>
-              <MaterialIcons
-                name="list"
-                size={18}
-                color={feedbackCardTheme.white}
-              />
-              <Text style={styles.evaluationsButtonText}>
-                View All Evaluations ({feedback.evaluations.length})
-              </Text>
-              <MaterialIcons
-                name="arrow-forward"
-                size={16}
-                color={feedbackCardTheme.white}
-              />
-            </View>
+            <MaterialIcons
+              name="list-alt"
+              size={14}
+              color={feedbackCardTheme.primary}
+            />
+            <Text style={styles.evaluationsRowText}>
+              View all evaluations ({feedback.evaluations.length})
+            </Text>
+            <MaterialIcons
+              name="chevron-right"
+              size={16}
+              color={feedbackCardTheme.primary}
+            />
           </TouchableOpacity>
         )}
 
@@ -345,19 +318,19 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
 
 const styles = StyleSheet.create({
   cardContainer: {
-    marginHorizontal: 12, // Reduced from 16
-    marginVertical: 6, // Reduced from 8
+    marginHorizontal: 12,
+    marginVertical: 4,
   },
   card: {
     backgroundColor: feedbackCardTheme.surface,
-    borderRadius: 12, // Reduced from 16
-    padding: 14, // Reduced from 20
+    borderRadius: 10,
+    padding: 12,
     shadowColor: feedbackCardTheme.shadow.medium,
-    shadowOffset: { width: 0, height: 3 }, // Reduced from 4
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 1,
-    shadowRadius: 10, // Reduced from 12
-    elevation: 6, // Reduced from 8
-    borderLeftWidth: 3, // Reduced from 4
+    shadowRadius: 4,
+    elevation: 2,
+    borderLeftWidth: 3,
     borderLeftColor: feedbackCardTheme.primary,
   },
   inactiveCard: {
@@ -366,128 +339,74 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12, // Reduced from 16
-  },
-  categorySection: {
-    flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    marginRight: 12, // Reduced from 16
+    marginBottom: 6,
   },
   categoryIcon: {
-    width: 34, // Reduced from 40
-    height: 34, // Reduced from 40
-    borderRadius: 17, // Reduced from 20
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: feedbackCardTheme.primary + "15",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 10, // Reduced from 12
+    marginRight: 8,
   },
   categoryInfo: {
     flex: 1,
+    marginRight: 8,
+  },
+  categoryTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   categoryTitle: {
-    fontSize: 15, // Reduced from 16
+    fontSize: 14,
     fontWeight: "700",
     color: feedbackCardTheme.black,
-    marginBottom: 2,
   },
-  categorySubtitle: {
-    fontSize: 12, // Reduced from 13
+  metaText: {
+    fontSize: 11,
     color: feedbackCardTheme.grayMedium,
     fontWeight: "500",
+    marginTop: 1,
   },
   inactiveBadge: {
     backgroundColor: feedbackCardTheme.grayLight,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginLeft: 8,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 6,
   },
   inactiveBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     color: feedbackCardTheme.grayMedium,
     fontWeight: "600",
   },
-  ratingBadgeContainer: {
-    marginBottom: 12, // Reduced from 16
+  ratingCompact: {
+    alignItems: "flex-end",
   },
-  ratingBadge: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    borderRadius: 16, // Reduced from 20
-    paddingHorizontal: 10, // Reduced from 12
-    paddingVertical: 5, // Reduced from 6
-  },
-  ratingBadgeText: {
-    fontSize: 11, // Reduced from 12
-    fontWeight: "600",
-  },
-  commentSection: {
-    marginBottom: 12, // Reduced from 16
-  },
-  commentLabel: {
-    fontSize: 11, // Reduced from 12
-    fontWeight: "600",
-    color: feedbackCardTheme.grayMedium,
-    marginBottom: 5, // Reduced from 6
+  ratingCompactText: {
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
   },
   commentText: {
-    fontSize: 13, // Reduced from 14
+    fontSize: 13,
     color: feedbackCardTheme.grayDark,
-    lineHeight: 18, // Reduced from 20
+    lineHeight: 17,
+    marginBottom: 6,
   },
-  metaSection: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10, // Reduced from 12
-  },
-  creatorInfo: {
+  evaluationsRow: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
+    paddingVertical: 6,
   },
-  creatorText: {
-    fontSize: 12, // Reduced from 13
-    color: feedbackCardTheme.grayMedium,
-    fontWeight: "500",
-    marginLeft: 5, // Reduced from 6
-  },
-  dateText: {
-    fontSize: 11, // Reduced from 12
-    color: feedbackCardTheme.grayMedium,
-    fontWeight: "500",
-  },
-  evaluationsButton: {
-    marginTop: 10, // Reduced from 12
-    borderTopWidth: 1,
-    borderTopColor: feedbackCardTheme.grayLight,
-    paddingTop: 10, // Reduced from 12
-  },
-  evaluationsButtonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: feedbackCardTheme.primary,
-    borderRadius: 20, // Reduced from 24
-    paddingVertical: 10, // Reduced from 12
-    paddingHorizontal: 16, // Reduced from 20
-    shadowColor: feedbackCardTheme.shadow.small,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  evaluationsButtonText: {
-    fontSize: 13, // Reduced from 14
+  evaluationsRowText: {
+    fontSize: 12,
     fontWeight: "600",
-    color: feedbackCardTheme.white,
-    marginHorizontal: 6, // Reduced from 8
+    color: feedbackCardTheme.primary,
+    marginLeft: 6,
     flex: 1,
-    textAlign: "center",
   },
 });
 
