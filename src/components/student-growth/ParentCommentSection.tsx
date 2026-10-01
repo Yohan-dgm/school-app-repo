@@ -30,6 +30,7 @@ const ParentCommentSection: React.FC<ParentCommentSectionProps> = ({
   feedbackId,
   compact = true,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isAddingComment, setIsAddingComment] = useState(false);
   const [newCommentText, setNewCommentText] = useState("");
 
@@ -61,7 +62,12 @@ const ParentCommentSection: React.FC<ParentCommentSectionProps> = ({
   console.log("💬 ParentCommentSection - isLoading:", isLoadingComments);
 
   // Handle add comment button
+  const handleToggleExpand = () => {
+    setIsExpanded((prev) => !prev);
+  };
+
   const handleAddCommentPress = () => {
+    setIsExpanded(true);
     setIsAddingComment(true);
     Animated.spring(inputHeightAnim, {
       toValue: 1,
@@ -150,22 +156,34 @@ const ParentCommentSection: React.FC<ParentCommentSectionProps> = ({
   return (
     <View style={[styles.container, compact && styles.compactContainer]}>
       {/* Section Header */}
-      <View style={styles.header}>
+      <TouchableOpacity
+        style={styles.header}
+        onPress={handleToggleExpand}
+        activeOpacity={0.7}
+      >
         <View style={styles.headerLeft}>
           <MaterialIcons
             name="chat-bubble-outline"
-            size={16}
+            size={14}
             color={feedbackCardTheme.primary}
           />
           <Text style={styles.headerTitle}>
             Parent Comments {hasComments && `(${comments.length})`}
           </Text>
         </View>
-        {isLoadingComments && (
+        {isLoadingComments ? (
           <ActivityIndicator size="small" color={feedbackCardTheme.primary} />
+        ) : (
+          <MaterialIcons
+            name={isExpanded ? "expand-less" : "expand-more"}
+            size={18}
+            color={feedbackCardTheme.grayMedium}
+          />
         )}
-      </View>
+      </TouchableOpacity>
 
+      {!isExpanded ? null : (
+      <>
       {/* Add Comment Input (Expandable) - Always show first */}
       {isAddingComment && (
         <Animated.View
@@ -262,6 +280,8 @@ const ParentCommentSection: React.FC<ParentCommentSectionProps> = ({
           ))}
         </View>
       )}
+      </>
+      )}
     </View>
   );
 };
@@ -274,14 +294,13 @@ const styles = StyleSheet.create({
     borderTopColor: feedbackCardTheme.grayLight,
   },
   compactContainer: {
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 6,
+    paddingTop: 6,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
   },
   headerLeft: {
     flexDirection: "row",
@@ -289,7 +308,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: feedbackCardTheme.grayDark,
   },
@@ -330,6 +349,7 @@ const styles = StyleSheet.create({
   },
   addCommentContainer: {
     overflow: "hidden",
+    marginTop: 8,
     marginBottom: 8,
   },
   addInput: {
@@ -381,11 +401,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: feedbackCardTheme.primary + "10",
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: feedbackCardTheme.primary + "20",
     borderStyle: "dashed",
+    marginTop: 8,
   },
   addCommentButtonText: {
     fontSize: 12,

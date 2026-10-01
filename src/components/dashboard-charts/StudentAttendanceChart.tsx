@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router";
 import { LineChart, BarChart } from "react-native-gifted-charts";
 import { MaterialIcons } from "@expo/vector-icons";
 import {

@@ -100,7 +100,7 @@ const SimpleSummaryDashboard = () => {
         <Text style={styles.headerSubtitle}>Principal Summary</Text>
       </View> */}
 
-      <View style={styles.summaryGrid}>
+      {/* <View style={styles.summaryGrid}>
         <SimpleSummaryCard
           title="Students"
           value={isLoading ? "..." : displayData.totalStudents.toLocaleString()}
@@ -136,7 +136,7 @@ const SimpleSummaryDashboard = () => {
           accentColor="#EA580C"
           subtitle="Pending"
         />
-      </View>
+      </View> */}
 
       <View style={styles.housesSection}>
         <Text style={styles.sectionTitle}>School Houses</Text>

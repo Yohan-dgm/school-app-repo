@@ -214,7 +214,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
           <View style={styles.categoryIcon}>
             <MaterialIcons
               name="psychology"
-              size={16}
+              size={13}
               color={feedbackCardTheme.primary}
             />
           </View>
@@ -239,7 +239,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
           <View style={styles.ratingCompact}>
             <AnimatedStarRating
               rating={ratingValue}
-              size={12}
+              size={10}
               animationDelay={getStarAnimationDelay()}
               showRatingText={false}
               compact={true}
@@ -271,7 +271,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
           >
             <MaterialIcons
               name="list-alt"
-              size={14}
+              size={13}
               color={feedbackCardTheme.primary}
             />
             <Text style={styles.evaluationsRowText}>
@@ -279,7 +279,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
             </Text>
             <MaterialIcons
               name="chevron-right"
-              size={16}
+              size={14}
               color={feedbackCardTheme.primary}
             />
           </TouchableOpacity>
@@ -319,17 +319,17 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({
 const styles = StyleSheet.create({
   cardContainer: {
     marginHorizontal: 12,
-    marginVertical: 4,
+    marginVertical: 3,
   },
   card: {
     backgroundColor: feedbackCardTheme.surface,
     borderRadius: 10,
-    padding: 12,
+    padding: 10,
     shadowColor: feedbackCardTheme.shadow.medium,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 3,
+    elevation: 1,
     borderLeftWidth: 3,
     borderLeftColor: feedbackCardTheme.primary,
   },
@@ -340,12 +340,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   categoryIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: feedbackCardTheme.primary + "15",
     justifyContent: "center",
     alignItems: "center",
@@ -360,12 +360,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   categoryTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: feedbackCardTheme.black,
   },
   metaText: {
-    fontSize: 11,
+    fontSize: 10,
     color: feedbackCardTheme.grayMedium,
     fontWeight: "500",
     marginTop: 1,
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     backgroundColor: feedbackCardTheme.grayLight,
     borderRadius: 10,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     marginLeft: 6,
   },
   inactiveBadgeText: {
@@ -386,23 +386,23 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   ratingCompactText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
-    marginTop: 2,
+    marginTop: 1,
   },
   commentText: {
-    fontSize: 13,
+    fontSize: 12,
     color: feedbackCardTheme.grayDark,
-    lineHeight: 17,
-    marginBottom: 6,
+    lineHeight: 15,
+    marginBottom: 4,
   },
   evaluationsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   evaluationsRowText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
     color: feedbackCardTheme.primary,
     marginLeft: 6,
