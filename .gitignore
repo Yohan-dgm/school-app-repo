@@ -36,3 +36,9 @@ yarn-error.*
 *.apk
 *.aab
 *.ipa
+
+# Google/Firebase service account keys (secrets, never commit)
+school-app-by-toyar-5b3280b47b1b.json
+school-app-by-toyar-firebase-adminsdk-fbsvc-f3ecd2cdbe.json
+*firebase-adminsdk*.json
+*-adminsdk-*.json
