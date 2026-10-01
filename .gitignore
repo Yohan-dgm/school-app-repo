@@ -31,3 +31,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# build artifacts (too large for GitHub)
+*.apk
+*.aab
+*.ipa
