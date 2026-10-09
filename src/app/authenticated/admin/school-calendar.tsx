@@ -1,5 +1,5 @@
 import React from "react";
-import SchoolCalendarMain from "../../../screens/authenticated/admin/school-calendar/SchoolCalendarMain";
+import SchoolCalendarMain from "../../../components/common/SchoolCalendarScreen";
 
 export default function AdminSchoolCalendar() {
   return <SchoolCalendarMain />;

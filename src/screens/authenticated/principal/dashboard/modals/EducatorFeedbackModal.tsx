@@ -66,6 +66,21 @@ import {
 import StudentSelectionWithPagination from "../../../../../components/common/StudentSelectionWithPagination";
 import CategorySelectionComponent from "../../../../../components/educator-feedback/CategorySelectionComponent";
 import QuestionnaireComponent from "../../../../../components/educator-feedback/QuestionnaireComponent";
+import FeedbackCard from "../../../../../components/educator-feedback/FeedbackCard";
+import AddFeedbackWizard from "../../../../../components/educator-feedback/AddFeedbackWizard";
+import {
+  RatingCategoriesStep,
+  RatingCommentStep,
+} from "../../../../../components/educator-feedback/RatingModeFeedbackForm";
+import {
+  useGetFeedbackModeQuery,
+  useGetRatingCategoriesQuery,
+  useSubmitRatingFeedbackMutation,
+  useGetRatingFeedbackListQuery,
+  useDeleteRatingFeedbackMutation,
+  useAddRatingEvaluationMutation,
+  useDeleteRatingEvaluationMutation,
+} from "../../../../../api/educator-feedback-rating-api";
 
 // Profile picture utility imports
 import {
@@ -134,601 +149,6 @@ interface FeedbackItem {
   created_at: string;
   rating?: number;
 }
-
-// Main component starts here
-interface MCQOption {
-  id: number;
-  text: string;
-  marks: number;
-}
-
-interface Question {
-  id: number;
-  text: string;
-  answerType: "likert" | "mcq" | "custom";
-  marks: number; // For likert and custom types
-  required: boolean;
-  mcqOptions: MCQOption[]; // Only for MCQ type
-}
-
-interface CategoryData {
-  title: string;
-  questions: Question[];
-}
-
-interface AddCategoryOverlayProps {
-  visible: boolean;
-  onClose: () => void;
-  onSubmit: (data: CategoryData) => void;
-}
-
-const AddCategoryOverlay: React.FC<AddCategoryOverlayProps> = ({
-  visible,
-  onClose,
-  onSubmit,
-}) => {
-  console.log("🎯 AddCategoryOverlay COMPONENT CREATED with visible:", visible);
-  const [categoryTitle, setCategoryTitle] = React.useState<string>("");
-  const [showCategoryDropdown, setShowCategoryDropdown] = React.useState(false);
-  const [questions, setQuestions] = React.useState<Question[]>([
-    {
-      id: 1,
-      text: "",
-      answerType: "likert",
-      mcqOptions: [],
-      marks: 5,
-      required: false,
-    },
-  ]);
-
-  const handleSubmit = () => {
-    // Basic validation
-    if (!categoryTitle) {
-      Alert.alert("Error", "Please select a category title");
-      return;
-    }
-
-    const emptyQuestions = questions.filter((q) => !q.text.trim());
-    if (emptyQuestions.length > 0) {
-      Alert.alert("Error", "Please fill in all question texts");
-      return;
-    }
-
-    // Validate marks for all questions
-    const invalidMarks = questions.filter((q) => q.marks <= 0);
-    if (invalidMarks.length > 0) {
-      Alert.alert("Error", "All questions must have marks greater than 0");
-      return;
-    }
-
-    // Validate MCQ questions
-    const mcqQuestions = questions.filter((q) => q.answerType === "mcq");
-    for (const mcq of mcqQuestions) {
-      if (mcq.mcqOptions.length < 2) {
-        Alert.alert(
-          "Error",
-          "Multiple choice questions must have at least 2 options"
-        );
-        return;
-      }
-
-      const emptyOptions = mcq.mcqOptions.filter((opt) => !opt.text.trim());
-      if (emptyOptions.length > 0) {
-        Alert.alert("Error", "All multiple choice options must have text");
-        return;
-      }
-
-      const invalidOptionMarks = mcq.mcqOptions.filter((opt) => opt.marks < 0);
-      if (invalidOptionMarks.length > 0) {
-        Alert.alert(
-          "Error",
-          "All multiple choice options must have marks >= 0"
-        );
-        return;
-      }
-    }
-
-    // Submit the data with proper formatting for backend
-    onSubmit({
-      title: categoryTitle,
-      questions: questions.map((q) => ({
-        id: q.id,
-        text: q.text.trim(),
-        answerType: q.answerType,
-        marks: q.answerType === "mcq" ? 0 : q.marks, // MCQ marks are per option
-        required: q.required,
-        mcqOptions:
-          q.answerType === "mcq"
-            ? q.mcqOptions.map((opt) => ({
-                id: opt.id,
-                text: opt.text.trim(),
-                marks: opt.marks,
-              }))
-            : [],
-      })),
-    });
-
-    // Reset form
-    setCategoryTitle("");
-    setQuestions([
-      {
-        id: 1,
-        text: "",
-        answerType: "likert",
-        mcqOptions: [],
-        marks: 5,
-        required: false,
-      },
-    ]);
-  };
-
-  const addQuestion = () => {
-    const newQuestion: Question = {
-      id: Date.now(),
-      text: "",
-      answerType: "likert",
-      mcqOptions: [],
-      marks: 5,
-      required: false,
-    };
-    setQuestions([...questions, newQuestion]);
-  };
-
-  const removeQuestion = (questionId: number) => {
-    if (questions.length > 1) {
-      setQuestions(questions.filter((q) => q.id !== questionId));
-    }
-  };
-
-  const updateQuestion = (
-    questionId: number,
-    field: keyof Question,
-    value: any
-  ) => {
-    setQuestions(
-      questions.map((q) => (q.id === questionId ? { ...q, [field]: value } : q))
-    );
-  };
-
-  const addMCQOption = (questionId: number) => {
-    const question = questions.find((q) => q.id === questionId);
-    if (!question) return;
-
-    const newOption: MCQOption = {
-      id: Date.now(),
-      text: "",
-      marks: 1,
-    };
-    updateQuestion(questionId, "mcqOptions", [
-      ...question.mcqOptions,
-      newOption,
-    ]);
-  };
-
-  const removeMCQOption = (questionId: number, optionId: number) => {
-    const question = questions.find((q) => q.id === questionId);
-    if (!question) return;
-
-    const updatedOptions = question.mcqOptions.filter(
-      (opt) => opt.id !== optionId
-    );
-    updateQuestion(questionId, "mcqOptions", updatedOptions);
-  };
-
-  const updateMCQOption = (
-    questionId: number,
-    optionId: number,
-    field: keyof MCQOption,
-    value: any
-  ) => {
-    const question = questions.find((q) => q.id === questionId);
-    if (!question) return;
-
-    const updatedOptions = question.mcqOptions.map((opt) =>
-      opt.id === optionId ? { ...opt, [field]: value } : opt
-    );
-    updateQuestion(questionId, "mcqOptions", updatedOptions);
-  };
-
-  if (!visible) return null;
-
-  return (
-    <View style={styles.addCategoryOverlay}>
-      <TouchableOpacity
-        style={styles.addCategoryBackdrop}
-        onPress={onClose}
-        activeOpacity={1}
-      />
-      <View style={styles.addCategoryContent}>
-        <ScrollView style={styles.addCategoryScrollView}>
-          {/* Header */}
-          <View style={styles.addCategoryHeader}>
-            <Text style={styles.addCategoryTitle}>Add Category</Text>
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.addCategoryCloseButton}
-            >
-              <MaterialIcons name="close" size={24} color="#920734" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Category Title */}
-          <View style={styles.addCategorySectionContainer}>
-            <Text style={styles.addCategorySectionTitle}>Category Title</Text>
-            <TouchableOpacity
-              style={styles.addCategoryTitleInput}
-              onPress={() => setShowCategoryDropdown(true)}
-            >
-              <Text
-                style={[
-                  styles.dropdownText,
-                  !categoryTitle && styles.placeholderText,
-                ]}
-              >
-                {categoryTitle || "Select intelligence type..."}
-              </Text>
-              <MaterialIcons
-                name="keyboard-arrow-down"
-                size={24}
-                color="#666"
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Questions Section */}
-          <View style={styles.addCategorySectionContainer}>
-            <View style={styles.addCategoryQuestionsHeader}>
-              <Text style={styles.addCategorySectionTitle}>Questions</Text>
-              <TouchableOpacity
-                style={styles.addCategoryAddQuestionButton}
-                onPress={addQuestion}
-              >
-                <MaterialIcons name="add" size={16} color="#920734" />
-                <Text style={styles.addCategoryAddQuestionText}>
-                  Add Question
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {questions.map((question, index) => (
-              <View
-                key={question.id}
-                style={styles.addCategoryQuestionContainer}
-              >
-                <View style={styles.addCategoryQuestionHeader}>
-                  <Text style={styles.addCategoryQuestionLabel}>
-                    Question {index + 1}
-                  </Text>
-                  {questions.length > 1 && (
-                    <TouchableOpacity
-                      style={styles.addCategoryRemoveQuestionButton}
-                      onPress={() => removeQuestion(question.id)}
-                    >
-                      <MaterialIcons name="close" size={20} color="#F44336" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                <TextInput
-                  style={styles.addCategoryQuestionInput}
-                  placeholder="Enter your question..."
-                  value={question.text}
-                  onChangeText={(text) =>
-                    updateQuestion(question.id, "text", text)
-                  }
-                  multiline
-                />
-
-                <Text style={styles.addCategoryAnswerTypeLabel}>
-                  Answer Type
-                </Text>
-                <View style={styles.addCategoryAnswerTypeContainer}>
-                  {(["likert", "mcq", "custom"] as const).map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[
-                        styles.addCategoryAnswerTypeChip,
-                        question.answerType === type &&
-                          styles.addCategorySelectedAnswerType,
-                      ]}
-                      onPress={() => {
-                        updateQuestion(question.id, "answerType", type);
-                        // Reset marks based on answer type
-                        if (type === "likert") {
-                          updateQuestion(question.id, "marks", 5);
-                        } else if (type === "custom") {
-                          updateQuestion(question.id, "marks", 1);
-                        }
-                        // Clear MCQ options when switching away from MCQ
-                        if (type !== "mcq") {
-                          updateQuestion(question.id, "mcqOptions", []);
-                        }
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.addCategoryAnswerTypeText,
-                          question.answerType === type &&
-                            styles.addCategorySelectedAnswerTypeText,
-                        ]}
-                      >
-                        {type === "likert"
-                          ? "Likert Scale (1-5)"
-                          : type === "mcq"
-                            ? "Multiple Choice"
-                            : "Custom Answer"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Marks Input for Likert and Custom types */}
-                {(question.answerType === "likert" ||
-                  question.answerType === "custom") && (
-                  <View style={styles.addCategoryMarksContainer}>
-                    <Text style={styles.addCategoryMarksLabel}>
-                      Marks
-                      {question.answerType === "likert"
-                        ? " (for all scale points)"
-                        : ""}
-                      :
-                    </Text>
-                    <TextInput
-                      style={styles.addCategoryMarksInput}
-                      placeholder="Enter marks"
-                      value={question.marks.toString()}
-                      onChangeText={(text) => {
-                        const marks = parseInt(text) || 1;
-                        updateQuestion(question.id, "marks", marks);
-                      }}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                )}
-
-                {/* Likert Scale Preview */}
-                {question.answerType === "likert" && (
-                  <View style={styles.addCategoryLikertPreview}>
-                    <Text style={styles.addCategoryPreviewLabel}>
-                      Likert Scale Preview:
-                    </Text>
-                    <View style={styles.addCategoryLikertScale}>
-                      {[
-                        { value: 1, label: "Very Low" },
-                        { value: 2, label: "Low" },
-                        { value: 3, label: "Average" },
-                        { value: 4, label: "High" },
-                        { value: 5, label: "Very High" },
-                      ].map((item) => (
-                        <View
-                          key={item.value}
-                          style={styles.addCategoryLikertItem}
-                        >
-                          <View style={styles.addCategoryLikertCircle}>
-                            <Text style={styles.addCategoryLikertNumber}>
-                              {item.value}
-                            </Text>
-                          </View>
-                          <Text style={styles.addCategoryLikertLabel}>
-                            {item.label}
-                          </Text>
-                          <Text style={styles.addCategoryLikertMarks}>
-                            ({question.marks} marks)
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* MCQ Options */}
-                {question.answerType === "mcq" && (
-                  <View style={styles.addCategoryMCQContainer}>
-                    <View style={styles.addCategoryMCQHeader}>
-                      <Text style={styles.addCategoryMCQLabel}>
-                        Multiple Choice Options
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.addCategoryMCQAddButton}
-                        onPress={() => addMCQOption(question.id)}
-                      >
-                        <MaterialIcons name="add" size={16} color="#920734" />
-                        <Text style={styles.addCategoryMCQAddText}>
-                          Add Option
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {question.mcqOptions.map((option, optionIndex) => (
-                      <View
-                        key={option.id}
-                        style={styles.addCategoryMCQOptionContainer}
-                      >
-                        <View style={styles.addCategoryMCQOptionHeader}>
-                          <Text style={styles.addCategoryMCQOptionLabel}>
-                            Option {optionIndex + 1}
-                          </Text>
-                          {question.mcqOptions.length > 1 && (
-                            <TouchableOpacity
-                              style={styles.addCategoryMCQRemoveButton}
-                              onPress={() =>
-                                removeMCQOption(question.id, option.id)
-                              }
-                            >
-                              <MaterialIcons
-                                name="close"
-                                size={16}
-                                color="#F44336"
-                              />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        <TextInput
-                          style={styles.addCategoryMCQOptionInput}
-                          placeholder="Enter option text..."
-                          value={option.text}
-                          onChangeText={(text) =>
-                            updateMCQOption(
-                              question.id,
-                              option.id,
-                              "text",
-                              text
-                            )
-                          }
-                        />
-
-                        <View style={styles.addCategoryMCQMarksContainer}>
-                          <Text style={styles.addCategoryMCQMarksLabel}>
-                            Marks:
-                          </Text>
-                          <TextInput
-                            style={styles.addCategoryMCQMarksInput}
-                            placeholder="0"
-                            value={option.marks.toString()}
-                            onChangeText={(text) => {
-                              const marks = parseInt(text) || 0;
-                              updateMCQOption(
-                                question.id,
-                                option.id,
-                                "marks",
-                                marks
-                              );
-                            }}
-                            keyboardType="numeric"
-                          />
-                        </View>
-                      </View>
-                    ))}
-
-                    {question.mcqOptions.length === 0 && (
-                      <TouchableOpacity
-                        style={styles.addCategoryMCQFirstOption}
-                        onPress={() => addMCQOption(question.id)}
-                      >
-                        <MaterialIcons name="add" size={20} color="#920734" />
-                        <Text style={styles.addCategoryMCQFirstOptionText}>
-                          Add First Option
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-
-                {/* Custom Answer Preview */}
-                {question.answerType === "custom" && (
-                  <View style={styles.addCategoryCustomPreview}>
-                    <Text style={styles.addCategoryPreviewLabel}>
-                      Custom Answer Preview:
-                    </Text>
-                    <TextInput
-                      style={styles.addCategoryCustomAnswerPreview}
-                      placeholder="Students will type their custom answer here..."
-                      multiline
-                      editable={false}
-                    />
-                    <Text style={styles.addCategoryCustomMarksInfo}>
-                      Each custom answer will be awarded {question.marks} marks
-                    </Text>
-                  </View>
-                )}
-
-                {/* Required Toggle */}
-                <TouchableOpacity
-                  style={styles.addCategoryRequiredToggle}
-                  onPress={() =>
-                    updateQuestion(question.id, "required", !question.required)
-                  }
-                >
-                  <MaterialIcons
-                    name={
-                      question.required
-                        ? "check-box"
-                        : "check-box-outline-blank"
-                    }
-                    size={20}
-                    color={question.required ? "#920734" : "#999"}
-                  />
-                  <Text
-                    style={[
-                      styles.addCategoryRequiredLabel,
-                      question.required &&
-                        styles.addCategoryRequiredLabelActive,
-                    ]}
-                  >
-                    Required field
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-
-        {/* Footer */}
-        <View style={styles.addCategoryFooter}>
-          <TouchableOpacity
-            style={styles.addCategoryCancelButton}
-            onPress={onClose}
-          >
-            <Text style={styles.addCategoryCancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addCategorySubmitButton}
-            onPress={handleSubmit}
-          >
-            <Text style={styles.addCategorySubmitButtonText}>Add</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Category Dropdown Modal */}
-      <Modal
-        visible={showCategoryDropdown}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowCategoryDropdown(false)}
-      >
-        <TouchableOpacity
-          style={styles.dropdownOverlay}
-          activeOpacity={1}
-          onPress={() => setShowCategoryDropdown(false)}
-        >
-          <View style={styles.dropdownModal}>
-            <Text style={styles.dropdownTitle}>Select Intelligence Type</Text>
-            <ScrollView style={styles.dropdownList}>
-              {INTELLIGENCE_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type.id}
-                  style={[
-                    styles.dropdownItem,
-                    categoryTitle === type.label && styles.dropdownItemSelected,
-                  ]}
-                  onPress={() => {
-                    setCategoryTitle(type.label);
-                    setShowCategoryDropdown(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownItemText,
-                      categoryTitle === type.label &&
-                        styles.dropdownItemTextSelected,
-                    ]}
-                  >
-                    {type.label}
-                  </Text>
-                  {categoryTitle === type.label && (
-                    <MaterialIcons name="check" size={20} color="#920734" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </View>
-  );
-};
 
 // Evaluation Section Component with Animations
 const EvaluationSection: React.FC<{
@@ -839,7 +259,7 @@ const EvaluationSection: React.FC<{
           {evaluations.length > 0 ? (
             evaluations.map((evaluation: any, index: number) => {
               const colors = getEvaluationStatusColor(
-                evaluation.edu_fd_evaluation_type_id
+                evaluation.edu_fd_evaluation_type_id,
               );
               const isLast = index === evaluations.length - 1;
 
@@ -919,7 +339,7 @@ const EvaluationSection: React.FC<{
                               day: "numeric",
                               hour: "2-digit",
                               minute: "2-digit",
-                            }
+                            },
                           )
                         : "Date not available"}
                     </Text>
@@ -1124,14 +544,14 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     console.warn(
       "⚠️ EducatorFeedbackModal: 'visible' prop should be boolean, received:",
       typeof visible,
-      visible
+      visible,
     );
   }
   if (typeof onClose !== "function") {
     console.warn(
       "⚠️ EducatorFeedbackModal: 'onClose' prop should be function, received:",
       typeof onClose,
-      onClose
+      onClose,
     );
   }
 
@@ -1207,7 +627,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const [feedbackDescription, setFeedbackDescription] = useState("");
   const [mainCategory, setMainCategory] = useState<string>("");
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(
-    []
+    [],
   );
   const [feedbackRating, setFeedbackRating] = useState(0);
   // Inline Add Category State
@@ -1245,7 +665,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
   // Questionnaire States (inline display)
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
-    null
+    null,
   );
   const [questionnaireAnswers, setQuestionnaireAnswers] = useState<{
     [key: string]: {
@@ -1266,7 +686,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     answer: any,
     marks?: number,
     weight?: number,
-    answerId?: number
+    answerId?: number,
   ) => {
     setQuestionnaireAnswers((prev) => ({
       ...prev,
@@ -1392,6 +812,45 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const [submitFeedback, { isLoading: isSubmitting }] =
     useSubmitEducatorFeedbackMutation();
 
+  // Rating mode (second Add Feedback flow, chosen by the database; defaults to classic)
+  const { data: feedbackMode } = useGetFeedbackModeQuery();
+  const isRatingMode = feedbackMode === "rating";
+  const [ratingComment, setRatingComment] = useState("");
+  const [categoryRatings, setCategoryRatings] = useState<{
+    [categoryId: number]: number;
+  }>({});
+  const {
+    data: ratingCategories,
+    isLoading: ratingCategoriesLoading,
+    error: ratingCategoriesError,
+  } = useGetRatingCategoriesQuery(
+    { section: categoryApiType || "" },
+    { skip: !isRatingMode || !categoryApiType },
+  );
+  const [submitRatingFeedback, { isLoading: isSubmittingRating }] =
+    useSubmitRatingFeedbackMutation();
+
+  // Add Feedback wizard: 0 = who, 1 = comment (rating) / category (classic), 2 = ratings / description
+  const [wizardStep, setWizardStep] = useState(0);
+  const wizardStepTitles = isRatingMode
+    ? ["Select students", "Add comment", "Rate categories"]
+    : ["Select students", "Choose category", "Description"];
+  const canProceedWizardStep =
+    wizardStep === 0
+      ? !!selectedGradeId && selectedStudents.length > 0
+      : wizardStep === 1
+        ? isRatingMode
+          ? !!ratingComment.trim()
+          : !!mainCategory
+        : isRatingMode
+          ? Object.values(categoryRatings).some((r) => r > 0)
+          : !!feedbackDescription.trim();
+
+  // Category ids differ per section, so clear ratings when the grade section changes
+  React.useEffect(() => {
+    setCategoryRatings({});
+  }, [categoryApiType]);
+
   // Evaluation mutations
   const [addEvaluation, { isLoading: isAddingEvaluation }] =
     useAddEvaluationMutation();
@@ -1436,19 +895,30 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     });
 
     return payload;
-  }, [
-    currentPage,
-    debouncedSearchText,
-    debouncedFilterGradeId,
-  ]);
+  }, [currentPage, debouncedSearchText, debouncedFilterGradeId]);
 
   // Get feedback list with filters
+  // Rating mode lists one card per submission (new API); classic keeps the per-row list
+  const classicFeedbacks = useGetEducatorFeedbacksQuery(filterPayload, {
+    skip: isRatingMode,
+  });
+  const ratingFeedbacks = useGetRatingFeedbackListQuery(
+    {
+      page: currentPage,
+      page_size: DEFAULT_PAGE_SIZE,
+      grade_filter: debouncedFilterGradeId ?? null,
+    },
+    { skip: !isRatingMode },
+  );
   const {
     data: feedbacksData,
     isLoading: feedbacksLoading,
     error: feedbacksError,
     refetch: refetchFeedbacks,
-  } = useGetEducatorFeedbacksQuery(filterPayload);
+  } = isRatingMode ? ratingFeedbacks : classicFeedbacks;
+  const [deleteRatingFeedback] = useDeleteRatingFeedbackMutation();
+  const [addRatingEvaluation] = useAddRatingEvaluationMutation();
+  const [deleteRatingEvaluation] = useDeleteRatingEvaluationMutation();
 
   const itemsPerPage = DEFAULT_PAGE_SIZE;
 
@@ -1472,7 +942,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   React.useEffect(() => {
     console.log(
       "🔄 Expanded card state changed - expandedItemId:",
-      expandedItemId
+      expandedItemId,
     );
   }, [expandedItemId]);
 
@@ -1482,7 +952,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const mainCategories = React.useMemo(() => {
     console.log(
       "🔍 Processing categories - Raw categoriesData:",
-      categoriesData
+      categoriesData,
     );
     console.log("🔍 Legacy categoriesData:", legacyCategoriesData);
 
@@ -1515,7 +985,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     }
 
     const filteredCategories = categoriesArray.filter(
-      (cat: any) => cat?.active !== false
+      (cat: any) => cat?.active !== false,
     );
     console.log("✅ Filtered categories:", filteredCategories);
     return filteredCategories;
@@ -1651,25 +1121,25 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
       return `Data processing error in ${context}. Please refresh and try again.`;
     },
-    []
+    [],
   );
 
   const handleValidationError = React.useCallback(
     (field: string, value: any, rule: string) => {
       console.warn(
         `⚠️ Validation Error - Field: ${field}, Rule: ${rule}, Value:`,
-        value
+        value,
       );
       return `${field} ${rule}`;
     },
-    []
+    [],
   );
 
   const handleRetryableAction = React.useCallback(
     async (
       action: () => Promise<any>,
       maxRetries: number = 3,
-      context: string = "Action"
+      context: string = "Action",
     ) => {
       let lastError;
 
@@ -1693,7 +1163,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
           if (status === 401 || status === 403 || status === 404) {
             console.log(
-              `🚫 Not retrying ${context} due to error status: ${status}`
+              `🚫 Not retrying ${context} due to error status: ${status}`,
             );
             break;
           }
@@ -1710,7 +1180,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       console.error(`❌ ${context} failed after ${maxRetries} attempts`);
       throw lastError;
     },
-    []
+    [],
   );
 
   // ===== ERROR STATE CHECKS =====
@@ -1844,7 +1314,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     mainCategories.forEach((category: any) => {
       if (category.subcategories && Array.isArray(category.subcategories)) {
         result[category.name] = category.subcategories.map(
-          (sub: any) => sub.name
+          (sub: any) => sub.name,
         );
       } else {
         result[category.name] = [];
@@ -1917,7 +1387,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const customSubcategories: { [key: string]: string[] } = {};
   customCategories.forEach((category) => {
     customSubcategories[category.title] = category.questions.map(
-      (q) => q.text || `Question ${q.id}`
+      (q) => q.text || `Question ${q.id}`,
     );
   });
 
@@ -1954,9 +1424,12 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   const handleToggleAddEvaluationForm = (feedbackId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setShowAddEvaluationForm(
-      showAddEvaluationForm === feedbackId ? null : feedbackId
+      showAddEvaluationForm === feedbackId ? null : feedbackId,
     );
   };
+
+  // Rating submissions have a uuid id; past (classic) feedback has a numeric row id
+  const isRatingId = (id: any) => typeof id === "string" && id.includes("-");
 
   const handleDeleteEvaluation = async (evaluationId: number) => {
     Alert.alert(
@@ -1970,7 +1443,12 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
           onPress: async () => {
             try {
               console.log("🗑️ Deleting evaluation with ID:", evaluationId);
-              const result = await deleteEvaluation(evaluationId).unwrap();
+              const result = isRatingId(expandedItemId)
+                ? await deleteRatingEvaluation({
+                    submission_id: String(expandedItemId),
+                    evaluation_id: evaluationId,
+                  }).unwrap()
+                : await deleteEvaluation(evaluationId).unwrap();
               console.log("✅ Evaluation deleted successfully:", result);
 
               // Force refetch to update the UI immediately
@@ -1984,16 +1462,16 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               Alert.alert(
                 "Error",
                 "Failed to delete evaluation. Please try again.",
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
-  const handleDeleteFeedback = async (feedbackId: string) => {
+  const handleDeleteFeedback = async (feedbackId: string | number) => {
     console.log("🗑️ Delete feedback called with ID:", feedbackId);
     console.log("🗑️ Feedback ID type:", typeof feedbackId);
 
@@ -2009,9 +1487,15 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             try {
               console.log(
                 "🚀 Sending delete request for feedback ID:",
-                feedbackId
+                feedbackId,
               );
-              await deleteFeedback(feedbackId).unwrap();
+              if (isRatingId(feedbackId)) {
+                await deleteRatingFeedback({
+                  submission_id: String(feedbackId),
+                }).unwrap();
+              } else {
+                await deleteFeedback(String(feedbackId)).unwrap();
+              }
               console.log("✅ Feedback deleted successfully");
 
               // Immediately refresh the feedback list
@@ -2026,30 +1510,39 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               Alert.alert(
                 "Success",
                 "Feedback has been deleted successfully.",
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
             } catch (error) {
               console.error("❌ Failed to delete feedback:", error);
               Alert.alert(
                 "Error",
-                "Failed to delete feedback. Please try again."
+                "Failed to delete feedback. Please try again.",
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
   const handleSubmitEvaluation = async (evaluationData: {
-    edu_fb_id: number;
+    edu_fb_id: number | string;
     edu_fd_evaluation_type_id: number;
     reviewer_feedback: string;
     is_parent_visible: boolean;
   }) => {
     try {
       console.log("🚀 Submitting evaluation with data:", evaluationData);
-      await addEvaluation(evaluationData).unwrap();
+      if (isRatingId(evaluationData.edu_fb_id)) {
+        // For a rating submission the item id is its submission_id
+        const { edu_fb_id, ...rest } = evaluationData;
+        await addRatingEvaluation({
+          ...rest,
+          submission_id: String(edu_fb_id),
+        }).unwrap();
+      } else {
+        await addEvaluation(evaluationData as any).unwrap();
+      }
       console.log("✅ Evaluation added successfully");
 
       // Immediately refresh the feedback list to show new evaluation
@@ -2106,6 +1599,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
   };
 
   const handleAddFeedback = () => {
+    setWizardStep(0);
     setShowAddFeedbackModal(true);
   };
 
@@ -2146,169 +1640,9 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       .map((option) => option.marks);
   };
 
-  const handleCreateInlineCategory = async () => {
-    // Validation
-    if (!newCategoryTitle) {
-      Alert.alert("Error", "Please select a category title");
-      return;
-    }
-
-    const validQuestions = newCategoryQuestions.filter((q) => q.text.trim());
-    if (validQuestions.length === 0) {
-      Alert.alert("Error", "Please add at least one question");
-      return;
-    }
-
-    // Validate MCQ questions
-    for (let i = 0; i < validQuestions.length; i++) {
-      const question = validQuestions[i];
-      if (question.answerType === "mcq") {
-        // Check if MCQ has options
-        if (!question.mcqOptions || question.mcqOptions.length === 0) {
-          Alert.alert(
-            "Error",
-            `MCQ question "${question.text}" must have at least one option`
-          );
-          return;
-        }
-
-        // Check if all MCQ options have text
-        const emptyOptions = question.mcqOptions.filter(
-          (opt) => !opt.text.trim()
-        );
-        if (emptyOptions.length > 0) {
-          Alert.alert(
-            "Error",
-            `All MCQ options for question "${question.text}" must have text`
-          );
-          return;
-        }
-
-        // Check if all MCQ options have valid marks (1-5)
-        const invalidMarks = question.mcqOptions.filter(
-          (opt) => opt.marks < 1 || opt.marks > 5
-        );
-        if (invalidMarks.length > 0) {
-          Alert.alert(
-            "Error",
-            `All MCQ options for question "${question.text}" must have marks between 1 and 5`
-          );
-          return;
-        }
-
-        // Check for duplicate marks
-        const marks = question.mcqOptions.map((opt) => opt.marks);
-        const uniqueMarks = [...new Set(marks)];
-        if (marks.length !== uniqueMarks.length) {
-          Alert.alert(
-            "Error",
-            `MCQ options for question "${question.text}" cannot have duplicate marks. Each option must have a unique mark value.`
-          );
-          return;
-        }
-      }
-    }
-
-    setIsCreatingCategory(true);
-
-    try {
-      // Prepare data for API
-      const categoryData = {
-        title: newCategoryTitle,
-        questions: validQuestions.map((q, index) => {
-          // Map answer types to IDs
-          let answerTypeId;
-          switch (q.answerType) {
-            case "likert":
-              answerTypeId = 1;
-              break;
-            case "mcq":
-              answerTypeId = 2;
-              break;
-            case "custom":
-              answerTypeId = 3;
-              break;
-            default:
-              answerTypeId = 1; // Default to Likert Scale
-          }
-
-          const questionData: any = {
-            text: q.text.trim(),
-            answerType: q.answerType, // Keep string for backend compatibility
-            answerTypeId: answerTypeId, // Add numeric ID
-            marks: 1,
-            required: index === 0, // First question is required
-          };
-
-          // Add MCQ options if it's an MCQ question
-          if (
-            q.answerType === "mcq" &&
-            q.mcqOptions &&
-            q.mcqOptions.length > 0
-          ) {
-            questionData.mcqOptions = q.mcqOptions
-              .filter((opt) => opt.text.trim()) // Only include options with text
-              .map((opt) => ({
-                text: opt.text.trim(),
-                marks: opt.marks,
-              }));
-          }
-
-          return questionData;
-        }),
-      };
-
-      console.log("📤 Creating inline category:", categoryData);
-
-      // Call API
-      const result = await createFeedbackCategory(categoryData).unwrap();
-      console.log("✅ Category created successfully:", result);
-
-      // Add to custom categories for immediate UI update
-      const newCategory = {
-        id: result.data?.category?.id || Date.now().toString(),
-        title: newCategoryTitle,
-        questions: validQuestions,
-      };
-      setCustomCategories((prev) => [...prev, newCategory]);
-
-      // Auto-select the new category
-      setMainCategory(newCategoryTitle);
-      setQuestionnaireAnswers({});
-      setSelectedQuestionId(null);
-      setFeedbackRating(0);
-
-      // Reset form and close
-      setNewCategoryTitle("");
-      setNewCategoryQuestions([
-        { text: "", answerType: "likert", mcqOptions: [] },
-      ]);
-      setShowInlineCategoryForm(false);
-
-      Alert.alert(
-        "Success",
-        `Category "${newCategoryTitle}" created successfully! It has been automatically selected as your main category.`,
-        [{ text: "OK" }]
-      );
-    } catch (error: any) {
-      console.error("❌ Failed to create category:", error);
-
-      let errorMessage = "Failed to create category. Please try again.";
-      if (error?.data?.message) {
-        errorMessage = error.data.message;
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-
-      Alert.alert("Error", errorMessage);
-    } finally {
-      setIsCreatingCategory(false);
-    }
-  };
-
   const handleQuestionClick = (questionId: string) => {
     setSelectedQuestionId(
-      selectedQuestionId === questionId ? null : questionId
+      selectedQuestionId === questionId ? null : questionId,
     );
   };
 
@@ -2317,7 +1651,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     answer: any,
     marks?: number,
     weight?: number,
-    answerId?: number
+    answerId?: number,
   ) => {
     console.log("🎯 Answer Handler Called:", {
       questionId,
@@ -2339,7 +1673,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     };
     const answers = Object.values(updatedAnswers);
     const validAnswers = answers.filter(
-      (answer) => answer.marks !== undefined && answer.marks > 0
+      (answer) => answer.marks !== undefined && answer.marks > 0,
     );
 
     if (validAnswers.length > 0) {
@@ -2354,7 +1688,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
       const totalMarks = validAnswers.reduce(
         (sum, answer) => sum + (answer.marks || 0),
-        0
+        0,
       );
 
       // Calculate average and ensure it's within 1-5 bounds
@@ -2385,7 +1719,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     if (selectedSubcategories.includes(subcategory)) {
       // Remove subcategory
       setSelectedSubcategories(
-        selectedSubcategories.filter((sub) => sub !== subcategory)
+        selectedSubcategories.filter((sub) => sub !== subcategory),
       );
     } else {
       // Add subcategory (max 5)
@@ -2394,7 +1728,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       } else {
         Alert.alert(
           "Maximum Limit",
-          "You can select up to 5 subcategories only."
+          "You can select up to 5 subcategories only.",
         );
       }
     }
@@ -2417,11 +1751,19 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             setSelectedSubcategories([]);
           },
         },
-      ]
+      ],
     );
   };
 
   const isFormValid = () => {
+    if (isRatingMode) {
+      return (
+        selectedGradeId &&
+        selectedStudents.length > 0 &&
+        ratingComment.trim() &&
+        Object.values(categoryRatings).some((r) => r > 0)
+      );
+    }
     return (
       selectedGradeId &&
       selectedStudents.length > 0 &&
@@ -2464,7 +1806,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     // Check if questionnaire has required questions
     const requiredQuestions = questionnaireData.filter((q: any) => q.required);
     const answeredRequiredQuestions = requiredQuestions.filter(
-      (q: any) => questionnaireAnswers[q.id]
+      (q: any) => questionnaireAnswers[q.id],
     );
 
     if (
@@ -2474,7 +1816,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
       const unansweredCount =
         requiredQuestions.length - answeredRequiredQuestions.length;
       missingFields.push(
-        `• ${unansweredCount} required questionnaire question(s)`
+        `• ${unansweredCount} required questionnaire question(s)`,
       );
     }
 
@@ -2484,7 +1826,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
         warnings.length > 0 ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
       Alert.alert(
         "Required Fields Missing",
-        `Please complete the following required fields:\n\n${missingFields.join("\n")}${warningText}\n\nNote: Subcategories are optional.`
+        `Please complete the following required fields:\n\n${missingFields.join("\n")}${warningText}\n\nNote: Subcategories are optional.`,
       );
       return;
     }
@@ -2497,7 +1839,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
         [
           { text: "Cancel", style: "cancel" },
           { text: "Submit Anyway", onPress: () => performSubmission() },
-        ]
+        ],
       );
       return;
     }
@@ -2512,26 +1854,26 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
         async () => {
           // Get category ID from selected category
           const selectedCategoryData = mainCategories.find(
-            (cat: any) => cat.name === mainCategory
+            (cat: any) => cat.name === mainCategory,
           );
           const categoryId = selectedCategoryData?.id;
 
           if (!categoryId) {
             throw new Error(
-              "Category ID not found. Please select a valid category."
+              "Category ID not found. Please select a valid category.",
             );
           }
 
           // Additional validation for required backend fields
           if (!selectedGradeId) {
             throw new Error(
-              "Grade level ID is required for backend submission."
+              "Grade level ID is required for backend submission.",
             );
           }
 
           if (selectedStudents.length === 0) {
             throw new Error(
-              "At least one student must be selected for backend submission."
+              "At least one student must be selected for backend submission.",
             );
           }
 
@@ -2545,14 +1887,14 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               edu_fb_predefined_answer_id: answerData.answerId || null,
               selected_predefined_answer_id: answerData.answerId || null,
               answer_mark: answerData.marks || 0,
-            })
+            }),
           );
 
           // Transform subcategories to backend format
           const subcategories_formatted = selectedSubcategories.map(
             (subcategoryName) => ({
               subcategory_name: subcategoryName,
-            })
+            }),
           );
 
           // Prepare data for API submission in backend format
@@ -2604,7 +1946,7 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
           return apiResponse.data;
         },
         2,
-        "Feedback Submission"
+        "Feedback Submission",
       );
 
       console.log("✅ Feedback submitted successfully:", result);
@@ -2664,12 +2006,43 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
               { text: "Cancel", style: "cancel" },
               { text: "Retry", onPress: () => performSubmission() },
             ]
-          : [{ text: "OK" }]
+          : [{ text: "OK" }],
+      );
+    }
+  };
+
+  const handleSubmitRatingFeedback = async () => {
+    if (!isFormValid() || !selectedGradeId || !categoryApiType) return;
+
+    try {
+      await submitRatingFeedback({
+        student_ids: selectedStudents.map((s) => s.id),
+        grade_level_id: selectedGradeId,
+        grade_level_class_id: selectedGradeId,
+        section: categoryApiType as "ey" | "pr" | "sc",
+        comment: ratingComment.trim(),
+        ratings: Object.entries(categoryRatings)
+          .filter(([, rating]) => rating > 0)
+          .map(([categoryId, rating]) => ({
+            category_id: Number(categoryId),
+            rating,
+          })),
+      }).unwrap();
+
+      Alert.alert("Success", "Feedback submitted successfully.");
+      resetForm();
+    } catch (error: any) {
+      Alert.alert(
+        "Submission Failed",
+        error?.data?.message || "Failed to submit feedback. Please try again.",
       );
     }
   };
 
   const resetForm = () => {
+    setWizardStep(0);
+    setRatingComment("");
+    setCategoryRatings({});
     setSelectedGradeId(null);
     setSelectedStudents([]);
     setFeedbackDescription("");
@@ -2702,39 +2075,9 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
     }
   };
 
-  const handleAddCategory = async (categoryData: any) => {
-    console.log("✅ New category data from main modal:", categoryData);
-
-    try {
-      // Call the API to create the category
-      const result = await createFeedbackCategory(categoryData).unwrap();
-      console.log("✅ Category created successfully via main modal:", result);
-
-      Alert.alert(
-        "Category Created!",
-        `Category "${categoryData.title}" with ${categoryData.questions.length} questions has been created successfully!`,
-        [{ text: "OK" }]
-      );
-
-      // Close the modal
-      setShowAddCategoryPopup(false);
-    } catch (error: any) {
-      console.error("❌ Failed to create category via main modal:", error);
-
-      let errorMessage = "Failed to create category. Please try again.";
-      if (error?.data?.message) {
-        errorMessage = error.data.message;
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-
-      Alert.alert("Error", errorMessage);
-    }
-  };
-
   const renderStarRating = (
     rating: number,
-    onRatingPress?: (rating: number) => void
+    onRatingPress?: (rating: number) => void,
   ) => {
     return Array.from({ length: 5 }, (_, index) => (
       <TouchableOpacity
@@ -2836,68 +2179,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
 
   return (
     <>
-      {/* TEMPORARILY DISABLED - AddCategoryPopup Modal causes nesting issues */}
-      {/* <AddCategoryPopup
-        visible={showAddCategoryPopup}
-        onClose={() => setShowAddCategoryPopup(false)}
-        onSubmit={async (categoryData) => {
-          console.log("New category being submitted:", categoryData);
-
-          try {
-            // Call backend API to create the category
-            const response =
-              await createFeedbackCategory(categoryData).unwrap();
-            console.log("✅ Category created successfully:", response);
-
-            // Add the new category to our custom categories state for immediate UI update
-            const newCategory = {
-              id: response.data?.id || Date.now().toString(),
-              title: categoryData.title,
-              questions: categoryData.questions,
-            };
-
-            setCustomCategories((prev) => [...prev, newCategory]);
-
-            Alert.alert(
-              "Category Added Successfully!",
-              `Category "${categoryData.title}" with ${categoryData.questions.length} questions has been added successfully!\n\nYou can now use this category when creating feedback.`,
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setShowAddCategoryPopup(false);
-                  },
-                },
-              ],
-            );
-          } catch (error: any) {
-            console.error("❌ Failed to create category:", error);
-
-            // Still add to local state for development/fallback
-            const newCategory = {
-              id: Date.now().toString(),
-              title: categoryData.title,
-              questions: categoryData.questions,
-            };
-
-            setCustomCategories((prev) => [...prev, newCategory]);
-
-            Alert.alert(
-              "Category Added (Local Only)",
-              `Category "${categoryData.title}" has been added locally.\n\nNote: Backend integration is in progress. The category will be available for this session.`,
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setShowAddCategoryPopup(false);
-                  },
-                },
-              ],
-            );
-          }
-        }}
-      /> */}
-
       <FullScreenModal
         visible={visible}
         onClose={onClose}
@@ -2952,110 +2233,65 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             </View>
           </TouchableWithoutFeedback> */}
 
-          {/* New Filter Section */}
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.newFilterContainer}>
-              {/* Filter Header with Reset Button */}
-              <View style={styles.filterHeader}>
-                <Text style={styles.filterHeaderText}>Filter Results</Text>
+          {/* Grade filter */}
+          <View style={styles.newFilterContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.gradeFilterScrollView}
+              contentContainerStyle={styles.gradeFilterContent}
+            >
+              {filterGradesOptions.map((gradeOption) => (
                 <TouchableOpacity
-                  style={styles.resetFiltersButton}
-                  onPress={() => {
-                    setSelectedFilterGradeId(null);
-                    setSearchText("");
-                  }}
+                  key={gradeOption.id || "all"}
+                  style={[
+                    styles.gradeFilterChip,
+                    selectedFilterGradeId === gradeOption.id &&
+                      styles.gradeFilterChipSelected,
+                  ]}
+                  onPress={() => setSelectedFilterGradeId(gradeOption.id)}
                 >
-                  <Text style={styles.resetFiltersText}>Reset All</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Filter Loading Indicator */}
-              {feedbacksLoading && (
-                <View style={styles.filterLoadingIndicator}>
-                  <ActivityIndicator size="small" color="#920734" />
-                  <Text style={styles.filterLoadingText}>
-                    Updating filters...
-                  </Text>
-                </View>
-              )}
-
-              {/* Grade Filter - Horizontal Scroll */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.gradeFilterScrollView}
-                contentContainerStyle={styles.gradeFilterContent}
-              >
-                {filterGradesOptions.map((gradeOption) => (
-                  <TouchableOpacity
-                    key={gradeOption.id || "all"}
+                  <Text
                     style={[
-                      styles.gradeFilterChip,
+                      styles.gradeFilterText,
                       selectedFilterGradeId === gradeOption.id &&
-                        styles.gradeFilterChipSelected,
+                        styles.gradeFilterTextSelected,
                     ]}
-                    onPress={() => setSelectedFilterGradeId(gradeOption.id)}
                   >
-                    <Text
-                      style={[
-                        styles.gradeFilterText,
-                        selectedFilterGradeId === gradeOption.id &&
-                          styles.gradeFilterTextSelected,
-                      ]}
-                    >
-                      {gradeOption.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </TouchableWithoutFeedback>
-
-          {/* Results Info */}
-          <View style={styles.resultsInfo}>
-            <Text style={styles.resultsText}>
-              Showing{" "}
-              {(paginationInfo.current_page - 1) * paginationInfo.page_size + 1}
-              -
-              {Math.min(
-                paginationInfo.current_page * paginationInfo.page_size,
-                paginationInfo.total_count
-              )}{" "}
-              of {paginationInfo.total_count} feedback(s)
-            </Text>
+                    {gradeOption.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
 
-          {/* Content Area - Wrapper with fixed height to keep pagination at bottom */}
+          {/* Content Area */}
           <View style={styles.contentAreaWrapper}>
             {feedbacksLoading || isPaginationLoading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#920734" />
-                <Text style={styles.loadingText}>
-                  {isPaginationLoading
-                    ? "Loading next page..."
-                    : "Loading feedback..."}
-                </Text>
               </View>
             ) : feedbacksError ? (
               <View style={styles.errorContainer}>
                 <MaterialIcons name="error-outline" size={48} color="#F44336" />
-                <Text style={styles.errorText}>
-                  Failed to load feedback. Please try again.
-                </Text>
+                <Text style={styles.errorText}>Failed to load feedback.</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => refetchFeedbacks()}
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
               </View>
             ) : existingFeedbacks.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <MaterialIcons name="feedback" size={48} color="#CCC" />
                 <Text style={styles.emptyText}>No feedback found</Text>
-                <Text style={styles.emptySubText}>
-                  Try adjusting your filters or add some feedback
-                </Text>
               </View>
             ) : (
               <Animated.View
                 key={`page-${currentPage}`}
-                entering={FadeIn.duration(400)}
-                exiting={FadeOut.duration(200)}
+                entering={FadeIn.duration(300)}
+                exiting={FadeOut.duration(150)}
                 style={{ flex: 1 }}
               >
                 <ScrollView
@@ -3065,235 +2301,39 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                   onScrollBeginDrag={Keyboard.dismiss}
                 >
                   {existingFeedbacks.map((item) => {
-                    // Additional safety check for rendering
-                    if (!item || !item.student) {
-                      console.warn("⚠️ Skipping invalid item in render:", item);
-                      return null;
-                    }
-
-                    // Ensure all text values are safe strings
-                    const studentName = String(
-                      item.student.student_calling_name || "Unknown Student"
-                    );
-                    const admissionNumber = String(
-                      item.student.admission_number || "N/A"
-                    );
-                    const grade = String(
-                      item.grade_level.name || "Unknown Grade"
-                    );
-                    const description = String(
-                      item.comments?.[0]?.comment || "No description available"
-                    );
-                    const createdBy = String(
-                      item.created_by.call_name_with_title || "Unknown Educator"
-                    );
-                    const primaryCategory = String(
-                      item.category.name || "General"
-                    );
-                    const evaluationType = String(
-                      item.evaluations?.[0]?.evaluation_type?.name || ""
-                    );
-                    // Get student profile image using utility function
-                    const profileImageSource =
-                      getStudentProfilePicture(item.student) ||
-                      getLocalFallbackProfileImage();
-                    const rating = item.rating;
-                    const date = item.created_at
-                      ? new Date(item.created_at).toLocaleDateString()
-                      : "Unknown Date";
-                    const subcategories = Array.isArray(item.subcategories)
-                      ? item.subcategories
-                          .map((sub) => sub.subcategory_name)
-                          .filter(Boolean)
-                      : [];
+                    if (!item?.student) return null;
+                    const isExpanded = expandedItemId === item.id;
 
                     return (
-                      <View
-                        key={item.id || Math.random()}
-                        style={styles.feedbackCard}
+                      <FeedbackCard
+                        key={item.id}
+                        item={item}
+                        isExpanded={isExpanded}
+                        onToggle={() => handleActionPress(item)}
+                        isEditing={editingCommentId === item.id}
+                        editedComment={editedComment}
+                        onEditedCommentChange={setEditedComment}
+                        onEditComment={(comment) =>
+                          handleEditComment(item.id, comment)
+                        }
+                        onCancelEdit={handleCancelEdit}
+                        onSaveComment={() =>
+                          handleSaveComment(item.comment_feedback_id ?? item.id)
+                        }
+                        isSavingComment={isCreatingComment}
+                        onDelete={() => handleDeleteFeedback(item.id)}
+                        isDeleting={isDeletingFeedback}
+                        onToggleEvaluation={() =>
+                          handleToggleAddEvaluationForm(item.id)
+                        }
+                        isEvaluationOpen={showAddEvaluationForm === item.id}
+                        showEvaluation={item.type !== "rating"}
                       >
-                        {/* Evaluation Type Bar - Top */}
-                        {evaluationType && (
-                          <View style={styles.evaluationTypeBar}>
-                            <Text style={styles.evaluationTypeText}>
-                              {evaluationType}
-                            </Text>
-                          </View>
-                        )}
-
-                        {/* Student Info */}
-                        <View style={styles.studentHeader}>
-                          <Image
-                            source={profileImageSource}
-                            style={styles.profileImage}
-                          />
-
-                          <View style={styles.studentInfo}>
-                            <Text style={styles.studentName}>
-                              {studentName}
-                            </Text>
-                            <Text style={styles.studentDetails}>
-                              {admissionNumber} • {grade}
-                            </Text>
-                          </View>
-                          <View style={styles.ratingContainer}>
-                            <View style={styles.stars}>
-                              {renderStars(rating)}
-                            </View>
-                            <Text style={styles.ratingText}>{rating}</Text>
-                          </View>
-                        </View>
-
-                        {/* Categories */}
-                        <View style={styles.categoriesContainer}>
-                          <View
-                            style={[styles.categoryTag, styles.primaryCategory]}
-                          >
-                            <MaterialIcons
-                              name="star"
-                              size={12}
-                              color="#920734"
-                            />
-                            <Text style={styles.primaryCategoryText}>
-                              {primaryCategory}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Description with Edit Functionality */}
-                        {editingCommentId === item.id ? (
-                          // Edit Mode
-                          <View style={styles.editCommentContainer}>
-                            <TextInput
-                              style={styles.editCommentInput}
-                              value={editedComment}
-                              onChangeText={setEditedComment}
-                              placeholder="Enter comment..."
-                              multiline
-                              numberOfLines={3}
-                              autoFocus
-                            />
-                            <View style={styles.editCommentActions}>
-                              <TouchableOpacity
-                                style={[
-                                  styles.editActionButton,
-                                  styles.editCancelButton,
-                                ]}
-                                onPress={handleCancelEdit}
-                                disabled={isCreatingComment}
-                              >
-                                <MaterialIcons
-                                  name="close"
-                                  size={16}
-                                  color="#F44336"
-                                />
-                                <Text style={styles.editCancelButtonText}>
-                                  Cancel
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  styles.editActionButton,
-                                  styles.saveButton,
-                                ]}
-                                onPress={() => handleSaveComment(item.id)}
-                                disabled={
-                                  isCreatingComment || !editedComment.trim()
-                                }
-                              >
-                                {isCreatingComment ? (
-                                  <MaterialIcons
-                                    name="hourglass-empty"
-                                    size={16}
-                                    color="#FFF"
-                                  />
-                                ) : (
-                                  <MaterialIcons
-                                    name="check"
-                                    size={16}
-                                    color="#FFF"
-                                  />
-                                )}
-                                <Text style={styles.saveButtonText}>
-                                  {isCreatingComment ? "Saving..." : "Save"}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        ) : (
-                          // View Mode
-                          <View style={styles.descriptionContainer}>
-                            <Text style={styles.description}>
-                              {description}
-                            </Text>
-                            <TouchableOpacity
-                              style={styles.editButton}
-                              onPress={() =>
-                                handleEditComment(item.id, description)
-                              }
-                            >
-                              <MaterialIcons
-                                name="edit"
-                                size={16}
-                                color="#920734"
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        )}
-
-                        {/* Footer */}
-                        <View style={styles.feedbackFooter}>
-                          <View style={styles.metaInfo}>
-                            <Text style={styles.createdBy}>
-                              Created by: {createdBy}
-                            </Text>
-                            <Text style={styles.date}>{date}</Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() => handleActionPress(item)}
-                          >
-                            <Text style={styles.actionButtonText}>
-                              {expandedItemId === item.id
-                                ? "Collapse"
-                                : "Progress"}
-                            </Text>
-                            <MaterialIcons
-                              name={
-                                expandedItemId === item.id
-                                  ? "expand-less"
-                                  : "expand-more"
-                              }
-                              size={16}
-                              color="#920734"
-                            />
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Subcategories Tags - Bottom with horizontal scroll */}
-                        {subcategories.length > 0 && (
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.subcategoriesScrollContainer}
-                            contentContainerStyle={
-                              styles.subcategoriesContainer
-                            }
-                          >
-                            {subcategories.map((subcategory, index) => (
-                              <View key={index} style={styles.subcategoryTag}>
-                                <Text style={styles.subcategoryText}>
-                                  #{subcategory}
-                                </Text>
-                              </View>
-                            ))}
-                          </ScrollView>
-                        )}
-
-                        {/* Expandable Evaluation Section */}
+                        {item.type !== "rating" && (
+                          <>
                         <EvaluationSection
                           feedbackItem={item}
-                          isExpanded={expandedItemId === item.id}
+                          isExpanded={isExpanded}
                           showAddEvaluationForm={showAddEvaluationForm}
                           onToggleAddEvaluationForm={
                             handleToggleAddEvaluationForm
@@ -3304,8 +2344,6 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                           isDeletingFeedback={isDeletingFeedback}
                           isDeletingEvaluation={isDeletingEvaluation}
                         />
-
-                        {/* Add Evaluation Form - Above Action Buttons */}
                         {showAddEvaluationForm === item.id && (
                           <AddEvaluationForm
                             feedbackItem={item}
@@ -3315,78 +2353,9 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
                             }
                           />
                         )}
-
-                        {/* Fixed Bottom Action Bar */}
-                        <View style={styles.fixedBottomActionBar}>
-                          <TouchableOpacity
-                            style={[
-                              styles.bottomDeleteButton,
-                              isDeletingFeedback && styles.buttonDisabled,
-                            ]}
-                            onPress={() => {
-                              console.log(
-                                "🗑️ Delete button clicked for item:",
-                                item
-                              );
-                              console.log("🗑️ Item ID:", item.id);
-                              console.log("🗑️ Item ID type:", typeof item.id);
-                              console.log(
-                                "🗑️ Available item fields:",
-                                Object.keys(item)
-                              );
-
-                              // Ensure ID is properly formatted
-                              const feedbackId = String(item.id);
-                              console.log(
-                                "🗑️ Converted feedback ID:",
-                                feedbackId
-                              );
-
-                              handleDeleteFeedback(feedbackId);
-                            }}
-                            disabled={isDeletingFeedback}
-                          >
-                            {isDeletingFeedback ? (
-                              <ActivityIndicator size="small" color="#FFFFFF" />
-                            ) : (
-                              <MaterialIcons
-                                name="delete"
-                                size={18}
-                                color="#FFFFFF"
-                              />
-                            )}
-                            <Text style={styles.bottomDeleteButtonText}>
-                              {isDeletingFeedback ? "Deleting..." : "Delete"}
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[
-                              styles.bottomAddButton,
-                              showAddEvaluationForm === item.id &&
-                                styles.bottomButtonActive,
-                            ]}
-                            onPress={() =>
-                              handleToggleAddEvaluationForm(item.id)
-                            }
-                          >
-                            <Text style={styles.bottomAddButtonText}>
-                              {showAddEvaluationForm === item.id
-                                ? "Cancel"
-                                : "Next Action"}
-                            </Text>
-                            <MaterialIcons
-                              name={
-                                showAddEvaluationForm === item.id
-                                  ? "expand-less"
-                                  : "arrow-forward"
-                              }
-                              size={18}
-                              color="#FFFFFF"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
+                          </>
+                        )}
+                      </FeedbackCard>
                     );
                   })}
                 </ScrollView>
@@ -3395,63 +2364,43 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
           </View>
 
           {/* Pagination */}
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.paginationContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.paginationButton,
-                  (!paginationInfo.has_previous || isPaginationLoading) &&
-                    styles.disabledButton,
-                ]}
-                onPress={handlePreviousPage}
-                disabled={!paginationInfo.has_previous || isPaginationLoading}
-              >
-                <MaterialIcons
-                  name="chevron-left"
-                  size={20}
-                  color={!paginationInfo.has_previous ? "#CCC" : "#920734"}
-                />
-                <Text
-                  style={[
-                    styles.paginationText,
-                    !paginationInfo.has_previous && styles.disabledText,
-                  ]}
-                >
-                  Previous
-                </Text>
-              </TouchableOpacity>
+          <View style={styles.paginationContainer}>
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                (!paginationInfo.has_previous || isPaginationLoading) &&
+                  styles.disabledButton,
+              ]}
+              onPress={handlePreviousPage}
+              disabled={!paginationInfo.has_previous || isPaginationLoading}
+            >
+              <MaterialIcons
+                name="chevron-left"
+                size={24}
+                color={!paginationInfo.has_previous ? "#CCC" : "#920734"}
+              />
+            </TouchableOpacity>
 
-              <View style={styles.pageInfo}>
-                <Text style={styles.pageText}>
-                  Page {paginationInfo.current_page} of {totalPages}
-                </Text>
-              </View>
+            <Text style={styles.pageText}>
+              {paginationInfo.current_page} / {totalPages}
+            </Text>
 
-              <TouchableOpacity
-                style={[
-                  styles.paginationButton,
-                  (!paginationInfo.has_next || isPaginationLoading) &&
-                    styles.disabledButton,
-                ]}
-                onPress={handleNextPage}
-                disabled={!paginationInfo.has_next || isPaginationLoading}
-              >
-                <Text
-                  style={[
-                    styles.paginationText,
-                    !paginationInfo.has_next && styles.disabledText,
-                  ]}
-                >
-                  Next
-                </Text>
-                <MaterialIcons
-                  name="chevron-right"
-                  size={20}
-                  color={!paginationInfo.has_next ? "#CCC" : "#920734"}
-                />
-              </TouchableOpacity>
-            </View>
-          </TouchableWithoutFeedback>
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                (!paginationInfo.has_next || isPaginationLoading) &&
+                  styles.disabledButton,
+              ]}
+              onPress={handleNextPage}
+              disabled={!paginationInfo.has_next || isPaginationLoading}
+            >
+              <MaterialIcons
+                name="chevron-right"
+                size={24}
+                color={!paginationInfo.has_next ? "#CCC" : "#920734"}
+              />
+            </TouchableOpacity>
+          </View>
 
           {/* Add Feedback Modal */}
           <Modal
@@ -3461,496 +2410,189 @@ const EducatorFeedbackModal: React.FC<EducatorFeedbackModalProps> = ({
             onRequestClose={() => setShowAddFeedbackModal(false)}
           >
             <View style={styles.modalOverlay}>
-              <KeyboardAvoidingView
-                style={styles.addFeedbackModal}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={0}
-              >
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Add New Feedback</Text>
-                  <TouchableOpacity
-                    onPress={() => setShowAddFeedbackModal(false)}
-                  >
-                    <MaterialIcons name="close" size={24} color="#666" />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView
-                  style={styles.addFeedbackContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
+              <View style={styles.addFeedbackModal}>
+                <AddFeedbackWizard
+                  stepTitles={wizardStepTitles}
+                  currentStep={wizardStep}
+                  canProceed={canProceedWizardStep}
+                  isSubmitting={isSubmitting || isSubmittingRating}
+                  onBack={() => setWizardStep((s) => Math.max(0, s - 1))}
+                  onNext={() => setWizardStep((s) => s + 1)}
+                  onSubmit={
+                    isRatingMode
+                      ? handleSubmitRatingFeedback
+                      : handleSubmitFeedback
+                  }
+                  onClose={() => setShowAddFeedbackModal(false)}
                 >
-                  {/* Form Validation Info */}
-                  {/* <View style={styles.validationInfoContainer}>
-                  <Text style={styles.validationInfoTitle}>Required Fields:</Text>
-                  <View style={styles.validationCheckList}>
-                    <View style={styles.validationItem}>
-                      <MaterialIcons 
-                        name={selectedStudent ? "check-circle" : "radio-button-unchecked"} 
-                        size={16} 
-                        color={selectedStudent ? "#4CAF50" : "#CCC"} 
-                      />
-                      <Text style={[styles.validationText, selectedStudent && styles.validationCompleted]}>
-                        Student Selection
-                      </Text>
-                    </View>
-                    <View style={styles.validationItem}>
-                      <MaterialIcons 
-                        name={mainCategory ? "check-circle" : "radio-button-unchecked"} 
-                        size={16} 
-                        color={mainCategory ? "#4CAF50" : "#CCC"} 
-                      />
-                      <Text style={[styles.validationText, mainCategory && styles.validationCompleted]}>
-                        Main Category
-                      </Text>
-                    </View>
-                    <View style={styles.validationItem}>
-                      <MaterialIcons 
-                        name={feedbackDescription.trim() ? "check-circle" : "radio-button-unchecked"} 
-                        size={16} 
-                        color={feedbackDescription.trim() ? "#4CAF50" : "#CCC"} 
-                      />
-                      <Text style={[styles.validationText, feedbackDescription.trim() && styles.validationCompleted]}>
-                        Description
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.validationNote}>
-                    Subcategories are optional. Rating will be calculated from questionnaire answers.
-                  </Text>
-                </View> */}
-
-                  {/* Grade Selection */}
-                  <View style={styles.formSection}>
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        !selectedGradeId && styles.requiredFieldTitle,
-                      ]}
-                    >
-                      Select Grade{" "}
-                      <Text style={styles.requiredAsterisk}>*</Text>
-                    </Text>
-                    <Text style={styles.categoryHelpText}>
-                      First select the grade to view students from that grade.
-                    </Text>
-
-                    {selectedGradeId ? (
-                      <View style={styles.selectedGradeCard}>
-                        <View style={styles.gradeInfo}>
-                          <MaterialIcons
-                            name="school"
-                            size={20}
-                            color="#920734"
-                          />
-                          <Text style={styles.selectedGradeName}>
-                            {selectedGradeName}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setSelectedGradeId(null);
-                            setSelectedStudents([]); // Clear students when grade changes
-                          }}
-                          style={styles.removeGradeButton}
-                        >
-                          <MaterialIcons
-                            name="close"
-                            size={20}
-                            color="#FF5252"
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
+                  {wizardStep === 0 && (
+                    <View>
+                      <Text style={styles.sectionTitle}>Grade</Text>
                       <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
-                        style={styles.gradesList}
+                        style={{ marginBottom: 16 }}
                       >
                         {availableGrades.map((grade: GradeLevel) => (
                           <TouchableOpacity
                             key={grade.id}
                             style={[
-                              styles.gradeCard,
+                              styles.gradeFilterChip,
                               selectedGradeId === grade.id &&
-                                styles.selectedGradeCard,
+                                styles.gradeFilterChipSelected,
                             ]}
                             onPress={() => {
                               setSelectedGradeId(grade.id);
                               setSelectedStudents([]); // Clear students when grade changes
                             }}
                           >
-                            <MaterialIcons
-                              name="school"
-                              size={24}
-                              color="#920734"
-                            />
-                            <Text style={styles.gradeCardName}>
+                            <Text
+                              style={[
+                                styles.gradeFilterText,
+                                selectedGradeId === grade.id &&
+                                  styles.gradeFilterTextSelected,
+                              ]}
+                            >
                               {grade.name}
-                            </Text>
-                            <Text style={styles.gradeCardStudents}>
-                              {grade.category === "early_years"
-                                ? "Early Years"
-                                : grade.category === "primary"
-                                  ? "Primary"
-                                  : "Secondary"}
                             </Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
-                    )}
-                  </View>
 
-                  {/* Student Selection */}
-                  <View style={styles.formSection}>
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        selectedStudents.length === 0 &&
-                          styles.requiredFieldTitle,
-                      ]}
-                    >
-                      Select Students ({selectedStudents.length}){" "}
-                      <Text style={styles.requiredAsterisk}>*</Text>
-                    </Text>
-
-                    <StudentSelectionWithPagination
-                      gradeId={selectedGradeId}
-                      onStudentSelect={(student) => {
-                        if (student) {
-                          // Check if already selected
-                          const isAlreadySelected = selectedStudents.some(
-                            (s) => s.id === student.id
-                          );
-                          if (isAlreadySelected) {
-                            // Remove from selection
-                            setSelectedStudents((prev) =>
-                              prev.filter((s) => s.id !== student.id)
-                            );
-                          } else {
-                            // Add to selection
-                            setSelectedStudents((prev) => [...prev, student]);
-                          }
-                        }
-                      }}
-                      selectedStudent={null}
-                      selectedStudents={selectedStudents}
-                      pageSize={10}
-                      enableInfiniteScroll={true}
-                      showSelectAllButton={true}
-                      onSelectAll={(students) => {
-                        setSelectedStudents(students);
-                      }}
-                      onDeselectAll={() => {
-                        setSelectedStudents([]);
-                      }}
-                      style={{ marginTop: 8 }}
-                    />
-                  </View>
-
-                  {/* Rating will be calculated automatically from questionnaire */}
-
-                  {/* Main Category Selection */}
-                  <View style={styles.formSection}>
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        !mainCategory && styles.requiredFieldTitle,
-                      ]}
-                    >
-                      Main Category{" "}
-                      <Text style={styles.requiredAsterisk}>*</Text>
-                    </Text>
-                    <Text style={styles.categoryHelpText}>
-                      Select the primary focus area for this feedback.
-                      Assessment guidelines will be shown to help with
-                      evaluation.
-                    </Text>
-
-                    {mainCategory ? (
-                      <View style={styles.selectedMainCategory}>
-                        <View style={styles.mainCategoryBadge}>
-                          <MaterialIcons
-                            name="stars"
-                            size={20}
-                            color="#FFD700"
-                          />
-                          <Text style={styles.mainCategoryTitle}>
-                            {mainCategory}
+                      {selectedGradeId && (
+                        <>
+                          <Text style={styles.sectionTitle}>
+                            Students ({selectedStudents.length} selected)
                           </Text>
-                        </View>
-                        <TouchableOpacity
-                          onPress={handleClearMainCategory}
-                          style={styles.clearMainCategoryButton}
-                        >
-                          <MaterialIcons
-                            name="close"
-                            size={20}
-                            color="#FF5252"
+                          <StudentSelectionWithPagination
+                            gradeId={selectedGradeId}
+                            onStudentSelect={(student) => {
+                              if (!student) return;
+                              setSelectedStudents((prev) =>
+                                prev.some((s) => s.id === student.id)
+                                  ? prev.filter((s) => s.id !== student.id)
+                                  : [...prev, student],
+                              );
+                            }}
+                            selectedStudent={null}
+                            selectedStudents={selectedStudents}
+                            pageSize={10}
+                            enableInfiniteScroll={true}
+                            showSelectAllButton={true}
+                            onSelectAll={(students) =>
+                              setSelectedStudents(students)
+                            }
+                            onDeselectAll={() => setSelectedStudents([])}
+                            style={{ marginTop: 8 }}
                           />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <>
-                        {/* Message when no grade selected or no categories */}
-                        {!selectedGradeId ? (
-                          <View style={styles.debugContainer}>
-                            <Text style={styles.debugTitle}>
-                              Select Grade for show related Categories
-                            </Text>
-                          </View>
-                        ) : allMainCategories.length === 0 ? (
-                          <View style={styles.debugContainer}>
-                            <Text style={styles.debugTitle}>
-                              {categoriesLoading
-                                ? "⏳ Loading categories..."
-                                : categoriesError
-                                  ? "❌ Error loading categories"
-                                  : "📋 No categories available for this grade"}
-                            </Text>
-                          </View>
-                        ) : (
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.mainCategoriesList}
-                          >
-                            {allMainCategories.map((category) => (
-                              <TouchableOpacity
-                                key={category}
-                                style={styles.mainCategorySelectChip}
-                                onPress={() =>
-                                  handleMainCategorySelect(category)
-                                }
-                              >
-                                <MaterialIcons
-                                  name="category"
-                                  size={18}
-                                  color="#920734"
-                                />
-                                <Text style={styles.mainCategorySelectText}>
-                                  {category}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
-                        )}
-                      </>
-                    )}
-                  </View>
-
-                  {/* Assessment Questions Section */}
-                  {mainCategory && (
-                    <View style={styles.formSection}>
-                      <Text style={styles.sectionTitle}>
-                        Assessment Questions for {mainCategory}
-                      </Text>
-                      <Text style={styles.categoryHelpText}>
-                        Click on each question to answer. Rating will be
-                        calculated automatically.
-                      </Text>
-
-                      <QuestionnaireComponent
-                        questions={questionnaireData || []}
-                        answers={questionnaireAnswers}
-                        selectedQuestionId={
-                          selectedQuestionId?.toString() || null
-                        }
-                        onQuestionSelect={(questionId) => {
-                          console.log("🎯 Question Selected:", questionId);
-                          setSelectedQuestionId(
-                            questionId ? parseInt(questionId) : null
-                          );
-                        }}
-                        onAnswerChange={handleQuestionAnswer}
-                      />
-
-                      {/* Rating Display */}
-                      {feedbackRating > 0 && (
-                        <View style={styles.calculatedRatingContainer}>
-                          <Text style={styles.calculatedRatingLabel}>
-                            Calculated Rating:
-                          </Text>
-                          <View style={styles.ratingDisplay}>
-                            <Text style={styles.ratingValue}>
-                              {feedbackRating}
-                            </Text>
-                            <Text style={styles.ratingOutOf}>/5.0</Text>
-                          </View>
-                        </View>
+                        </>
                       )}
                     </View>
                   )}
 
-                  {/* Subcategories Selection */}
-                  {mainCategory && (
-                    <View style={styles.formSection}>
-                      <Text style={styles.sectionTitle}>
-                        Subcategories (Optional) ({selectedSubcategories.length}
-                        /5)
-                      </Text>
-                      <Text style={styles.categoryHelpText}>
-                        Optionally select specific areas within {mainCategory}{" "}
-                        to focus your feedback on.
-                      </Text>
+                  {wizardStep === 1 && isRatingMode && (
+                    <RatingCommentStep
+                      comment={ratingComment}
+                      onCommentChange={setRatingComment}
+                    />
+                  )}
 
-                      {selectedSubcategories.length > 0 && (
-                        <View style={styles.selectedSubcategoriesContainer}>
-                          {selectedSubcategories.map((subcategory, index) => (
-                            <View
-                              key={index}
-                              style={styles.selectedSubcategoryChip}
+                  {wizardStep === 2 && isRatingMode && (
+                    <RatingCategoriesStep
+                      categories={ratingCategories || []}
+                      isLoading={ratingCategoriesLoading}
+                      hasError={!!ratingCategoriesError}
+                      ratings={categoryRatings}
+                      onRatingChange={(categoryId, rating) =>
+                        setCategoryRatings((prev) => ({
+                          ...prev,
+                          [categoryId]: rating,
+                        }))
+                      }
+                    />
+                  )}
+
+                  {wizardStep === 1 && !isRatingMode && (
+                    <View>
+                      {categoriesLoading ? (
+                        <ActivityIndicator size="small" color="#920734" />
+                      ) : allMainCategories.length === 0 ? (
+                        <Text style={styles.categoryHelpText}>
+                          No categories available for this grade.
+                        </Text>
+                      ) : (
+                        <View style={styles.subcategoriesGrid}>
+                          {allMainCategories.map((category) => (
+                            <TouchableOpacity
+                              key={category}
+                              style={[
+                                styles.gradeFilterChip,
+                                mainCategory === category &&
+                                  styles.gradeFilterChipSelected,
+                              ]}
+                              onPress={() => handleMainCategorySelect(category)}
                             >
-                              <Text style={styles.selectedSubcategoryText}>
-                                {subcategory}
-                              </Text>
-                              <TouchableOpacity
-                                onPress={() =>
-                                  handleSubcategoryToggle(subcategory)
-                                }
-                                style={styles.removeSubcategoryButton}
+                              <Text
+                                style={[
+                                  styles.gradeFilterText,
+                                  mainCategory === category &&
+                                    styles.gradeFilterTextSelected,
+                                ]}
                               >
-                                <MaterialIcons
-                                  name="close"
-                                  size={14}
-                                  color="#666"
-                                />
-                              </TouchableOpacity>
-                            </View>
+                                {category}
+                              </Text>
+                            </TouchableOpacity>
                           ))}
                         </View>
                       )}
 
-                      <Text style={styles.subcategoryGroupTitle}>
-                        All Available Categories:
-                      </Text>
-                      <ScrollView
-                        style={styles.subcategoriesList}
-                        showsVerticalScrollIndicator={false}
-                      >
-                        <View style={styles.subcategoriesGrid}>
-                          {allMainCategories
-                            .filter((category) => category !== mainCategory) // Exclude the selected main category
-                            .map((category) => (
-                              <TouchableOpacity
-                                key={category}
-                                style={[
-                                  styles.subcategorySelectChip,
-                                  selectedSubcategories.includes(category) &&
-                                    styles.subcategorySelectedChip,
-                                ]}
-                                onPress={() =>
-                                  handleSubcategoryToggle(category)
-                                }
-                                disabled={
-                                  !selectedSubcategories.includes(category) &&
-                                  selectedSubcategories.length >= 5
-                                }
-                              >
-                                <MaterialIcons
-                                  name={
-                                    selectedSubcategories.includes(category)
-                                      ? "check-circle"
-                                      : "add-circle-outline"
-                                  }
-                                  size={16}
-                                  color={
-                                    selectedSubcategories.includes(category)
-                                      ? "#4CAF50"
-                                      : "#920734"
-                                  }
-                                />
-                                <Text
-                                  style={[
-                                    styles.subcategorySelectText,
-                                    selectedSubcategories.includes(category) &&
-                                      styles.subcategorySelectedText,
-                                    !selectedSubcategories.includes(category) &&
-                                      selectedSubcategories.length >= 5 &&
-                                      styles.subcategoryDisabledText,
-                                  ]}
-                                >
-                                  {category}
+                      {!!mainCategory && (
+                        <View style={{ marginTop: 16 }}>
+                          <QuestionnaireComponent
+                            questions={questionnaireData || []}
+                            answers={questionnaireAnswers}
+                            selectedQuestionId={
+                              selectedQuestionId?.toString() || null
+                            }
+                            onQuestionSelect={(questionId) =>
+                              setSelectedQuestionId(
+                                questionId ? parseInt(questionId) : null,
+                              )
+                            }
+                            onAnswerChange={handleQuestionAnswer}
+                          />
+                          {feedbackRating > 0 && (
+                            <View style={styles.calculatedRatingContainer}>
+                              <Text style={styles.calculatedRatingLabel}>
+                                Calculated Rating:
+                              </Text>
+                              <View style={styles.ratingDisplay}>
+                                <Text style={styles.ratingValue}>
+                                  {feedbackRating}
                                 </Text>
-                              </TouchableOpacity>
-                            ))}
+                                <Text style={styles.ratingOutOf}>/5.0</Text>
+                              </View>
+                            </View>
+                          )}
                         </View>
-                      </ScrollView>
+                      )}
                     </View>
                   )}
 
-                  {/* Description */}
-                  <View style={styles.formSection}>
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        !feedbackDescription.trim() &&
-                          styles.requiredFieldTitle,
-                      ]}
-                    >
-                      Description <Text style={styles.requiredAsterisk}>*</Text>
-                    </Text>
-                    <TouchableOpacity
-                      activeOpacity={1}
-                      onPress={handleDescriptionFocus}
-                      style={styles.descriptionTouchableContainer}
-                    >
-                      <TextInput
-                        ref={descriptionInputRef}
-                        style={styles.descriptionInput}
-                        placeholder="Tap here to enter detailed feedback description..."
-                        multiline
-                        numberOfLines={4}
-                        value={feedbackDescription}
-                        onChangeText={setFeedbackDescription}
-                        textAlignVertical="top"
-                        autoFocus={false}
-                        blurOnSubmit={false}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={() => setShowAddFeedbackModal(false)}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.submitButton,
-                      (!isFormValid() || isSubmitting) &&
-                        styles.disabledSubmitButton,
-                    ]}
-                    onPress={handleSubmitFeedback}
-                    disabled={!isFormValid() || isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <View
-                        style={{ flexDirection: "row", alignItems: "center" }}
-                      >
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                        <Text
-                          style={[styles.submitButtonText, { marginLeft: 8 }]}
-                        >
-                          Submitting...
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text
-                        style={[
-                          styles.submitButtonText,
-                          !isFormValid() && styles.disabledSubmitButtonText,
-                        ]}
-                      >
-                        Submit Feedback
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </KeyboardAvoidingView>
+                  {wizardStep === 2 && !isRatingMode && (
+                    <TextInput
+                      ref={descriptionInputRef}
+                      style={styles.descriptionInput}
+                      placeholder="Enter feedback description..."
+                      multiline
+                      numberOfLines={6}
+                      value={feedbackDescription}
+                      onChangeText={setFeedbackDescription}
+                      textAlignVertical="top"
+                    />
+                  )}
+                </AddFeedbackWizard>
+              </View>
             </View>
           </Modal>
         </View>
@@ -3963,34 +2605,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F5F5",
-  },
-  topBar: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  actionButtons: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
-  },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#920734",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "white",
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
   },
   headerAddButton: {
     flexDirection: "row",
@@ -4035,287 +2649,14 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
-  feedbackListContainer: {
-    flex: 1,
-  },
   contentAreaWrapper: {
     flex: 1,
     backgroundColor: "#F5F5F5",
-  },
-  filterSection: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  filterScrollView: {
-    paddingHorizontal: 16,
-  },
-  filterScrollContent: {
-    alignItems: "center",
-    paddingRight: 16,
-  },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    minWidth: 120,
-  },
-  filterChipLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginRight: 8,
-  },
-  filterChipPicker: {
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 40,
-  },
-  horizontalPicker: {
-    height: 40,
-    fontSize: 12,
-    backgroundColor: "transparent",
-    color: "#333",
-  },
-  clearFiltersButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF3F3",
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: "#920734",
-    gap: 6,
-  },
-  clearFiltersText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#920734",
-  },
-  resultsInfo: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#FFFFFF",
-  },
-  resultsText: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
   },
   feedbackList: {
     flex: 1,
     paddingHorizontal: 8,
     paddingTop: 8,
-  },
-  feedbackCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    marginHorizontal: 0,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "#F0F0F0",
-  },
-  studentHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E0E0E0",
-    marginRight: 10,
-  },
-  studentInfo: {
-    flex: 1,
-  },
-  studentName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 2,
-  },
-  studentDetails: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
-  },
-  ratingContainer: {
-    alignItems: "center",
-    gap: 2,
-    position: "absolute",
-    top: 0,
-    right: 9,
-    width: 100,
-    flexDirection: "row",
-  },
-  stars: {
-    flexDirection: "row",
-    gap: 1,
-  },
-  ratingText: {
-    fontSize: 12,
-    color: "#333",
-    fontWeight: "600",
-    borderWidth: 1,
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    borderRadius: 16,
-    borderColor: "#E0E0E0",
-  },
-  categoriesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 10,
-  },
-  categoryTag: {
-    backgroundColor: "#F0F0F0",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  primaryCategory: {
-    backgroundColor: "#FFF3F3",
-    borderColor: "#920734",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  primaryCategoryText: {
-    fontSize: 12,
-    color: "#920734",
-    fontWeight: "700",
-  },
-  categoryText: {
-    fontSize: 12,
-    color: "#555",
-    fontWeight: "600",
-  },
-  description: {
-    fontSize: 13,
-    color: "#333",
-    lineHeight: 19,
-    marginBottom: 12,
-    flex: 1,
-  },
-  descriptionContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  editButton: {
-    marginLeft: 8,
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: "#F8F9FA",
-  },
-  editCommentContainer: {
-    marginBottom: 16,
-  },
-  editCommentInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
-    textAlignVertical: "top",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
-    minHeight: 80,
-  },
-  editCommentActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
-  editActionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    gap: 4,
-  },
-  editCancelButton: {
-    backgroundColor: "#FEF2F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
-  },
-  editCancelButtonText: {
-    fontSize: 12,
-    color: "#F44336",
-    fontWeight: "600",
-  },
-  saveButton: {
-    backgroundColor: "#920734",
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  saveButtonText: {
-    fontSize: 12,
-    color: "#FFF",
-    fontWeight: "600",
-  },
-  feedbackFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  metaInfo: {
-    flex: 1,
-  },
-  createdBy: {
-    fontSize: 12,
-    color: "#666",
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  date: {
-    fontSize: 12,
-    color: "#888",
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: "#920734",
-    gap: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: "#920734",
-    fontWeight: "600",
   },
   paginationContainer: {
     flexDirection: "row",
@@ -4340,17 +2681,6 @@ const styles = StyleSheet.create({
     borderColor: "black",
     backgroundColor: "white",
   },
-  paginationText: {
-    fontSize: 14,
-    color: "#920734",
-    fontWeight: "600",
-  },
-  disabledText: {
-    color: "black",
-  },
-  pageInfo: {
-    alignItems: "center",
-  },
   pageText: {
     fontSize: 14,
     color: "#333",
@@ -4367,13 +2697,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  actionModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 24,
-    width: "80%",
-    maxWidth: 400,
   },
   addFeedbackModal: {
     backgroundColor: "#FFFFFF",
@@ -4392,60 +2715,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 15,
   },
-  addCategoryModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    width: "95%",
-    height: "90%",
-    maxWidth: 600,
-    minHeight: 500,
-    flexDirection: "column",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    paddingTop: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-    backgroundColor: "#FAFAFA",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#920734",
-    flex: 1,
-  },
-  modalContent: {
-    fontSize: 16,
-    color: "#333",
-    textAlign: "center",
-    lineHeight: 24,
-  },
-  addFeedbackContent: {
-    flex: 1,
-    padding: 14,
-    minHeight: 400,
-  },
-  formSection: {
-    marginBottom: 16,
-  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
     marginBottom: 8,
-  },
-  requiredFieldTitle: {
-    color: "black",
-  },
-  requiredAsterisk: {
-    color: "#FF5252",
-    fontSize: 16,
-    fontWeight: "bold",
   },
   categoryHelpText: {
     fontSize: 12,
@@ -4453,671 +2727,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontStyle: "italic",
   },
-  debugText: {
-    fontSize: 10,
-    color: "#FF0000",
-    marginBottom: 8,
-    fontFamily: "monospace",
-  },
-  studentsList: {
-    marginTop: 8,
-  },
-  studentCard: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 12,
-    alignItems: "center",
-    width: 100,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  studentCardImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginBottom: 8,
-  },
-  studentCardName: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  studentCardDetails: {
-    fontSize: 10,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 2,
-  },
-  studentCardGrade: {
-    fontSize: 10,
-    color: "#888",
-    textAlign: "center",
-  },
-  selectedStudentCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: "#920734",
-  },
-  selectedStudentImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-  },
-  selectedStudentInfo: {
-    flex: 1,
-  },
-  selectedStudentName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  selectedStudentDetails: {
-    fontSize: 14,
-    color: "#666",
-  },
-  removeStudentButton: {
-    padding: 8,
-    backgroundColor: "#FFE6E6",
-    borderRadius: 20,
-  },
-  ratingSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  starRatingContainer: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  ratingLabel: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-  },
-  selectedCategoriesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 12,
-  },
-  selectedCategoryChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-    marginBottom: 8,
-  },
-  mainCategoryChip: {
-    backgroundColor: "#920734",
-    borderWidth: 2,
-    borderColor: "#FFD700",
-  },
-  additionalCategoryChip: {
-    backgroundColor: "#F0F0F0",
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  mainCategoryIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFD700",
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    gap: 2,
-  },
-  mainCategoryLabel: {
-    fontSize: 8,
-    fontWeight: "bold",
-    color: "#920734",
-  },
-  selectedCategoryText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  mainCategoryText: {
-    color: "#FFFFFF",
-  },
-  additionalCategoryText: {
-    color: "#920734",
-  },
-  removeCategoryButton: {
-    padding: 2,
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-  },
   // Main Category Styles
-  selectedMainCategory: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: "#920734",
-  },
-  mainCategoryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  mainCategoryTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#920734",
-  },
-  clearMainCategoryButton: {
-    padding: 8,
-    backgroundColor: "#FFE6E6",
-    borderRadius: 20,
-  },
-  mainCategoriesList: {
-    marginTop: 8,
-  },
-  mainCategorySelectChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#920734",
-    gap: 8,
-    minWidth: 150,
-  },
-  mainCategorySelectText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-    textAlign: "center",
-  },
-  addCategoryChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: "#920734",
-    borderStyle: "dashed",
-    gap: 8,
-    minWidth: 150,
-  },
-  addCategoryChipActive: {
-    backgroundColor: "#920734",
-    borderStyle: "solid",
-  },
-  addCategoryChipText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-    textAlign: "center",
-  },
-  addCategoryChipTextActive: {
-    color: "#FFFFFF",
-  },
   // Inline Category Form Styles
-  inlineCategoryForm: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    marginTop: 16,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#920734",
-    overflow: "hidden",
-  },
-  inlineCategoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#920734",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  inlineCategoryTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-  },
-  closeCategoryFormButton: {
-    padding: 4,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  categoryFormContent: {
-    padding: 16,
-  },
-  categoryFormLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-    marginTop: 12,
-  },
-  categoryTitleInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  questionFormItem: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  questionFormHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  questionFormNumber: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-  },
-  removeQuestionButton: {
-    padding: 4,
-  },
-  questionFormInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 8,
-    minHeight: 60,
-    textAlignVertical: "top",
-  },
-  answerTypeContainer: {
-    marginTop: 8,
-  },
 
-  answerTypeChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  answerTypeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  selectedAnswerTypeChip: {
-    backgroundColor: "#920734",
-    borderColor: "#920734",
-  },
-  answerTypeChipText: {
-    fontSize: 12,
-    color: "#666",
-    fontWeight: "500",
-  },
-  selectedAnswerTypeChipText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
-  addQuestionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#920734",
-    borderStyle: "dashed",
-  },
-  addQuestionButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-    marginLeft: 6,
-  },
-  categoryFormActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  cancelCategoryButton: {
-    flex: 1,
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  cancelCategoryButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-  },
-  createCategoryButton: {
-    flex: 1,
-    backgroundColor: "#920734",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-  createCategoryButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-
-  questionsHeaderContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  processingIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  processingText: {
-    fontSize: 12,
-    color: "#920734",
-    fontWeight: "500",
-  },
   // MCQ Options Builder Styles
-  mcqOptionsBuilder: {
-    backgroundColor: "#F0F8FF",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  mcqOptionsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  mcqOptionsTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-  },
-  addMcqOptionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  addMcqOptionText: {
-    fontSize: 12,
-    color: "#920734",
-    fontWeight: "500",
-    marginLeft: 4,
-  },
-  mcqOptionRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  mcqOptionContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  mcqOptionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 6,
-  },
-  mcqOptionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  removeMcqOptionButtonInside: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    padding: 4,
-    zIndex: 1,
-  },
-  mcqOptionInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 4,
-    padding: 8,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 8,
-    minHeight: 50,
-    textAlignVertical: "top",
-  },
-  mcqMarksContainer: {
-    marginTop: 8,
-  },
-  mcqMarksLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 6,
-  },
-  marksSelector: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  markChip: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F8F9FA",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  selectedMarkChip: {
-    backgroundColor: "#920734",
-    borderColor: "#920734",
-  },
-  disabledMarkChip: {
-    backgroundColor: "#F0F0F0",
-    borderColor: "#CCCCCC",
-    opacity: 0.5,
-  },
-  markChipText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-  },
-  selectedMarkChipText: {
-    color: "#FFFFFF",
-  },
-  disabledMarkChipText: {
-    color: "#999",
-  },
-  removeMcqOptionButton: {
-    padding: 4,
-    marginLeft: 8,
-    marginTop: 20,
-  },
-  noMcqOptionsContainer: {
-    alignItems: "center",
-    paddingVertical: 16,
-  },
-  noMcqOptionsText: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 12,
-  },
-  firstMcqOptionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#920734",
-    borderStyle: "dashed",
-  },
-  firstMcqOptionText: {
-    fontSize: 14,
-    color: "#920734",
-    fontWeight: "600",
-    marginLeft: 6,
-  },
   // Subcategory Styles for Feedback Form
-  selectedSubcategoriesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-  selectedSubcategoryChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#4CAF50",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  selectedSubcategoryText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  removeSubcategoryButton: {
-    padding: 2,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-  },
-  subcategoryGroupTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  subcategoriesList: {
-    maxHeight: 200,
-  },
   subcategoriesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-  },
-  subcategorySelectChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    gap: 6,
-    marginBottom: 8,
-  },
-  subcategorySelectedChip: {
-    backgroundColor: "#E8F5E8",
-    borderColor: "#4CAF50",
-  },
-  subcategorySelectText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#333",
-  },
-  subcategorySelectedText: {
-    color: "#4CAF50",
-  },
-  subcategoryDisabledText: {
-    color: "#CCC",
-  },
-  subcategoriesScrollContainer: {
-    marginTop: 8,
-    marginHorizontal: -12,
-    paddingHorizontal: 12,
-  },
-  subcategoriesContainer: {
-    flexDirection: "row",
-    paddingVertical: 8,
-  },
-  subcategoryTag: {
-    backgroundColor: "#F5F5F5",
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: "#DDD",
-  },
-  subcategoryText: {
-    fontSize: 9,
-    color: "#666",
-    fontWeight: "500",
-  },
-  categoriesList: {
-    marginTop: 8,
-  },
-  categorySelectChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#920734",
-    gap: 6,
-  },
-  categorySelectText: {
-    color: "#920734",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  descriptionTouchableContainer: {
-    width: "100%",
   },
   descriptionInput: {
     backgroundColor: "#F8F9FA",
@@ -5129,15 +2747,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 14,
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-    gap: 12,
-    flexShrink: 0,
-  },
   cancelButton: {
     flex: 1,
     backgroundColor: "#F5F5F5",
@@ -5147,296 +2756,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
-  cancelButtonText: {
-    // flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: "#920734",
-    borderRadius: 8,
-    paddingVertical: 15,
-    alignItems: "center",
-  },
-  disabledSubmitButton: {
-    backgroundColor: "#CCC",
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  disabledSubmitButtonText: {
-    color: "#999",
-  },
   // Questionnaire Modal Styles
-  questionnaireModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    width: "95%",
-    maxHeight: "85%",
-    maxWidth: 600,
-    flexDirection: "column",
-    elevation: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-  },
-  questionnaireContent: {
-    flex: 1,
-    padding: 20,
-  },
-  questionProgress: {
-    marginBottom: 20,
-  },
-  progressText: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: "#E0E0E0",
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#920734",
-    borderRadius: 2,
-  },
-  questionContainer: {
-    flex: 1,
-  },
-  questionText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 20,
-    lineHeight: 22,
-  },
   // answerTypeLabel: {
   //   fontSize: 12,
   //   fontWeight: "600",
   //   color: "#666",
   //   marginBottom: 6,
   // },
-  answerTypeLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 15,
-  },
   // Scale Answer Styles
-  scaleAnswerContainer: {
-    marginBottom: 20,
-  },
-  scaleOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  selectedScaleOption: {
-    backgroundColor: "#E8F5E8",
-    borderColor: "#4CAF50",
-  },
-  scaleOptionContent: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  scaleValue: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#920734",
-    marginRight: 15,
-    minWidth: 30,
-  },
-  scaleLabel: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
   // Predefined Answer Styles
-  predefinedAnswerContainer: {
-    marginBottom: 20,
-  },
-  predefinedOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  selectedPredefinedOption: {
-    backgroundColor: "#E8F5E8",
-    borderColor: "#4CAF50",
-  },
-  predefinedOptionContent: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  predefinedText: {
-    fontSize: 14,
-    color: "#333",
-    flex: 1,
-    marginRight: 10,
-  },
-  marksContainer: {
-    backgroundColor: "#920734",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  marksText: {
-    fontSize: 12,
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
   // Custom Answer Styles
-  customAnswerContainer: {
-    marginBottom: 20,
-  },
-  customAnswerInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 15,
-    fontSize: 14,
-    color: "#333",
-    minHeight: 120,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
   // Navigation Styles
-  questionnaireActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-  },
-  navButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#920734",
-    gap: 6,
-  },
-  disabledNavButton: {
-    borderColor: "#CCC",
-    backgroundColor: "#F5F5F5",
-  },
-  navButtonText: {
-    fontSize: 14,
-    color: "#920734",
-    fontWeight: "600",
-  },
-  disabledNavText: {
-    color: "#CCC",
-  },
-  questionIndicator: {
-    backgroundColor: "#920734",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  questionIndicatorText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  completeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#4CAF50",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  completeButtonText: {
-    fontSize: 14,
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
   // Inline Questionnaire Styles
-  questionsList: {
-    marginTop: 16,
-  },
-  questionItem: {
-    marginBottom: 12,
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  questionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  selectedQuestionHeader: {
-    backgroundColor: "#F0F8FF",
-    borderLeftWidth: 4,
-    borderLeftColor: "#920734",
-  },
-  answeredQuestionHeader: {
-    backgroundColor: "#F0FFF4",
-  },
-  questionNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#920734",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  questionNumberText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  questionListText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-    lineHeight: 20,
-  },
-  questionStatus: {
-    marginLeft: 8,
-  },
-  answerSection: {
-    padding: 16,
-    backgroundColor: "#F8F9FA",
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-  },
   // Rating Display
   calculatedRatingContainer: {
     flexDirection: "row",
@@ -5470,146 +2801,8 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   // Grade Selection Styles
-  selectedGradeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#F0F8FF",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: "#920734",
-  },
-  gradeInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  selectedGradeName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#920734",
-  },
-  removeGradeButton: {
-    padding: 8,
-    backgroundColor: "#FFE6E6",
-    borderRadius: 20,
-  },
-  gradesList: {
-    marginTop: 8,
-  },
-  gradeCard: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 12,
-    alignItems: "center",
-    minWidth: 120,
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  gradeCardName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  gradeCardStudents: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "center",
-  },
-  noStudentsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    gap: 8,
-  },
-  noStudentsText: {
-    fontSize: 14,
-    color: "#999",
-    fontStyle: "italic",
-  },
-  selectGradeFirstContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    gap: 8,
-  },
-  selectGradeFirstText: {
-    fontSize: 14,
-    color: "#999",
-    fontStyle: "italic",
-  },
   // Student Section Header Styles
-  studentSectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  gradeIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0F8FF",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#920734",
-    gap: 4,
-  },
-  gradeIndicatorText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#920734",
-  },
   // Validation Info Styles
-  validationInfoContainer: {
-    backgroundColor: "#F0F8FF",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: "#920734",
-  },
-  validationInfoTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#920734",
-    marginBottom: 12,
-  },
-  validationCheckList: {
-    marginBottom: 8,
-  },
-  validationItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  validationText: {
-    fontSize: 12,
-    color: "#666",
-    marginLeft: 8,
-  },
-  validationCompleted: {
-    color: "#4CAF50",
-    fontWeight: "500",
-  },
-  validationNote: {
-    fontSize: 11,
-    color: "#666",
-    fontStyle: "italic",
-    marginTop: 4,
-  },
   // Loading and Error States
   loadingContainer: {
     flexDirection: "row",
@@ -5619,11 +2812,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8F9FA",
     borderRadius: 8,
     margin: 16,
-  },
-  loadingText: {
-    marginLeft: 10,
-    fontSize: 14,
-    color: "#666",
   },
   errorContainer: {
     justifyContent: "center",
@@ -5683,12 +2871,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: "center",
   },
-  emptySubText: {
-    fontSize: 14,
-    color: "#999",
-    marginTop: 8,
-    textAlign: "center",
-  },
   errorTitle: {
     fontSize: 18,
     fontWeight: "600",
@@ -5709,502 +2891,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  debugContainer: {
-    backgroundColor: "lightgray",
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 8,
-    borderWidth: 1,
-    borderColor: "gray",
-  },
-  debugTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "gray",
-    marginBottom: 0,
-  },
-  debugText: {
-    fontSize: 12,
-    color: "#BF360C",
-    marginBottom: 4,
-    fontFamily: "monospace",
-  },
   // ADD CATEGORY OVERLAY STYLES
-  addCategoryOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 999999,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  addCategoryBackdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    zIndex: 999,
-  },
-  addCategoryContent: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    margin: 20,
-    maxHeight: "90%",
-    width: "95%",
-    elevation: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1000,
-  },
-  addCategoryScrollView: {
-    flex: 1,
-  },
-  addCategoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  addCategoryTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#920734",
-    flex: 1,
-  },
-  addCategoryCloseButton: {
-    padding: 4,
-  },
-  addCategorySectionContainer: {
-    padding: 20,
-  },
-  addCategorySectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-  },
-  addCategoryTitleInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
-    color: "#333",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  pickerStyle: {
-    height: 44,
-    width: "100%",
-    color: "#333",
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
-  },
-  placeholderText: {
-    color: "#999",
-  },
-  dropdownOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  dropdownModal: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    maxHeight: 400,
-    width: "100%",
-    maxWidth: 350,
-  },
-  dropdownTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    textAlign: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  dropdownList: {
-    maxHeight: 300,
-  },
-  dropdownItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
-  },
-  dropdownItemSelected: {
-    backgroundColor: "#FFF5F5",
-  },
-  dropdownItemText: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
-  },
-  dropdownItemTextSelected: {
-    color: "#920734",
-    fontWeight: "500",
-  },
-  addCategoryQuestionsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  addCategoryAddQuestionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#920734",
-  },
-  addCategoryAddQuestionText: {
-    color: "#920734",
-    fontWeight: "600",
-    marginLeft: 4,
-    fontSize: 14,
-  },
-  addCategoryQuestionContainer: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  addCategoryQuestionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  addCategoryQuestionLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-  },
-  addCategoryRemoveQuestionButton: {
-    padding: 4,
-  },
-  addCategoryQuestionInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
-    minHeight: 60,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 12,
-    textAlignVertical: "top",
-  },
-  addCategoryAnswerTypeLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  addCategoryAnswerTypeContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 12,
-  },
-  addCategoryAnswerTypeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  addCategorySelectedAnswerType: {
-    backgroundColor: "#920734",
-    borderColor: "#920734",
-  },
-  addCategoryAnswerTypeText: {
-    fontSize: 12,
-    color: "#333",
-    fontWeight: "500",
-  },
-  addCategorySelectedAnswerTypeText: {
-    color: "white",
-    fontWeight: "600",
-  },
-  addCategoryRequiredToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  addCategoryRequiredLabel: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 8,
-  },
-  addCategoryRequiredLabelActive: {
-    color: "#920734",
-    fontWeight: "500",
-  },
-  addCategoryFooter: {
-    flexDirection: "row",
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-  },
-  addCategoryCancelButton: {
-    flex: 1,
-    backgroundColor: "#F8F9FA",
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  addCategoryCancelButtonText: {
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  addCategorySubmitButton: {
-    flex: 1,
-    backgroundColor: "#920734",
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  addCategorySubmitButtonText: {
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: "white",
-  },
   // Marks Input Styles
-  addCategoryMarksContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  addCategoryMarksLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginRight: 12,
-    flex: 2,
-  },
-  addCategoryMarksInput: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 14,
-    color: "#333",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    flex: 1,
-    textAlign: "center",
-  },
   // Likert Scale Styles
-  addCategoryLikertPreview: {
-    marginBottom: 16,
-  },
-  addCategoryPreviewLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 8,
-  },
-  addCategoryLikertScale: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  addCategoryLikertItem: {
-    alignItems: "center",
-    flex: 1,
-    paddingHorizontal: 2,
-  },
-  addCategoryLikertCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#920734",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  addCategoryLikertNumber: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-  addCategoryLikertLabel: {
-    fontSize: 10,
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 2,
-  },
-  addCategoryLikertMarks: {
-    fontSize: 8,
-    color: "#666",
-    textAlign: "center",
-  },
   // MCQ Styles
-  addCategoryMCQContainer: {
-    marginBottom: 16,
-  },
-  addCategoryMCQHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  addCategoryMCQLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-  },
-  addCategoryMCQAddButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  addCategoryMCQAddText: {
-    color: "#920734",
-    fontSize: 12,
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  addCategoryMCQOptionContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 6,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-  },
-  addCategoryMCQOptionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  addCategoryMCQOptionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-  },
-  addCategoryMCQRemoveButton: {
-    padding: 4,
-  },
-  addCategoryMCQOptionInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 4,
-    padding: 8,
-    fontSize: 14,
-    color: "#333",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    marginBottom: 8,
-  },
-  addCategoryMCQMarksContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  addCategoryMCQMarksLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#333",
-    marginRight: 8,
-  },
-  addCategoryMCQMarksInput: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 4,
-    padding: 6,
-    fontSize: 12,
-    color: "#333",
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    width: 60,
-    textAlign: "center",
-  },
-  addCategoryMCQFirstOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#920734",
-    borderStyle: "dashed",
-  },
-  addCategoryMCQFirstOptionText: {
-    color: "#920734",
-    fontWeight: "600",
-    marginLeft: 8,
-  },
   // Custom Answer Styles
-  addCategoryCustomPreview: {
-    marginBottom: 16,
-  },
-  addCategoryCustomAnswerPreview: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 6,
-    padding: 12,
-    fontSize: 14,
-    color: "#666",
-    minHeight: 80,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    textAlignVertical: "top",
-    marginBottom: 8,
-  },
-  addCategoryCustomMarksInfo: {
-    fontSize: 12,
-    color: "#666",
-    fontStyle: "italic",
-  },
-  evaluationTypeBar: {
-    backgroundColor: "#920734",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    marginHorizontal: -12,
-    marginTop: -12,
-  },
-  evaluationTypeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
   // New Filter Styles
   newFilterContainer: {
     backgroundColor: "#F8F9FA",
@@ -6212,43 +2903,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
     borderRadius: 8,
-  },
-  filterHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  filterHeaderText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  resetFiltersButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "#920734",
-    borderRadius: 6,
-  },
-  resetFiltersText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  filterLoadingIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    marginBottom: 8,
-    backgroundColor: "#920734",
-    borderRadius: 6,
-  },
-  filterLoadingText: {
-    marginLeft: 8,
-    fontSize: 12,
-    color: "#FFFFFF",
-    fontWeight: "500",
   },
   gradeFilterScrollView: {
     marginBottom: 12,
@@ -6281,118 +2935,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   // Evaluation Modal Styles
-  evaluationModal: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "85%",
-    minHeight: "60%",
-    marginTop: "auto",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  evaluationModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  evaluationModalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#333",
-  },
-  evaluationModalContent: {
-    flex: 1,
-    padding: 20,
-  },
-  studentInfoCard: {
-    flexDirection: "row",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    alignItems: "center",
-  },
-  studentAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
-  },
-  studentDetails: {
-    flex: 1,
-  },
-  studentNameModal: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 4,
-  },
-  studentMetaModal: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 4,
-  },
-  feedbackCategoryModal: {
-    fontSize: 12,
-    color: "#920734",
-    fontWeight: "600",
-  },
-  evaluationsSection: {
-    flex: 1,
-  },
-  evaluationsSectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 16,
-  },
-  evaluationItem: {
-    marginBottom: 16,
-    position: "relative",
-  },
-  evaluationStatusBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  evaluationStatusText: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  evaluationContent: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    padding: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#E0E0E0",
-    marginLeft: 8,
-  },
-  evaluationFeedback: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  evaluationDate: {
-    fontSize: 12,
-    color: "#888",
-    fontStyle: "italic",
-  },
   timelineConnector: {
     position: "absolute",
     left: 20,
@@ -6400,23 +2942,6 @@ const styles = StyleSheet.create({
     width: 2,
     height: 30,
     backgroundColor: "#E0E0E0",
-  },
-  noEvaluationsContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  noEvaluationsText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#666",
-    marginTop: 12,
-  },
-  noEvaluationsSubText: {
-    fontSize: 14,
-    color: "#888",
-    textAlign: "center",
-    marginTop: 4,
   },
 
   // Expandable Evaluation Section Styles
@@ -6612,109 +3137,8 @@ const styles = StyleSheet.create({
   },
 
   // Action Buttons Styles
-  evaluationActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-    gap: 12,
-  },
-  deleteFeedbackButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F44336",
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    flex: 0.48,
-    shadowColor: "#F44336",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  deleteFeedbackButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 8,
-    textAlign: "center",
-  },
-  addEvaluationButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#920734",
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    flex: 0.48,
-    shadowColor: "#920734",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buttonActive: {
-    backgroundColor: "#7A0627",
-  },
-  buttonDisabled: {
-    backgroundColor: "#CCC",
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  addEvaluationButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
 
   // Fixed Bottom Action Bar Styles
-  fixedBottomActionBar: {
-    flexDirection: "row",
-    backgroundColor: "#920734",
-    marginTop: -10,
-    marginHorizontal: -20,
-    marginBottom: -20,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    overflow: "hidden",
-  },
-  bottomDeleteButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#B91C1C",
-    paddingVertical: 14,
-    gap: 8,
-  },
-  bottomDeleteButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  bottomAddButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#920734",
-    paddingVertical: 14,
-    gap: 8,
-    borderLeftWidth: 1,
-    borderLeftColor: "rgba(255, 255, 255, 0.2)",
-  },
-  bottomAddButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  bottomButtonActive: {
-    backgroundColor: "#7A0627",
-  },
 
   // Add Evaluation Form Styles
   addEvaluationForm: {

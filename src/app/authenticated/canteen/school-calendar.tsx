@@ -1,5 +1,5 @@
 import React from "react";
-import SchoolCalendarMain from "../../../screens/authenticated/canteen/school-calendar/SchoolCalendarMain";
+import SchoolCalendarMain from "../../../components/common/SchoolCalendarScreen";
 
 export default function CanteenSchoolCalendar() {
   return <SchoolCalendarMain />;

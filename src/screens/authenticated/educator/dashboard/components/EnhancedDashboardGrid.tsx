@@ -105,10 +105,7 @@ const EnhancedDashboardCard: React.FC<{
   const opacity = useSharedValue(0);
 
   // Get color scheme for this card
-  const colorScheme = CARD_COLORS[item.id] || {
-    gradient: ["#F3F4F6", "#E5E7EB"],
-    iconColor: "#6B7280",
-  };
+  const tileColor = "#920734";
 
   React.useEffect(() => {
     // Stagger animation on mount
@@ -150,18 +147,14 @@ const EnhancedDashboardCard: React.FC<{
         {/* Clean white card */}
         <View style={styles.card}>
           {item.badge && <View style={styles.cardBadgeDot} />}
-          {/* Pastel gradient icon container */}
+          {/* Maroon gradient icon tile, fading out toward the corner */}
           <LinearGradient
-            colors={colorScheme.gradient}
+            colors={["#920734", "rgba(146, 7, 52, 0.6)"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.iconContainer}
+            style={[styles.iconContainer, { shadowColor: tileColor }]}
           >
-            <MaterialIcons
-              name={item.icon}
-              size={26}
-              color={colorScheme.iconColor}
-            />
+            <MaterialIcons name={item.icon} size={26} color="#FFFFFF" />
           </LinearGradient>
 
           {/* Content */}
@@ -247,6 +240,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   // Content
   cardContent: {

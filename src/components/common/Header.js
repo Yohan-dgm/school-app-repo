@@ -71,8 +71,6 @@ const Header = () => {
   } = useSelector((state) => state.app);
   const dispatch = useDispatch();
 
-  // Track notification error count to prevent excessive retries
-  const [notificationErrorCount, setNotificationErrorCount] = React.useState(0);
   const [loginUserTrigger] = useLoginUserMutation();
   const router = useRouter();
   const pathname = usePathname();
@@ -134,7 +132,6 @@ const Header = () => {
   // App version checking API call
   const {
     data: versionCheckData,
-    isLoading: versionCheckLoading,
     error: versionCheckError,
     refetch: refetchVersionCheck,
   } = useGetAppUpdateStatusQuery(undefined, {
@@ -144,41 +141,11 @@ const Header = () => {
     refetchOnReconnect: true,
   });
 
-  // Version checking logic with detailed testing logs
+  // Version checking logic
   React.useEffect(() => {
-    console.log("📱 TESTING - Current app info:", {
-      currentAppVersion: currentAppVersion,
-      platform: currentPlatform,
-      expoConfig: Constants.expoConfig,
-      versionFromExpo: Constants.expoConfig?.version,
-      versionFromManifest: Constants.manifest?.version,
-      versionFromManifest2: Constants.manifest2?.extra?.expoClient?.version,
-    });
-
-    console.log("📱 TESTING - Version check data state:", {
-      hasVersionCheckData: !!versionCheckData,
-      versionCheckDataStatus: versionCheckData?.status,
-      hasApiData: !!versionCheckData?.data,
-      versionCheckLoading: versionCheckLoading,
-      versionCheckError: versionCheckError,
-      currentShowOverlay: showVersionUpdateOverlay,
-    });
-
     if (versionCheckData?.status === "success" && versionCheckData?.data) {
       const versionData = versionCheckData.data;
       dispatch(setAppVersionStatus(versionData));
-
-      console.log("📱 TESTING - API Response Full Data:", {
-        fullApiResponse: versionCheckData,
-        versionData: versionData,
-        iso_app_version: versionData.iso_app_version,
-        android_app_version: versionData.android_app_version,
-        user_id: versionData.user_id,
-        username: versionData.username,
-        email: versionData.email,
-        is_active: versionData.is_active,
-        user_category: versionData.user_category,
-      });
 
       const requiredVersion =
         currentPlatform === "ios"
@@ -187,124 +154,25 @@ const Header = () => {
 
       const isVersionMismatch = currentAppVersion !== requiredVersion;
 
-      console.log("📱 TESTING - Version Comparison:", {
-        currentVersion: currentAppVersion,
-        requiredVersion: requiredVersion,
-        platform: currentPlatform,
-        isVersionMismatch: isVersionMismatch,
-        comparisonDetails: {
-          currentVersionType: typeof currentAppVersion,
-          requiredVersionType: typeof requiredVersion,
-          strictEqual: currentAppVersion === requiredVersion,
-          looseEqual: currentAppVersion == requiredVersion,
-          lengthComparison: `current: ${currentAppVersion?.length}, required: ${requiredVersion?.length}`,
-        },
-      });
-
-      if (isVersionMismatch) {
-        console.log(
-          "⚠️ TESTING - Version mismatch detected, showing update overlay",
-        );
-        console.log("⚠️ TESTING - Overlay should be visible with:", {
-          currentVersion: currentAppVersion,
-          requiredVersion: requiredVersion,
-          platform: currentPlatform,
-        });
-        dispatch(setShowVersionUpdateOverlay(true));
-      } else {
-        console.log("✅ TESTING - Versions match, hiding overlay");
-        console.log("✅ TESTING - Same versions confirmed:", {
-          currentVersion: currentAppVersion,
-          requiredVersion: requiredVersion,
-          platform: currentPlatform,
-        });
-        dispatch(setShowVersionUpdateOverlay(false));
-      }
-    } else if (versionCheckData) {
-      console.log("📱 TESTING - API Response not successful:", {
-        fullResponse: versionCheckData,
-        status: versionCheckData?.status,
-        hasData: !!versionCheckData?.data,
-      });
-    } else {
-      console.log(
-        "📱 TESTING - No version check data yet, ensuring overlay is hidden",
-      );
+      dispatch(setShowVersionUpdateOverlay(isVersionMismatch));
+    } else if (!versionCheckData) {
       dispatch(setShowVersionUpdateOverlay(false));
     }
-  }, [
-    versionCheckData,
-    currentAppVersion,
-    currentPlatform,
-    dispatch,
-    showVersionUpdateOverlay,
-  ]);
+  }, [versionCheckData, currentAppVersion, currentPlatform, dispatch]);
 
   // Auto-refresh version check when user data is fetched
   React.useEffect(() => {
     if (userId && userToken) {
-      console.log("📱 TESTING - User logged in, triggering version check...");
-      console.log("📱 TESTING - API Call Details:", {
-        userId: userId,
-        hasToken: !!userToken,
-        tokenLength: userToken?.length,
-        apiEndpoint: "api/user-management/user/get-app-update-status",
-      });
       refetchVersionCheck();
     }
   }, [userId, userToken, refetchVersionCheck]);
 
-  // Debug overlay visibility changes
-  React.useEffect(() => {
-    console.log("📱 TESTING - Overlay visibility changed:", {
-      showVersionUpdateOverlay: showVersionUpdateOverlay,
-      appVersionStatus: appVersionStatus,
-      timestamp: new Date().toISOString(),
-    });
-  }, [showVersionUpdateOverlay, appVersionStatus]);
-
-  // Debug version check API errors
+  // Version check API errors
   React.useEffect(() => {
     if (versionCheckError) {
-      console.error("📱 TESTING - Version check API error:", {
-        error: versionCheckError,
-        status: versionCheckError?.status,
-        data: versionCheckError?.data,
-        message: versionCheckError?.message,
-        timestamp: new Date().toISOString(),
-      });
+      console.error("📱 Header - Version check API error:", versionCheckError);
     }
   }, [versionCheckError]);
-
-  // Debug version check loading state
-  React.useEffect(() => {
-    console.log("📱 TESTING - Version check loading state:", {
-      isLoading: versionCheckLoading,
-      hasData: !!versionCheckData,
-      hasError: !!versionCheckError,
-      timestamp: new Date().toISOString(),
-    });
-  }, [versionCheckLoading, versionCheckData, versionCheckError]);
-
-  // Debug logging - Focus on sessionData which contains real backend data
-  // console.log(
-  //   "🏠 Header - Session data:",
-  //   JSON.stringify(sessionData, null, 2)
-  // );
-  // console.log(
-  //   "🏠 Header - Backend user data:",
-  //   JSON.stringify(sessionData?.data, null, 2)
-  // );
-  // console.log(
-  //   "🏠 Header - User category:",
-  //   userCategory,
-  //   "Is parent:",
-  //   isParent
-  // );
-  // console.log(
-  //   "🏠 Header - Student list:",
-  //   JSON.stringify(sessionData?.data?.student_list, null, 2)
-  // );
 
   // Debug user name resolution
   const userName =
@@ -315,16 +183,6 @@ const Header = () => {
     sessionData?.data?.user?.full_name ||
     sessionData?.data?.user?.username ||
     "Loading...";
-
-  // console.log("🏠 Header - Resolved user name:", userName);
-  // console.log("🏠 Header - Available name fields:", {
-  //   "sessionData?.data?.full_name": sessionData?.data?.full_name,
-  //   "sessionData?.data?.username": sessionData?.data?.username,
-  //   "sessionData?.full_name": sessionData?.full_name,
-  //   "sessionData?.username": sessionData?.username,
-  //   "sessionData?.data?.user?.full_name": sessionData?.data?.user?.full_name,
-  //   "sessionData?.data?.user?.username": sessionData?.data?.user?.username,
-  // });
 
   // Get user profile image using the same pattern as activity feed media
   const userProfileImage =
@@ -347,30 +205,6 @@ const Header = () => {
     return getLocalFallbackProfileImage();
   }, [userProfileImage, token]);
 
-  // console.log("🖼️ Header - User profile image (ENHANCED DEBUG):", {
-  //   // Auth token availability
-  //   hasToken: !!token,
-  //   tokenLength: token?.length || 0,
-
-  //   // Profile image data sources
-  //   reduxProfileImage: reduxUser?.profile_image,
-  //   sessionProfileImage: sessionData?.data?.profile_image,
-  //   resolvedProfileImage: userProfileImage,
-
-  //   // Profile image details
-  //   profileImageId: userProfileImage?.id,
-  //   profileImageFilename: userProfileImage?.filename,
-  //   profileImagePublicPath: userProfileImage?.public_path,
-  //   profileImageFullUrl: userProfileImage?.full_url,
-
-  //   // Final image source (same format as MediaViewer)
-  //   profileImageSource: userProfileImageSource,
-  //   hasProfileImage: !!userProfileImage,
-  //   sourceHasHeaders: !!userProfileImageSource?.headers,
-  //   sourceType: userProfileImageSource?.uri ? "remote" : "local",
-  //   finalUrl: userProfileImageSource?.uri,
-  //   authHeaders: userProfileImageSource?.headers,
-  // });
   const [showStudentSelector, setShowStudentSelector] = useState(false);
   const [showStudentProfile, setShowStudentProfile] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -382,13 +216,11 @@ const Header = () => {
 
     try {
       setIsRefreshing(true);
-      console.log("🔄 Refreshing student data...");
 
       // Get stored login credentials from AsyncStorage
       const storedCredentials = await AsyncStorage.getItem("loginCredentials");
 
       if (!storedCredentials) {
-        console.log("⚠️ No stored credentials found, skipping refresh...");
         // Don't clear session data if we just don't have stored credentials
         // The user might have valid session data that doesn't need refreshing
 
@@ -399,10 +231,6 @@ const Header = () => {
       }
 
       const credentials = JSON.parse(storedCredentials);
-      console.log("🔑 Using stored credentials for refresh:", {
-        username_or_email: credentials.username_or_email,
-        pin: credentials.pin ? "****" : "missing",
-      });
 
       // Call the real login API to get fresh data
       const response = await loginUserTrigger({
@@ -410,11 +238,6 @@ const Header = () => {
         password: credentials.password,
         pin: credentials.pin,
       }).unwrap();
-
-      console.log(
-        "🔄 Fresh login response:",
-        JSON.stringify(response, null, 2),
-      );
 
       if (response?.success && response?.data) {
         // Create enhanced session data (same structure as login)
@@ -428,9 +251,6 @@ const Header = () => {
         };
 
         dispatch(setSessionData(enhancedSessionData));
-        console.log(
-          "✅ Student data refreshed successfully with real API data!",
-        );
 
         if (showAlerts) {
           alert(
@@ -438,9 +258,6 @@ const Header = () => {
           );
         }
       } else {
-        console.log(
-          "⚠️ Login API returned invalid response, falling back to cache clear...",
-        );
         await AsyncStorage.removeItem("persist:root");
         dispatch(logout());
 
@@ -450,7 +267,6 @@ const Header = () => {
       }
     } catch (error) {
       console.error("❌ Error refreshing student data:", error);
-      console.log("⚠️ API refresh failed, falling back to cache clear...");
 
       // Fallback to clearing cache if API call fails
       try {
@@ -481,16 +297,12 @@ const Header = () => {
       sessionData?.data?.student_list &&
       sessionData.data.student_list.length > 0
     ) {
-      console.log("🔄 Auto-refreshing student data on component mount...");
       refreshStudentData(false); // Silent refresh (no alerts)
     }
 
     // Listen for app state changes (foreground/background)
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === "active" && sessionData?.data?.student_list) {
-        console.log(
-          "🔄 App came to foreground, auto-refreshing student data...",
-        );
         refreshStudentData(false); // Silent refresh (no alerts)
       }
     };
@@ -504,7 +316,6 @@ const Header = () => {
     const refreshInterval = setInterval(
       () => {
         if (sessionData?.data?.student_list) {
-          console.log("🔄 Periodic auto-refresh of student data...");
           refreshStudentData(false); // Silent refresh (no alerts)
         }
       },
@@ -518,64 +329,8 @@ const Header = () => {
     };
   }, [sessionData?.data?.student_list?.length]); // Re-run when student list length changes
 
-  // Animation for profile picture border - Creative animated effects
-  const borderColorAnimation = useRef(new Animated.Value(0)).current;
-  const shadowOpacityAnimation = useRef(new Animated.Value(0)).current;
+  // Tap-feedback scale animation for the profile picture
   const scaleAnimation = useRef(new Animated.Value(1)).current;
-  const rotateAnimation = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    // Create pulsing border animation with color transition
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(borderColorAnimation, {
-          toValue: 1,
-          duration: 3000,
-          useNativeDriver: false, // Keep false for color/shadow animations
-        }),
-        Animated.timing(borderColorAnimation, {
-          toValue: 0,
-          duration: 3000,
-          useNativeDriver: false, // Keep false for color/shadow animations
-        }),
-      ]),
-    );
-
-    // Create shadow animation with glow effect
-    const shadowAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(shadowOpacityAnimation, {
-          toValue: 0.8,
-          duration: 2500,
-          useNativeDriver: false, // Keep false for shadow animations
-        }),
-        Animated.timing(shadowOpacityAnimation, {
-          toValue: 0.2,
-          duration: 2500,
-          useNativeDriver: false, // Keep false for shadow animations
-        }),
-      ]),
-    );
-
-    // Create subtle rotation animation
-    const rotateAnimationLoop = Animated.loop(
-      Animated.timing(rotateAnimation, {
-        toValue: 1,
-        duration: 8000,
-        useNativeDriver: false, // Changed to false to avoid mixing native/JS drivers
-      }),
-    );
-
-    pulseAnimation.start();
-    shadowAnimation.start();
-    rotateAnimationLoop.start();
-
-    return () => {
-      pulseAnimation.stop();
-      shadowAnimation.stop();
-      rotateAnimationLoop.stop();
-    };
-  }, []);
 
   const handleProfilePress = () => {
     // Scale animation on press with enhanced feedback
@@ -623,41 +378,11 @@ const Header = () => {
     }));
   }, [notificationsData]);
 
-  // Simple notification data logging following UniversalNotificationSystem pattern
-  React.useEffect(() => {
-    if (notificationsData) {
-      console.log("🔔 Header - Notification data received:", {
-        totalCount: notificationsData.data?.length || 0,
-        hasData: !!notificationsData.data,
-        firstFew: notificationsData.data?.slice(0, 2).map((n) => ({
-          id: n.id,
-          title: n.title,
-          is_read: n.is_read,
-        })),
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }, [notificationsData]);
-
   React.useEffect(() => {
     if (notificationsError) {
-      console.error("🔔 Header - Notification API error:", {
-        error: notificationsError,
-        status: notificationsError?.status,
-        data: notificationsError?.data,
-        timestamp: new Date().toISOString(),
-      });
-
-      // Track error count
-      setNotificationErrorCount((prev) => prev + 1);
-
-      if (notificationsError?.status === 500 && notificationErrorCount >= 3) {
-        console.error(
-          "🔔 Header - Multiple notification API failures detected, may need server-side investigation",
-        );
-      }
+      console.error("🔔 Header - Notification API error:", notificationsError);
     }
-  }, [notificationsError, notificationErrorCount]);
+  }, [notificationsError]);
 
   // Real-time notifications now handled by the initialization effect above
   // No need for separate listener effects - callbacks handle everything
@@ -666,14 +391,9 @@ const Header = () => {
   React.useEffect(() => {
     const handleAppStateChange = async (nextAppState) => {
       if (nextAppState === "active" && userId && userToken) {
-        console.log(
-          "🔄 Header - App came to foreground, refreshing session data...",
-        );
-
         try {
           // Refresh session data (this will trigger payment validation via middleware)
           await refreshSession();
-          console.log("✅ Header - Session data refreshed on foreground");
           // Note: Notifications will be updated automatically via RTK Query cache
         } catch (error) {
           console.error(
@@ -707,37 +427,17 @@ const Header = () => {
         sessionData.data.full_name &&
         sessionData.data.user_category;
 
-      console.log("🔄 Header - Mount session refresh check:", {
-        hasCompleteData: hasCompleteData,
-        dataAge: dataAge,
-        dataAgeMinutes: Math.round(dataAge / 60000),
-        shouldRefresh: !hasCompleteData || dataAge > fiveMinutes,
-        lastUpdated: new Date(lastUpdate).toISOString(),
-      });
-
       // Only refresh if data is incomplete or older than 5 minutes
       if (!hasCompleteData || dataAge > fiveMinutes) {
-        console.log("🔄 Header - Data is stale or incomplete, refreshing...");
-
         // Add delay to prevent race condition with login
         setTimeout(() => {
-          refreshSession()
-            .then(() => {
-              console.log(
-                "✅ Header - Session data refreshed on mount (delayed)",
-              );
-            })
-            .catch((error) => {
-              console.error(
-                "❌ Header - Error refreshing session data on mount:",
-                error,
-              );
-            });
+          refreshSession().catch((error) => {
+            console.error(
+              "❌ Header - Error refreshing session data on mount:",
+              error,
+            );
+          });
         }, 2000); // 2 second delay
-      } else {
-        console.log(
-          "✅ Header - Session data is fresh, skipping refresh on mount",
-        );
       }
     }
   }, []); // Run only once on mount
@@ -748,10 +448,8 @@ const Header = () => {
 
     const interval = setInterval(
       async () => {
-        console.log("🔄 Header - Periodic session refresh...");
         try {
           await refreshSession();
-          console.log("✅ Header - Periodic session refresh completed");
         } catch (error) {
           console.error("❌ Header - Periodic session refresh failed:", error);
         }
@@ -761,59 +459,6 @@ const Header = () => {
 
     return () => clearInterval(interval);
   }, [userId, userToken, refreshSession]);
-
-  // Get student data from backend API response
-  const backendStudentList = sessionData?.data?.student_list || [];
-
-  // Debug: Log the current session data and student list
-  // console.log(
-  //   "🔍 Header - Current sessionData:",
-  //   JSON.stringify(sessionData, null, 2)
-  // );
-  // console.log(
-  //   "🔍 Header - backendStudentList length:",
-  //   backendStudentList.length
-  // );
-  // console.log(
-  //   "🔍 Header - backendStudentList:",
-  //   JSON.stringify(backendStudentList, null, 2)
-  // );
-
-  // Transform backend student data to match UI requirements
-  const students = backendStudentList.map((student) => {
-    // Transform student data using utility function
-    const transformedStudent = transformStudentWithProfilePicture(
-      student,
-      sessionData,
-    );
-
-    console.log(
-      `🎓 Header - Using API calling name: "${transformedStudent.student_calling_name}" for student "${transformedStudent.name}"`,
-    );
-    console.log(`🎓 Header - Student grade_level_class data:`, {
-      student_id: transformedStudent.id,
-      grade: transformedStudent.grade,
-      class_id: transformedStudent.class_id,
-    });
-    console.log(
-      `🖼️ Header - Profile picture for student ${transformedStudent.id}:`,
-      {
-        attachments: student.attachments,
-        profileImage: transformedStudent.profileImage,
-      },
-    );
-
-    return transformedStudent;
-  });
-
-  // console.log(
-  //   "🎓 Header - Backend student list:",
-  //   JSON.stringify(backendStudentList, null, 2)
-  // );
-  // console.log(
-  //   "🎓 Header - Transformed students:",
-  //   JSON.stringify(students, null, 2)
-  // );
 
   // Fallback student data when no students are available
   const fallbackStudent = {
@@ -828,41 +473,25 @@ const Header = () => {
     timeline: [],
   };
 
-  // Transform backend student data to match global state requirements
+  // Login-cached student list, used everywhere in this header except the
+  // picker modal (which fetches fresh — see pickerStudents below). Depends
+  // on the whole sessionData object (a stable redux reference that only
+  // changes when setSessionData actually fires), not on an `|| []`
+  // fallback expression, so this only recomputes when the data actually
+  // changes, not on every render.
   const transformedStudents = useMemo(() => {
-    const transformed = students.map((student) => {
-      const transformedStudent = {
-        id: student.id,
-        student_id: student.id,
-        user_id: sessionData?.data?.id || sessionData?.id,
-        name: student.name, // Use the already transformed name
-        student_calling_name: student.student_calling_name,
-        profileImage: student.profileImage, // Use the already processed profile image
-        studentId: student.studentId, // Use the already transformed studentId
-        admissionNumber: student.admissionNumber, // Use the already transformed admissionNumber
-        campus: student.campus, // Use the already transformed campus
-        grade: student.grade, // Use the already transformed grade
-        class_id: student.class_id || null,
-        gender: student.gender,
-        dateOfBirth: student.dateOfBirth,
-        schoolHouse: student.schoolHouse, // Use the already transformed schoolHouse
-        guardianInfo: student.guardianInfo,
-        timeline: student.timeline, // Use the already created timeline
+    const list = sessionData?.data?.student_list;
+    if (!list || list.length === 0) return [];
+
+    return list.map((student) => {
+      const t = transformStudentWithProfilePicture(student, sessionData);
+      return {
+        ...t,
+        student_id: t.id,
+        user_id: sessionData?.data?.id ?? sessionData?.id,
       };
-
-      console.log(`🎓 Header - Transformed student for global state:`, {
-        student_calling_name: transformedStudent.student_calling_name,
-        student_id: transformedStudent.student_id,
-        grade: transformedStudent.grade,
-        class_id: transformedStudent.class_id,
-        campus: transformedStudent.campus,
-      });
-
-      return transformedStudent;
     });
-
-    return transformed;
-  }, [students, sessionData?.data?.id, sessionData?.id]);
+  }, [sessionData]);
 
   // Student picker: fetched fresh from the backend every time the picker
   // opens (see handleDropdownPress) instead of using the list cached at
@@ -879,10 +508,7 @@ const Header = () => {
 
   useEffect(() => {
     if (pickerError) {
-      console.log(
-        "🎓 Header - get-my-student-list failed:",
-        JSON.stringify(pickerError, null, 2),
-      );
+      console.error("🎓 Header - get-my-student-list failed:", pickerError);
     }
   }, [pickerError]);
 
@@ -917,61 +543,23 @@ const Header = () => {
   const hasStudents = transformedStudents.length > 0;
   const hasMultipleStudents = transformedStudents.length > 1;
 
-  // Log student selection info
-  console.log(`🎓 Header - Total students: ${transformedStudents.length}`);
-  console.log(`🎓 Header - Has multiple students: ${hasMultipleStudents}`);
-  console.log(
-    `🎓 Header - Current student: ${currentStudent?.student_calling_name}`,
-  );
-  console.log(
-    `🎓 Header - Selected student ID: ${selectedStudent?.id || "none"}`,
-  );
-
-  // Enhanced auto-select first student logic with proper dependency management
+  // Auto-select the first student only if nothing is selected yet (first
+  // login / fresh install). Once a student is selected — whether picked
+  // manually or auto-selected here — it is never silently swapped out.
+  //
+  // This used to also "correct" the selection if it wasn't found in
+  // transformedStudents (the login-cached list), but that list is NOT what
+  // the picker modal selects from (the picker uses pickerStudents, fetched
+  // fresh from a separate endpoint — see handleDropdownPress). Any manual
+  // pick other than transformedStudents[0] would fail that check and get
+  // silently reverted on the very next render — the actual cause of the
+  // selected student "changing back" with 2+ children (invisible with a
+  // single child, since transformedStudents[0] IS that child).
   useEffect(() => {
-    // Only auto-select if we have students, no current selection, and transformed students are ready
-    if (hasStudents && !selectedStudent && transformedStudents.length > 0) {
-      const firstStudent = transformedStudents[0];
-      console.log(
-        `🎓 Header - Auto-selecting first student: ${firstStudent?.student_calling_name} (ID: ${firstStudent?.student_id})`,
-      );
-      console.log(`🎓 Header - Auto-selected student class info:`, {
-        student_calling_name: firstStudent?.student_calling_name,
-        student_id: firstStudent?.student_id,
-        grade: firstStudent?.grade,
-        class_id: firstStudent?.class_id,
-        campus: firstStudent?.campus,
-      });
-      dispatch(setSelectedStudent(firstStudent));
-    }
-    // If we have a selected student but it's not in the current list (e.g., after data refresh)
-    else if (selectedStudent && transformedStudents.length > 0) {
-      const studentExists = transformedStudents.find(
-        (student) => student.student_id === selectedStudent.student_id,
-      );
-      if (!studentExists) {
-        console.log(
-          `🎓 Header - Selected student no longer exists, auto-selecting first available: ${transformedStudents[0]?.student_calling_name}`,
-        );
-        dispatch(setSelectedStudent(transformedStudents[0]));
-      }
+    if (hasStudents && !selectedStudent) {
+      dispatch(setSelectedStudent(transformedStudents[0]));
     }
   }, [hasStudents, selectedStudent, transformedStudents, dispatch]);
-
-  // Monitor student selection changes and log for debugging
-  useEffect(() => {
-    if (selectedStudent) {
-      console.log(
-        `🎓 Header - Student selection changed to: ${selectedStudent.student_calling_name} (ID: ${selectedStudent.student_id})`,
-      );
-      console.log(
-        `🎓 Header - Selected student details:`,
-        JSON.stringify(selectedStudent, null, 2),
-      );
-    } else {
-      console.log(`🎓 Header - No student currently selected`);
-    }
-  }, [selectedStudent]);
 
   // Simple unread count calculation following UniversalNotificationSystem pattern
   const allNotifications = notificationsData?.data || [];
@@ -986,18 +574,6 @@ const Header = () => {
 
   const unreadCount = unreadPushCount + unreadChatCount;
 
-  // Simple debug logging following UniversalNotificationSystem pattern
-  React.useEffect(() => {
-    console.log("🔔 Header - Notification state:", {
-      totalNotifications: allNotifications.length,
-      unreadCount,
-      hasData: !!notificationsData,
-      preview: allNotifications
-        .slice(0, 2)
-        .map((n) => ({ id: n.id, title: n.title, is_read: n.is_read })),
-    });
-  }, [allNotifications.length, unreadCount, notificationsData]);
-
   // Check if we're currently on the notifications page for active state
   const isOnNotificationsPage = pathname?.includes("/notifications");
 
@@ -1006,10 +582,6 @@ const Header = () => {
   };
 
   const handleNotificationPress = () => {
-    console.log(
-      "🔔 Header - Notification button pressed, navigating directly to chat section",
-    );
-
     // Navigate to notification section based on user category
     // Using getUserCategoryName which returns folder-friendly names like 'principal', 'senior_management'
     const userCategoryName = getUserCategoryName(userCategory);
@@ -1019,7 +591,6 @@ const Header = () => {
 
     try {
       router.push(notificationRoute);
-      console.log(`🔔 Header - Navigation successful to: ${notificationRoute}`);
     } catch (error) {
       console.error("🔔 Header - Navigation failed:", error);
       // Fallback navigation
@@ -1027,24 +598,11 @@ const Header = () => {
     }
   };
 
-  // Note: handleNotificationItemPress has been removed since the popup modal was removed
-
   const handleClosePaymentOverlay = () => {
-    console.log("💰 Header - Payment overlay closed by user");
     dispatch(setShowPaymentOverlay(false));
   };
 
   const handleStudentSelect = (student) => {
-    // console.log(
-    //   `🎓 Header - Student selected: ${student.student_calling_name} (ID: ${student.id})`
-    // );
-    // console.log(`🎓 Header - Selected student class info:`, {
-    //   student_calling_name: student?.student_calling_name,
-    //   student_id: student?.student_id,
-    //   grade: student?.grade,
-    //   class_id: student?.class_id,
-    //   campus: student?.campus,
-    // });
     dispatch(setSelectedStudent(student));
     setShowStudentSelector(false);
     setStudentSearchQuery("");
@@ -1061,14 +619,6 @@ const Header = () => {
 
   const renderStudentItem = ({ item }) => {
     const isSelected = selectedStudent?.id === item.id;
-
-    // Debug log to check item data
-    console.log(`🎓 Header - Rendering student item:`, {
-      name: item.student_calling_name || item.name,
-      admissionNumber: item.admissionNumber,
-      grade: item.grade,
-      campus: item.campus,
-    });
 
     return (
       <TouchableOpacity
@@ -1170,24 +720,6 @@ const Header = () => {
           <Image
             source={userProfileImageSource}
             style={styles.userProfileImage}
-            onError={(e) => {
-              // console.log("🖼️ Header - Error loading user profile image:", {
-              //   error: e.nativeEvent.error,
-              //   source: userProfileImageSource,
-              //   profileImage: userProfileImage,
-              //   url: userProfileImageSource?.uri,
-              // });
-            }}
-            onLoad={() => {
-              // console.log(
-              //   "🖼️ Header - User profile image loaded successfully:",
-              //   {
-              //     source: userProfileImageSource,
-              //     profileImage: userProfileImage,
-              //     url: userProfileImageSource?.uri,
-              //   }
-              // );
-            }}
           />
           <View style={styles.userInfoContainer}>
             <Text style={styles.userName}>{userName}</Text>
@@ -1204,55 +736,20 @@ const Header = () => {
               onPress={handleProfilePress}
               activeOpacity={0.8}
             >
-              {/* Animated border container with creative effects */}
+              {/* Profile picture with tap-feedback scale animation */}
               <Animated.View
                 style={[
                   styles.animatedBorderContainer,
-                  {
-                    borderColor: borderColorAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [
-                        "rgba(146, 7, 52, 0.3)",
-                        "rgba(146, 7, 52, 0.8)",
-                      ],
-                    }),
-                    shadowOpacity: shadowOpacityAnimation,
-                    shadowRadius: shadowOpacityAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [4, 12],
-                    }),
-                    transform: [
-                      { scale: scaleAnimation },
-                      {
-                        rotate: rotateAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["0deg", "360deg"],
-                        }),
-                      },
-                    ],
-                  },
+                  { transform: [{ scale: scaleAnimation }] },
                 ]}
               >
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        rotate: rotateAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["0deg", "-360deg"], // Counter-rotate the image
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <Image
-                    source={
-                      currentStudent?.profileImage ||
-                      require("../../assets/images/sample-profile.png")
-                    }
-                    style={styles.selectedStudentImage}
-                  />
-                </Animated.View>
+                <Image
+                  source={
+                    currentStudent?.profileImage ||
+                    require("../../assets/images/sample-profile.png")
+                  }
+                  style={styles.selectedStudentImage}
+                />
               </Animated.View>
             </TouchableOpacity>
 

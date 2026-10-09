@@ -1,0 +1,102 @@
+# Educator Feedback: Rating mode
+
+## Todo
+- [x] Backend: new module new folders inside the existing `EducatorFeedbackManagement` module (`Intents/RatingFeedback`, `Models/EduFbAddOption.php`)
+- [x] Frontend: `educator-feedback-rating-api.ts`
+- [x] Frontend: `RatingModeFeedbackForm.tsx`
+- [x] Frontend: wire rating mode into `EducatorFeedbackModal.tsx`
+- [x] Three route lines appended to `EducatorFeedbackManagement/routes.php` (additive only)
+- [ ] Database: create `edu_fb_add_option` and seed `add_feedback_mode = classic` (done by the user)
+
+## Review
+- No migrations or database changes were made, and no live backend endpoint file was edited.
+- Rating mode writes to `edu_fb`, `edu_fb_backup`, `edu_fb_comment` and `edu_fd_evaluation`, with `edu_fb.status = 2`. It writes no subcategories.
+- Per student, one randomly chosen rated category keeps the comment; the other categories get an empty comment row.
+- The app falls back to the classic flow if the config call fails or the table is missing.
+- `tsc` shows no new errors; the errors it reports in the modal were already there.
+
+## UI redesign
+- [x] `FeedbackCard.tsx`: compact card, tap to expand (full comment, edit, timeline, Delete / Add evaluation)
+- [x] List screen: grade chips only, retry on error, slim pagination
+- [x] `AddFeedbackWizard.tsx`: 3-step Add Feedback (students -> comment/category -> ratings/description) for both modes
+- [x] Removed dead code: `AddCategoryOverlay`, the inline category handler, `handleAddCategory`, the commented popup, and 358 unused styles (modal 6,943 -> about 3,200 lines)
+- Subcategories are no longer shown when adding classic feedback (the payload sends an empty array).
+- Not done: the debug `console.log` calls in the modal and the unused inline-category state are still there.
+
+## Grouped rating list (one card per submission)
+- [x] Backend (inside `EducatorFeedbackManagement/Intents/RatingFeedback/`): `rating/list`, `rating/delete`, `rating/evaluation/create`, `rating/evaluation/delete`; `rating/create` now writes `submission_id` and `category_section`
+- [x] Four route lines appended to `routes.php`
+- [x] API: `getRatingFeedbackList`, `deleteRatingFeedback`, `addRatingEvaluation`, `deleteRatingEvaluation`
+- [x] `FeedbackCard.tsx` shows the comment plus a rating row per category for grouped items (extended instead of adding a second card component)
+- [x] Modal: in `rating` mode the list, delete, evaluation add/delete use the new APIs; in `classic` mode nothing changes
+- [ ] Database (user): add `edu_fb.submission_id` and `edu_fb.category_section` before using rating mode
+
+# Calendar smoothness (educator School Calendar)
+
+Cause: `SchoolCalendarMain.js` is a thin wrapper; all the cost is in `src/components/common/UniversalSchoolCalendar.tsx` (2,811 lines).
+
+## Todo
+- [ ] Remove the render-time `console.log` calls (about 8 per render) and the per-event / per-month logs inside `getMonthEventCounts` (12 months x every event x 3 dates, each logging) and the logs inside the month-view `ScrollView` IIFE
+- [ ] Use the existing memoized selectors (`selectEventsByDateMemoized`, `selectCalendarMarkingsMemoized`) instead of `selectEventsByDate` / `selectCalendarMarkings`, which return a new object/array on every store update and re-render the whole screen
+- [ ] Memoize the `markedDates` and `theme` props of `<Calendar>` (new objects every render make it re-render all days)
+- [ ] `SchoolCalendarMain.js`: drop its console.log, read only `user_category` from the store
+- [ ] Show the cached calendar immediately (only show the spinner when there is no data yet), so reopening the screen is instant
+
+## Not planned (to keep the change small)
+- No restructure of the 2,800-line component or conversion of the ScrollViews to FlatList.
+
+## Smooth transitions (calendar)
+- [x] `UniversalSchoolCalendar.tsx`: `withAnimation` wraps the setters for view mode, date strip open/close, month select/back and both filters in `LayoutAnimation` (easeInEaseOut), enabled on Android. Nothing else changed.
+
+# One shared School Calendar screen
+- [x] New `src/components/common/SchoolCalendarScreen.js` (parent: memoized students, auto-select first, student subtitle; student: own subtitle; others: default)
+- [x] The 12 route files `src/app/authenticated/<role>/school-calendar.tsx` now import it
+- [x] Deleted the 12 `src/screens/authenticated/<role>/school-calendar/` folders (about 450 lines, with console.logs)
+
+## Review
+- Only parent has extra logic, kept behind a category check. Parent's background is now `#F8F9FA` like the others (was white).
+- eslint and tsc show no errors for the new file or the route files. Not run on a device.
+
+# Principal Dashboard optimization (`PrincipalDashboardMain.tsx`, 2,130 lines)
+
+Findings:
+- `EducatorFeedbackContent` (lines 78-1078) and `educatorFeedbackStyles` (lines 1758-2128) are unused anywhere: about 1,370 lines of dead code with mock data.
+- `dashboardItems` (and all the `openXxx` handlers) are rebuilt on every render, so `EnhancedDashboardGrid` re-renders every time any state changes (e.g. opening a modal).
+- 11 modals are mounted all the time with `visible=false`, plus 5 always-mounted Modalize modals (Academic, Facilities, Financial, Parent, Emergency) whose dashboard items are all commented out.
+- Pull-to-refresh is a fake 1.5 s timer and does not refetch anything.
+- Dead state: `showUniversalDrawer`, `showStudentDetails` (never set to true), plus unused imports and `console.log` calls.
+
+## Todo
+- [x] Delete `EducatorFeedbackContent`, `educatorFeedbackStyles`, the `FeedbackItem` interface, and the imports only they use (`Image`, `Modal`, `TextInput`, `Alert`, `Picker`)
+- [x] Delete the 5 always-mounted Modalize modals + refs, and the unused imports (`SummaryDashboard`, `StudentAttendanceStatsModal` stays only if still rendered)
+- [x] Replace the 12 near-identical `openXxx` functions with one `useCallback` opener, and wrap `dashboardItems` in `useMemo` so the grid stops re-rendering on unrelated state changes
+- [x] Replace the long `activeModal !== ...` chain with a single `FULL_SCREEN_MODAL_IDS` lookup
+- [x] Remove the dead drawer state and the `console.log` calls
+- [x] Keep the modals mounted as they are (lazy-mounting could change their data-fetch timing; offered as an optional follow-up)
+
+## Not planned (to keep the change small)
+- No split of the file, no change to modal internals, no real refetch on pull-to-refresh (needs a refetch hook from `SimpleSummaryDashboard`).
+
+## Review
+- `PrincipalDashboardMain.tsx`: 2,130 -> 644 lines. Removed the unused `EducatorFeedbackContent` + styles, the 5 always-mounted Modalize modals, the dead drawer state/`UniversalDrawerMenu` block, unused imports and `console.log`s.
+- The 12 `openXxx` handlers are gone (items call `handleFullScreenPress(id)`); `dashboardItems` is in `useMemo` and the handlers are `useCallback`, so the grid no longer re-renders on modal open/close.
+- The `activeModal !== ...` chain is now a `DEDICATED_MODAL_IDS` set.
+- Behavior unchanged; the live modals stay mounted. eslint and tsc show no errors for this file. Not run on a device.
+
+# Educator Dashboard optimization (`EducatorDashboardMain.tsx`, same approach as the principal one)
+- [x] Remove the infinite FAB pulse animation (`withRepeat`, runs forever on the UI thread but its FAB is commented out), the commented FAB JSX, `handleFABPress` and unused imports
+- [x] Remove the 5 always-mounted Modalize modals + refs, the dead `UniversalDrawerMenu` state/block and `console.log`s
+- [x] One `handleFullScreenPress(id)` instead of 9 `openXxx` functions; `useMemo` for `primaryItems` / `otherItems`; `useCallback` for handlers
+- [x] Replace the `activeModal !== ...` chain with a `DEDICATED_MODAL_IDS` set
+
+## Parent Educator Feedback drawer redesign
+- [x] Backend: `rating/student-list` (new `ListStudentRatingFeedback`); `ListRatingFeedbackAction` accepts an optional `student_id`
+- [x] `RatingFeedbackItem.tsx`: comment (read more) + rating bar per category + parent comments
+- [x] `EducatorFeedbackDrawer.tsx`: modern sheet; follows `add_feedback_mode` (rating -> new cards, classic -> old `FeedbackItem`); debug logs removed
+- [x] `FeedbackPagination.tsx`: slim pill pager
+- Note: like the existing parent list, `rating/student-list` does not check that the student belongs to the calling parent.
+
+## Past (classic) feedback kept in the lists
+- `rating/list` and `rating/student-list` now return a merged feed: rating submissions (`type: rating`) plus past feedback rows without a `submission_id` (`type: classic`), newest first, one pagination.
+- Parents only get past feedback that was approved for them (status 2 with a parent-visible evaluation), as before.
+- Educator list: past items keep their status pill, timeline, Add evaluation and Delete; rating items have none of the evaluation UI.

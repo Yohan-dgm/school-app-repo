@@ -13,13 +13,14 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { MaterialIcons } from "@expo/vector-icons";
-import {
-  modernColors,
-  maroonTheme,
-  feedbackCardTheme,
-} from "../../data/studentGrowthData";
+import { feedbackCardTheme } from "../../data/studentGrowthData";
 import { useGetStudentCategoryFeedbackListQuery } from "../../api/educator-feedback-api";
+import {
+  useGetFeedbackModeQuery,
+  useGetStudentRatingFeedbackListQuery,
+} from "../../api/educator-feedback-rating-api";
 import FeedbackItem from "./FeedbackItem";
+import RatingFeedbackItem from "./RatingFeedbackItem";
 import FeedbackPagination from "./FeedbackPagination";
 
 const { height: screenHeight } = Dimensions.get("window");
@@ -31,6 +32,8 @@ interface EducatorFeedbackDrawerProps {
   studentName?: string;
 }
 
+const pageSize = 10;
+
 const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
   visible,
   onClose,
@@ -39,39 +42,36 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [slideAnim] = useState(new Animated.Value(screenHeight));
-  const pageSize = 10;
 
-  // API call for feedback data
-  const {
-    data: apiResponse,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useGetStudentCategoryFeedbackListQuery(
-    {
-      student_id: studentId,
-      page: currentPage,
-      page_size: pageSize,
-    },
-    {
-      skip: !visible || !studentId || studentId === 0,
-      refetchOnMountOrArgChange: true,
-    }
+  // The school chooses the feedback style in the database: "rating" or "classic"
+  const { data: feedbackMode, isLoading: modeLoading } =
+    useGetFeedbackModeQuery(undefined, { skip: !visible });
+  const isRatingMode = feedbackMode === "rating";
+  const noStudent = !studentId || studentId === 0;
+  const skipBase = !visible || noStudent || modeLoading;
+
+  const classicQuery = useGetStudentCategoryFeedbackListQuery(
+    { student_id: studentId, page: currentPage, page_size: pageSize },
+    { skip: skipBase || isRatingMode, refetchOnMountOrArgChange: true },
+  );
+  const ratingQuery = useGetStudentRatingFeedbackListQuery(
+    { student_id: studentId, page: currentPage, page_size: pageSize },
+    { skip: skipBase || !isRatingMode, refetchOnMountOrArgChange: true },
   );
 
-  console.log("📋 EducatorFeedbackDrawer - API Response:", apiResponse);
-  console.log("📋 EducatorFeedbackDrawer - Current Page:", currentPage);
-  console.log("📋 EducatorFeedbackDrawer - Loading:", isLoading);
-  console.log("📋 EducatorFeedbackDrawer - Student ID:", studentId);
-  console.log("📋 EducatorFeedbackDrawer - Visible:", visible);
-  console.log(
-    "📋 EducatorFeedbackDrawer - API Query Skip:",
-    !visible || !studentId || studentId === 0
-  );
-  console.log("📋 EducatorFeedbackDrawer - API Error:", error);
+  const active = isRatingMode ? ratingQuery : classicQuery;
+  const isLoading = modeLoading || active.isLoading;
+  const { isError, error, refetch } = active;
 
-  // Animation effects
+  // Same shape for both lists
+  const items: any[] = isRatingMode
+    ? ratingQuery.data?.data?.feedbacks || []
+    : classicQuery.data?.data?.feedback_list || [];
+  const totalRecords: number = isRatingMode
+    ? ratingQuery.data?.data?.pagination?.total_count || 0
+    : classicQuery.data?.data?.pagination?.total || 0;
+  const totalPages = Math.max(Math.ceil(totalRecords / pageSize), 1);
+
   useEffect(() => {
     if (visible) {
       Animated.spring(slideAnim, {
@@ -89,7 +89,7 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
     }
   }, [visible, slideAnim]);
 
-  // Reset page when drawer opens
+  // Start from the first page whenever the drawer opens
   useEffect(() => {
     if (visible) {
       setCurrentPage(1);
@@ -99,199 +99,122 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
   const handleClose = () => {
     Animated.timing(slideAnim, {
       toValue: screenHeight,
-      duration: 300,
+      duration: 250,
       useNativeDriver: true,
-    }).start(() => {
-      onClose();
-    });
+    }).start(() => onClose());
   };
 
-  const handlePreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    }
-  };
-
-  const handleNextPage = () => {
-    const totalPages = Math.ceil(
-      (apiResponse?.data?.pagination?.total || 0) / pageSize
-    );
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
-    }
-  };
-
-  const handleFeedbackPress = (feedback: any) => {
-    console.log("📋 Feedback selected:", feedback);
-    // Future: Open detailed view modal
-  };
-
-  const renderLoadingState = () => (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color={feedbackCardTheme.primary} />
-      <Text style={styles.loadingText}>Loading feedback data...</Text>
-    </View>
-  );
-
-  const renderErrorState = () => {
-    // Check for different error types
-    const isAuthError =
-      error &&
-      typeof error === "object" &&
-      (("status" in error && (error as any).status === 401) ||
-        ("data" in error &&
-          (error as any).data?.status === "authentication-required"));
-
-    const isServerError =
-      error &&
-      typeof error === "object" &&
-      (("status" in error && (error as any).status === 500) ||
-        ("data" in error && (error as any).data?.status === "server-error"));
-
-    const isNotFoundError =
-      error &&
-      typeof error === "object" &&
-      (("status" in error && (error as any).status === 404) ||
-        ("data" in error && (error as any).data?.status === "not-found"));
-
-    let iconName = "error-outline";
-    let iconColor = feedbackCardTheme.error;
-    let title = "Unable to Load Feedback";
-    let subtitle = "Please try again later";
-    let showRetry = true;
-
-    if (isAuthError) {
-      iconName = "lock-outline";
-      iconColor = "#F59E0B";
-      title = "Authentication Required";
-      subtitle = "Please log in to view educator feedback data";
-      showRetry = false;
-    } else if (isServerError) {
-      iconName = "build-outline";
-      iconColor = "#FF6B35";
-      title = "Feature Under Development";
-      subtitle =
-        "The educator feedback feature is not yet available on the server. Please check back later.";
-      showRetry = false;
-    } else if (isNotFoundError) {
-      iconName = "search-off";
-      iconColor = "#FF6B35";
-      title = "Feature Not Available";
-      subtitle = "The educator feedback API endpoint is not available yet.";
-      showRetry = false;
-    } else if (
-      error &&
-      typeof error === "object" &&
-      "data" in error &&
-      (error as any).data?.message
-    ) {
-      subtitle = (error as any).data.message;
-    } else if (error && typeof error === "object" && "message" in error) {
-      subtitle = (error as any).message;
-    }
-
-    return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons name={iconName} size={48} color={iconColor} />
-        <Text style={[styles.errorTitle, { color: iconColor }]}>{title}</Text>
-        <Text style={styles.errorSubtitle}>{subtitle}</Text>
-        {showRetry && (
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => refetch()}
-          >
-            <MaterialIcons
-              name="refresh"
-              size={20}
-              color={feedbackCardTheme.white}
-            />
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        )}
+  const renderMessage = (
+    icon: any,
+    color: string,
+    title: string,
+    subtitle: string,
+    showRetry = false,
+  ) => (
+    <View style={styles.messageContainer}>
+      <View style={[styles.messageIcon, { backgroundColor: color + "18" }]}>
+        <MaterialIcons name={icon} size={36} color={color} />
       </View>
-    );
-  };
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <MaterialIcons
-        name="feedback"
-        size={64}
-        color={feedbackCardTheme.grayMedium}
-      />
-      <Text style={styles.emptyTitle}>No Feedback Available</Text>
-      <Text style={styles.emptySubtitle}>
-        No educator feedback has been recorded for {studentName} yet.
-      </Text>
+      <Text style={styles.messageTitle}>{title}</Text>
+      <Text style={styles.messageSubtitle}>{subtitle}</Text>
+      {showRetry && (
+        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+          <MaterialIcons name="refresh" size={18} color="#FFF" />
+          <Text style={styles.retryButtonText}>Try again</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
+
+  const renderError = () => {
+    const status = (error as any)?.status ?? (error as any)?.data?.status;
+    if (status === 401 || status === "authentication-required") {
+      return renderMessage(
+        "lock-outline",
+        "#F59E0B",
+        "Sign in required",
+        "Please log in to view educator feedback.",
+      );
+    }
+    if (status === 404 || status === "not-found") {
+      return renderMessage(
+        "search-off",
+        "#FF6B35",
+        "Not available yet",
+        "Educator feedback is not available on the server yet.",
+      );
+    }
+    const message =
+      (error as any)?.data?.message || (error as any)?.message || "";
+    return renderMessage(
+      "error-outline",
+      feedbackCardTheme.error,
+      "Couldn't load feedback",
+      message || "Please try again.",
+      true,
+    );
+  };
 
   const renderContent = () => {
-    console.log("📋 renderContent - isLoading:", isLoading);
-    console.log("📋 renderContent - isError:", isError);
-    console.log("📋 renderContent - apiResponse:", apiResponse);
-
-    // If no valid student ID, show appropriate message
-    if (!studentId || studentId === 0) {
+    if (noStudent) {
+      return renderMessage(
+        "person-outline",
+        feedbackCardTheme.grayMedium,
+        "No student selected",
+        "Select a student to see their educator feedback.",
+      );
+    }
+    if (isLoading) {
       return (
-        <View style={styles.emptyContainer}>
-          <MaterialIcons
-            name="person-outline"
-            size={64}
-            color={feedbackCardTheme.grayMedium}
-          />
-          <Text style={styles.emptyTitle}>No Student Selected</Text>
-          <Text style={styles.emptySubtitle}>
-            Please select a student to view their educator feedback.
-          </Text>
+        <View style={styles.messageContainer}>
+          <ActivityIndicator size="large" color={feedbackCardTheme.primary} />
         </View>
       );
     }
-
-    if (isLoading) {
-      return renderLoadingState();
-    }
-
-    if (isError) {
-      return renderErrorState();
-    }
-
-    const feedbackList = apiResponse?.data?.feedback_list || [];
-    const pagination = apiResponse?.data?.pagination;
-
-    console.log("📋 renderContent - feedbackList:", feedbackList);
-    console.log("📋 renderContent - feedbackList length:", feedbackList.length);
-    console.log("📋 renderContent - pagination:", pagination);
-
-    if (feedbackList.length === 0) {
-      return renderEmptyState();
+    if (isError) return renderError();
+    if (items.length === 0) {
+      return renderMessage(
+        "chat-bubble-outline",
+        feedbackCardTheme.grayMedium,
+        "No feedback yet",
+        `No educator feedback has been shared for ${studentName} yet.`,
+      );
     }
 
     return (
       <>
         <ScrollView
-          style={styles.feedbackList}
+          style={styles.list}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.feedbackListContent}
+          contentContainerStyle={styles.listContent}
         >
-          {feedbackList.map((feedback: any, index: number) => (
-            <FeedbackItem
-              key={feedback.id}
-              feedback={feedback}
-              index={index}
-              onPress={() => handleFeedbackPress(feedback)}
-            />
-          ))}
+          {items.map((feedback: any, index: number) =>
+            isRatingMode ? (
+              <RatingFeedbackItem
+                key={feedback.id}
+                feedback={feedback}
+                index={index}
+              />
+            ) : (
+              <FeedbackItem
+                key={feedback.id}
+                feedback={feedback}
+                index={index}
+              />
+            ),
+          )}
         </ScrollView>
 
-        {pagination && pagination.total > pageSize && (
+        {totalRecords > pageSize && (
           <FeedbackPagination
             currentPage={currentPage}
-            totalPages={Math.ceil(pagination.total / pageSize)}
-            totalRecords={pagination.total}
+            totalPages={totalPages}
+            totalRecords={totalRecords}
             pageSize={pageSize}
-            onPreviousPage={handlePreviousPage}
-            onNextPage={handleNextPage}
+            onPreviousPage={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            onNextPage={() =>
+              setCurrentPage((p) => Math.min(p + 1, totalPages))
+            }
             isLoading={isLoading}
           />
         )}
@@ -309,7 +232,6 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
     >
       <StatusBar backgroundColor="rgba(0,0,0,0.5)" barStyle="light-content" />
 
-      {/* Backdrop */}
       <TouchableOpacity
         style={styles.backdrop}
         activeOpacity={1}
@@ -318,31 +240,23 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
         <BlurView intensity={20} style={StyleSheet.absoluteFillObject} />
       </TouchableOpacity>
 
-      {/* Drawer */}
       <Animated.View
-        style={[
-          styles.drawer,
-          {
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
+        style={[styles.drawer, { transform: [{ translateY: slideAnim }] }]}
       >
-        {/* Handle */}
         <View style={styles.handle} />
 
-        {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <MaterialIcons
-              name="feedback"
-              size={24}
-              color={feedbackCardTheme.primary}
-            />
-            <View style={styles.headerText}>
-              <Text style={styles.title}>Educator Feedback</Text>
-              <Text style={styles.subtitle}>
-                Feedback history for {studentName}
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Educator Feedback</Text>
+            <View style={styles.subtitleRow}>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {studentName}
               </Text>
+              {totalRecords > 0 && (
+                <View style={styles.countChip}>
+                  <Text style={styles.countChipText}>{totalRecords}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -353,13 +267,12 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
           >
             <MaterialIcons
               name="close"
-              size={24}
-              color={feedbackCardTheme.grayMedium}
+              size={20}
+              color={feedbackCardTheme.grayDark}
             />
           </TouchableOpacity>
         </View>
 
-        {/* Content */}
         <View style={styles.content}>{renderContent()}</View>
       </Animated.View>
     </Modal>
@@ -367,107 +280,95 @@ const EducatorFeedbackDrawer: React.FC<EducatorFeedbackDrawerProps> = ({
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
+  backdrop: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.45)" },
   drawer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    height: screenHeight * 0.85,
-    backgroundColor: feedbackCardTheme.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: feedbackCardTheme.shadow.large,
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 1,
-    shadowRadius: 16,
-    elevation: 16,
+    height: screenHeight * 0.88,
+    backgroundColor: feedbackCardTheme.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 20,
   },
   handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: feedbackCardTheme.grayMedium + "40",
-    borderRadius: 2,
+    width: 44,
+    height: 5,
+    backgroundColor: "#D5D5D5",
+    borderRadius: 3,
     alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 16,
+    marginTop: 10,
+    marginBottom: 14,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: feedbackCardTheme.grayLight,
+    paddingBottom: 14,
   },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  headerText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: feedbackCardTheme.black,
-    marginBottom: 2,
-  },
+  headerText: { flex: 1 },
+  title: { fontSize: 22, fontWeight: "700", color: feedbackCardTheme.black },
+  subtitleRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   subtitle: {
     fontSize: 14,
     color: feedbackCardTheme.grayMedium,
+    flexShrink: 1,
+  },
+  countChip: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: feedbackCardTheme.primary + "18",
+  },
+  countChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: feedbackCardTheme.primary,
   },
   closeButton: {
-    padding: 4,
-  },
-  content: {
-    flex: 1,
-  },
-  feedbackList: {
-    flex: 1,
-  },
-  feedbackListContent: {
-    paddingTop: 8,
-    paddingBottom: 0,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ECECEC",
     alignItems: "center",
-    paddingVertical: 60,
+    justifyContent: "center",
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: feedbackCardTheme.grayMedium,
-  },
-  errorContainer: {
+  content: { flex: 1 },
+  list: { flex: 1 },
+  listContent: { paddingTop: 4, paddingBottom: 12 },
+  messageContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 40,
     paddingVertical: 60,
   },
-  errorTitle: {
+  messageIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  messageTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: feedbackCardTheme.error,
-    marginTop: 16,
-    marginBottom: 8,
+    color: feedbackCardTheme.black,
+    marginBottom: 6,
     textAlign: "center",
   },
-  errorSubtitle: {
+  messageSubtitle: {
     fontSize: 14,
     color: feedbackCardTheme.grayMedium,
     textAlign: "center",
     lineHeight: 20,
-    marginBottom: 24,
   },
   retryButton: {
     flexDirection: "row",
@@ -475,34 +376,14 @@ const styles = StyleSheet.create({
     backgroundColor: feedbackCardTheme.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 22,
+    marginTop: 20,
   },
   retryButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: feedbackCardTheme.white,
+    color: "#FFF",
     marginLeft: 8,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 40,
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: feedbackCardTheme.grayMedium,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: feedbackCardTheme.grayMedium,
-    textAlign: "center",
-    lineHeight: 20,
   },
 });
 

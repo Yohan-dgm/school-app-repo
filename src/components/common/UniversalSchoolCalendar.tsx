@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
@@ -26,9 +29,24 @@ import {
   setSelectedDate,
   updateAllEvents,
   mergeCalendarData,
-  selectEventsByDate,
-  selectCalendarMarkings,
+  selectEventsByDateMemoized,
+  selectCalendarMarkingsMemoized,
 } from "../../state-store/slices/calendar/calendarSlice";
+
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// Wrap a state setter so the next layout change animates smoothly
+const withAnimation =
+  <T,>(setter: (value: T) => void) =>
+  (value: T) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setter(value);
+  };
 
 // Maroon color scheme
 const MAROON_THEME = {
@@ -40,6 +58,23 @@ const MAROON_THEME = {
   white: "#FFFFFF",
   gray: "#666666",
   lightGray: "#E0E0E0",
+};
+
+const CALENDAR_THEME = {
+  backgroundColor: MAROON_THEME.white,
+  calendarBackground: MAROON_THEME.white,
+  textSectionTitleColor: MAROON_THEME.gray,
+  selectedDayBackgroundColor: MAROON_THEME.primary,
+  selectedDayTextColor: MAROON_THEME.white,
+  todayTextColor: MAROON_THEME.primary,
+  dayTextColor: MAROON_THEME.text,
+  textDisabledColor: "#d9e1e8",
+  dotColor: MAROON_THEME.light,
+  selectedDotColor: MAROON_THEME.white,
+  arrowColor: MAROON_THEME.primary,
+  disabledArrowColor: "#d9e1e8",
+  monthTextColor: MAROON_THEME.text,
+  indicatorColor: MAROON_THEME.primary,
 };
 
 interface UniversalSchoolCalendarProps {
@@ -57,9 +92,9 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
   const selectedDate = useSelector(selectSelectedDate);
   const allEvents = useSelector(selectAllEvents);
   const selectedDateEvents = useSelector((state) =>
-    selectEventsByDate(state, selectedDate),
+    selectEventsByDateMemoized(state, selectedDate),
   );
-  const calendarMarkings = useSelector(selectCalendarMarkings);
+  const calendarMarkings = useSelector(selectCalendarMarkingsMemoized);
 
   // API Queries
   const {
@@ -90,8 +125,29 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
     refetch: refetchExams,
   } = useGetExamsQuery({});
 
+  // Only block the UI when there is nothing cached to show yet
   const isLoading =
-    eventsLoading || holidaysLoading || specialClassesLoading || examsLoading;
+    (eventsLoading ||
+      holidaysLoading ||
+      specialClassesLoading ||
+      examsLoading) &&
+    allEvents.length === 0;
+
+  const markedDates = useMemo(
+    () => ({
+      ...calendarMarkings,
+      [selectedDate]: {
+        ...calendarMarkings[selectedDate],
+        selected: true,
+        selectedColor: MAROON_THEME.primary,
+      },
+    }),
+    [calendarMarkings, selectedDate],
+  );
+
+  const [selectedMonthString, setSelectedMonthString] = useState<string | null>(
+    null,
+  );
 
   // Month Data API Query - only call when a month is selected (currently using cached data instead)
   const {
@@ -105,25 +161,28 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
 
   // Local state
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<
+  const [activeFilter, setActiveFilterRaw] = useState<
     "all" | "event" | "holiday" | "special_class" | "exam" | "timeline"
   >("all");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [viewMode, setViewMode] = useState<"calendar" | "monthView">(
+  const [viewMode, setViewModeRaw] = useState<"calendar" | "monthView">(
     "calendar",
   );
-  const [selectedMonthForView, setSelectedMonthForView] = useState<
+  const [selectedMonthForView, setSelectedMonthForViewRaw] = useState<
     number | null
   >(null);
-  const [showDateScrollView, setShowDateScrollView] = useState(false);
+  const [showDateScrollView, setShowDateScrollViewRaw] = useState(false);
   const [scrollViewCenterDate, setScrollViewCenterDate] =
     useState(selectedDate);
-  const [selectedMonthString, setSelectedMonthString] = useState<string | null>(
-    null,
-  );
-  const [monthViewFilter, setMonthViewFilter] = useState<
+  const [monthViewFilter, setMonthViewFilterRaw] = useState<
     "all" | "event" | "holiday" | "special_class"
   >("all");
+
+  const setActiveFilter = withAnimation(setActiveFilterRaw);
+  const setViewMode = withAnimation(setViewModeRaw);
+  const setShowDateScrollView = withAnimation(setShowDateScrollViewRaw);
+  const setMonthViewFilter = withAnimation(setMonthViewFilterRaw);
+  const setSelectedMonthForView = withAnimation(setSelectedMonthForViewRaw);
 
   // Update all events when API data changes
   useEffect(() => {
@@ -139,14 +198,6 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
       exams,
     );
     dispatch(updateAllEvents(mergedEvents));
-
-    console.log("📅 UniversalSchoolCalendar - Data merged:", {
-      events: events.length,
-      holidays: holidays.length,
-      specialClasses: specialClasses.length,
-      exams: exams.length,
-      total: mergedEvents.length,
-    });
   }, [eventsData, holidaysData, specialClassesData, examsData, dispatch]);
 
   // Handle refresh
@@ -159,8 +210,7 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
         refetchSpecialClasses(),
         refetchExams(),
       ]);
-    } catch (error) {
-      console.log("📅 Refresh error:", error);
+    } catch {
     } finally {
       setRefreshing(false);
     }
@@ -193,54 +243,28 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
       "December",
     ];
 
-    for (let i = 0; i < 12; i++) {
-      const monthEvents = allEvents.filter((event) => {
-        // Check multiple date fields: date, startDate, endDate
-        const eventDates = [event.date, event.startDate, event.endDate].filter(
-          Boolean,
-        );
-
-        return eventDates.some((dateStr) => {
-          try {
-            const eventDate = new Date(dateStr);
-            const eventMonth = eventDate.getMonth();
-            const eventYear = eventDate.getFullYear();
-
-            console.log(
-              `🔍 Checking event "${event.title}" - Date: ${dateStr}, Month: ${eventMonth}, Year: ${eventYear}, Looking for: ${i}/${selectedYear}`,
-            );
-
-            return eventMonth === i && eventYear === selectedYear;
-          } catch (error) {
-            console.log(
-              `❌ Error parsing date "${dateStr}" for event "${event.title}": ${error}`,
-            );
-            return false;
-          }
-        });
+    // Single pass: bucket each event into the months its dates fall in
+    const buckets: UnifiedCalendarItem[][] = monthNames.map(() => []);
+    const yearPrefix = `${selectedYear}-`;
+    allEvents.forEach((event) => {
+      const seen = new Set<number>();
+      [event.date, event.startDate, event.endDate].forEach((dateStr) => {
+        if (!dateStr || !dateStr.startsWith(yearPrefix)) return;
+        const month = parseInt(dateStr.substring(5, 7), 10) - 1;
+        if (month >= 0 && month < 12 && !seen.has(month)) {
+          seen.add(month);
+          buckets[month].push(event);
+        }
       });
+    });
 
-      console.log(
-        `📅 Month ${monthNames[i]} (${i}): Found ${monthEvents.length} events`,
-      );
-      if (monthEvents.length > 0) {
-        console.log(
-          `📅 Events for ${monthNames[i]}:`,
-          monthEvents.map((e) => ({
-            title: e.title,
-            date: e.date,
-            startDate: e.startDate,
-            endDate: e.endDate,
-          })),
-        );
-      }
-
+    for (let i = 0; i < 12; i++) {
       months.push({
         index: i,
         name: monthNames[i],
         shortName: monthNames[i].substring(0, 3),
-        events: monthEvents,
-        count: monthEvents.length,
+        events: buckets[i],
+        count: buckets[i].length,
       });
     }
 
@@ -250,7 +274,6 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
   // Get events for selected month in Month View
   const selectedMonthEvents = useMemo(() => {
     if (selectedMonthForView === null) {
-      console.log("📅 No month selected for view");
       return [];
     }
 
@@ -258,15 +281,6 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
       (month) => month.index === selectedMonthForView,
     );
     const events = selectedMonth?.events || [];
-
-    console.log(
-      `📅 Selected month for view: ${selectedMonthForView} (${selectedMonth?.name})`,
-    );
-    console.log(`📅 Events found for selected month: ${events.length}`);
-    console.log(
-      `📅 Events details:`,
-      events.map((e) => ({ title: e.title, date: e.date, type: e.type })),
-    );
 
     return events;
   }, [getMonthEventCounts, selectedMonthForView]);
@@ -278,14 +292,6 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
       (event) => event.type === monthViewFilter,
     );
   }, [selectedMonthEvents, monthViewFilter]);
-
-  // Dynamic card height calculation based on event count
-  const calculateCardHeight = (eventCount: number) => {
-    if (eventCount === 0) return 85; // Compact for empty months
-    if (eventCount <= 3) return 100; // Medium for few events
-    if (eventCount <= 6) return 115; // Large for moderate events
-    return 130; // Maximum for high activity months
-  };
 
   // Dynamic background color based on event density
   const getCardBackgroundColor = (eventCount: number, isSelected: boolean) => {
@@ -342,41 +348,20 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
   }, [scrollViewCenterDate, allEvents, selectedDate, getFilteredEvents]);
 
   // Handle horizontal date press
-  const handleHorizontalDatePress = (dateString: string) => {
-    dispatch(setSelectedDate(dateString));
-    console.log("📅 Horizontal date selected:", dateString);
-  };
+  const handleHorizontalDatePress = useCallback(
+    (dateString: string) => {
+      dispatch(setSelectedDate(dateString));
+    },
+    [dispatch],
+  );
 
   // Debug logging
-  console.log("📅 Debug - Selected month:", selectedMonthForView);
-  console.log("📅 Debug - Selected month events:", selectedMonthEvents.length);
-  console.log(
-    "📅 Debug - Filtered events:",
-    filteredSelectedMonthEvents.length,
-  );
-  console.log("📅 Debug - All events total:", allEvents.length);
-  console.log("📅 Debug - API Data Status:", {
-    eventsData: eventsData?.data?.data?.length || 0,
-    holidaysData: holidaysData?.data?.data?.length || 0,
-    specialClassesData: specialClassesData?.data?.data?.length || 0,
-    examsData: examsData?.data?.data?.length || 0,
-    loading: isLoading,
-  });
 
   // Handle day press
   const handleDayPress = (day: any) => {
     dispatch(setSelectedDate(day.dateString));
     setScrollViewCenterDate(day.dateString);
     setShowDateScrollView(true);
-    console.log(
-      "📅 Date clicked, showing horizontal scroll view for:",
-      day.dateString,
-    );
-  };
-
-  // Handle month change
-  const handleMonthChange = (month: any) => {
-    console.log("📅 Month changed:", month);
   };
 
   // Get event type icon
@@ -564,15 +549,6 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
                             )
                               .toString()
                               .padStart(2, "0")}`; // Format: "2025-08"
-
-                            console.log(
-                              "📅 Month clicked:",
-                              month.name,
-                              "Month string:",
-                              monthString,
-                              "Cached events:",
-                              month.events.length,
-                            );
 
                             setSelectedMonthForView(month.index);
                             setSelectedMonthString(monthString); // This triggers the API call
@@ -813,30 +789,10 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
                         >
                           {(() => {
                             // Use existing selectedMonthEvents data instead of API call
-                            console.log(
-                              "🔍 selectedMonthEvents:",
-                              selectedMonthEvents,
-                            );
-                            console.log(
-                              "🔍 selectedMonthEvents length:",
-                              selectedMonthEvents.length,
-                            );
 
                             // Use the filtered cached data
                             const monthDataArray =
                               filteredSelectedMonthEvents || [];
-
-                            console.log(
-                              "✅ Using selectedMonthEvents cached data",
-                            );
-                            console.log(
-                              "📅 Final monthDataArray:",
-                              monthDataArray,
-                            );
-                            console.log(
-                              "📅 Array length:",
-                              monthDataArray.length,
-                            );
 
                             const events = monthDataArray.filter(
                               (item) => item.type === "event",
@@ -848,19 +804,7 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
                               (item) => item.type === "special_class",
                             );
 
-                            console.log("📅 Grouped data:", {
-                              events: events.length,
-                              holidays: holidays.length,
-                              specialClasses: specialClasses.length,
-                            });
-
                             // Show all items first for testing
-                            console.log("📅 All events:", events);
-                            console.log("📅 All holidays:", holidays);
-                            console.log(
-                              "📅 All specialClasses:",
-                              specialClasses,
-                            );
 
                             return (
                               <>
@@ -1206,32 +1150,9 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
             <View style={styles.calendarContainer}>
               <Calendar
                 onDayPress={handleDayPress}
-                onMonthChange={handleMonthChange}
-                markedDates={{
-                  ...calendarMarkings,
-                  [selectedDate]: {
-                    ...calendarMarkings[selectedDate],
-                    selected: true,
-                    selectedColor: MAROON_THEME.primary,
-                  },
-                }}
+                markedDates={markedDates}
                 markingType="multi-dot"
-                theme={{
-                  backgroundColor: MAROON_THEME.white,
-                  calendarBackground: MAROON_THEME.white,
-                  textSectionTitleColor: MAROON_THEME.gray,
-                  selectedDayBackgroundColor: MAROON_THEME.primary,
-                  selectedDayTextColor: MAROON_THEME.white,
-                  todayTextColor: MAROON_THEME.primary,
-                  dayTextColor: MAROON_THEME.text,
-                  textDisabledColor: "#d9e1e8",
-                  dotColor: MAROON_THEME.light,
-                  selectedDotColor: MAROON_THEME.white,
-                  arrowColor: MAROON_THEME.primary,
-                  disabledArrowColor: "#d9e1e8",
-                  monthTextColor: MAROON_THEME.text,
-                  indicatorColor: MAROON_THEME.primary,
-                }}
+                theme={CALENDAR_THEME}
               />
             </View>
           )}
@@ -1405,11 +1326,7 @@ const UniversalSchoolCalendar: React.FC<UniversalSchoolCalendarProps> = ({
                   </View>
                 ) : (
                   filteredSelectedDateEvents.map((event) => (
-                    <TouchableOpacity
-                      key={event.id}
-                      style={styles.eventCard}
-                      onPress={() => console.log("Event pressed:", event.title)}
-                    >
+                    <TouchableOpacity key={event.id} style={styles.eventCard}>
                       <View style={styles.eventHeader}>
                         <View style={styles.eventTypeIndicator}>
                           <MaterialIcons

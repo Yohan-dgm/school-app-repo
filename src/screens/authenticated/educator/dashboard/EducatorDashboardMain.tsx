@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,20 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Dimensions,
 } from "react-native";
 import { useSelector } from "react-redux";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Modalize } from "react-native-modalize";
-import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  cancelAnimation,
-} from "react-native-reanimated";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import EnhancedDashboardGrid from "./components/EnhancedDashboardGrid";
 import FullScreenModal from "../../principal/dashboard/components/FullScreenModal";
 import StudentsModalContent from "../../principal/dashboard/components/StudentsModalContent";
@@ -29,16 +19,10 @@ import StudentAttendanceModal from "../../principal/dashboard/modals/StudentAtte
 import MyFeedbackModal from "../../principal/dashboard/modals/MyFeedbackModal";
 import StudentAttendanceStatsModal from "../../principal/dashboard/modals/StudentAttendanceStatsModal";
 import StudentFeedbackStatsModal from "../../principal/dashboard/modals/StudentFeedbackStatsModal";
-import AcademicReportsModal from "../../principal/dashboard/modals/AcademicReportsModal";
-import SchoolFacilitiesModal from "../../principal/dashboard/modals/SchoolFacilitiesModal";
-import FinancialOverviewModal from "../../principal/dashboard/modals/FinancialOverviewModal";
-import ParentCommunicationModal from "../../principal/dashboard/modals/ParentCommunicationModal";
-import EmergencyManagementModal from "../../principal/dashboard/modals/EmergencyManagementModal";
 import StudentAchievementModal from "./modals/StudentAchievementModal";
 import DisciplineManagementModal from "./modals/DisciplineManagementModal";
 import CanteenManagementModal from "./modals/CanteenManagementModal";
 import GradeLevelClassSelectionDrawer from "../../../../components/common/drawer/GradeLevelClassSelectionDrawer";
-import UniversalDrawerMenu from "../../../../components/common/drawer/UniversalDrawerMenu";
 import { GradeLevelClass } from "../../../../api/grade-level-api";
 import { useHasSectionAccess } from "../../../../api/section-access-api";
 import { useGetCanteenOrderListDataQuery } from "../../../../api/canteen-management-api";
@@ -54,11 +38,21 @@ const DISCIPLINE_MANAGEMENT_SECTION_KEY = "discipline_management";
 // Principals outright, same convention as Discipline Management.
 const CANTEEN_MANAGEMENT_SECTION_KEY = "canteen_management";
 
-const { width } = Dimensions.get("window");
-
 // Configuration: Set to false to hide "All Teachers" section for educators
 // To hide teachers section: Change this to false
 const SHOW_TEACHERS_FOR_EDUCATORS = true;
+
+// Modals rendered by their own dedicated component (not the generic FullScreenModal)
+const DEDICATED_MODAL_IDS = new Set([
+  "educator_feedback",
+  "student_attendance",
+  "my_feedback",
+  "student_attendance_stats",
+  "student_feedback_stats",
+  "student_achievement",
+  "discipline_management",
+  "canteen_management",
+]);
 
 export interface DashboardItem {
   id: string;
@@ -77,20 +71,11 @@ function EducatorDashboardMain() {
   const [refreshing, setRefreshing] = useState(false);
 
   // My Class drawer states
-  const [selectedClassData, setSelectedClassData] = useState<
+  const [, setSelectedClassData] = useState<
     (GradeLevelClass & { gradeLevelName: string }) | null
   >(null);
-  const [showUniversalDrawer, setShowUniversalDrawer] = useState(false);
-  const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [showClassSelectionDrawer, setShowClassSelectionDrawer] =
     useState(false);
-
-  // Modal refs
-  const academicReportsModalRef = useRef<Modalize>(null);
-  const schoolFacilitiesModalRef = useRef<Modalize>(null);
-  const financialOverviewModalRef = useRef<Modalize>(null);
-  const parentCommunicationModalRef = useRef<Modalize>(null);
-  const emergencyManagementModalRef = useRef<Modalize>(null);
 
   // Discipline Management item is visible to users granted the
   // "discipline_management" section-access key, or outright to Principals
@@ -115,102 +100,26 @@ function EducatorDashboardMain() {
   const hasPendingCanteenOrders =
     (pendingCanteenOrdersData?.data?.total ?? 0) > 0;
 
-  // Animation values
-  const fabScale = useSharedValue(1);
-
-  // Initialize animations
-  useEffect(() => {
-    fabScale.value = withRepeat(
-      withSequence(
-        withTiming(1.1, { duration: 1000 }),
-        withTiming(1, { duration: 1000 }),
-      ),
-      -1,
-      true,
-    );
-
-    return () => {
-      cancelAnimation(fabScale);
-    };
+  // Handlers
+  const handleFullScreenPress = useCallback((itemId: string) => {
+    setActiveModal(itemId);
   }, []);
 
-  // Animated styles
-  const fabAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: fabScale.value }],
-  }));
-
-  // Handlers
-  const handleFullScreenPress = (itemId: string) => {
-    setActiveModal(itemId);
-  };
-
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setActiveModal(null);
-  };
+  }, []);
 
-  const openEducatorFeedbackModal = () => {
-    setActiveModal("educator_feedback");
-  };
+  const handleClassSelection = useCallback(
+    (classData: GradeLevelClass & { gradeLevelName: string }) => {
+      // The GradeLevelClassSelectionDrawer handles student details internally
+      setSelectedClassData(classData);
+    },
+    [],
+  );
 
-  const openStudentAttendanceModal = () => {
-    setActiveModal("student_attendance");
-  };
-
-  const openMyFeedbackModal = () => {
-    setActiveModal("my_feedback");
-  };
-
-  const openStudentAttendanceStatsModal = () => {
-    setActiveModal("student_attendance_stats");
-  };
-
-  const openStudentFeedbackStatsModal = () => {
-    setActiveModal("student_feedback_stats");
-  };
-
-  const openStudentAchievementModal = () => {
-    setActiveModal("student_achievement");
-  };
-
-  const openDisciplineManagementModal = () => {
-    setActiveModal("discipline_management");
-  };
-
-  const openCanteenManagementModal = () => {
-    setActiveModal("canteen_management");
-  };
-
-  const openMyClassDrawer = () => {
-    console.log("🔔 Opening Grade Level Class Selection Drawer...");
-    setShowClassSelectionDrawer(true);
-  };
-
-  const handleClassSelection = (
-    classData: GradeLevelClass & { gradeLevelName: string },
-  ) => {
-    console.log(
-      "✅ Class selected in GradeLevelClassSelectionDrawer...",
-      classData,
-    );
-    // Don't automatically open UniversalDrawerMenu anymore
-    // The GradeLevelClassSelectionDrawer handles student details internally now
-    setSelectedClassData(classData);
-  };
-
-  const handleCloseUniversalDrawer = () => {
-    setShowUniversalDrawer(false);
-    setShowStudentDetails(false);
-    setSelectedClassData(null);
-  };
-
-  const handleBackFromStudentDetails = () => {
-    setShowStudentDetails(false);
-    setShowClassSelectionDrawer(true);
-  };
-
-  const handleCloseClassSelectionDrawer = () => {
+  const handleCloseClassSelectionDrawer = useCallback(() => {
     setShowClassSelectionDrawer(false);
-  };
+  }, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -218,11 +127,6 @@ function EducatorDashboardMain() {
     setTimeout(() => {
       setRefreshing(false);
     }, 1500);
-  };
-
-  const handleFABPress = () => {
-    // Quick action - open educator feedback by default
-    openEducatorFeedbackModal();
   };
 
   const renderModalContent = (modalId: string) => {
@@ -305,129 +209,139 @@ function EducatorDashboardMain() {
   };
 
   // Primary Dashboard Items - Special cards
-  const primaryItems: DashboardItem[] = [
-    {
-      id: "my_class",
-      title: "My Class",
-      subtitle: "Student Details & Management",
-      icon: "class",
-      color: "#920734",
-      gradient: ["#920734", "#b8285a"],
-      onPress: openMyClassDrawer,
-    },
-    {
-      id: "educator_feedback",
-      title: "Educator Feedback",
-      subtitle: "Student Performance Reviews",
-      icon: "rate-review",
-      color: "#920734",
-      gradient: ["#920734", "#b8285a"],
-      onPress: openEducatorFeedbackModal,
-    },
-    {
-      id: "student_achievement",
-      title: "Student Achievement",
-      subtitle: "Record Student Achievements",
-      icon: "emoji-events",
-      color: "#FFD700",
-      gradient: ["#FFD700", "#FFA500"],
-      onPress: openStudentAchievementModal,
-    },
-    {
-      id: "student_attendance",
-      title: "Student Attendance",
-      subtitle: "Attendance Management",
-      icon: "how-to-reg",
-      color: "#0057FF",
-      gradient: ["#0057FF", "#3d7cff"],
-      onPress: openStudentAttendanceModal,
-    },
-  ];
+  const primaryItems = useMemo<DashboardItem[]>(
+    () => [
+      {
+        id: "my_class",
+        title: "My Class",
+        subtitle: "Student Details & Management",
+        icon: "cast-for-education",
+        color: "#920734",
+        gradient: ["#920734", "#b8285a"],
+        onPress: () => setShowClassSelectionDrawer(true),
+      },
+      {
+        id: "educator_feedback",
+        title: "Educator Feedback",
+        subtitle: "Student Performance Reviews",
+        icon: "feedback",
+        color: "#920734",
+        gradient: ["#920734", "#b8285a"],
+        onPress: () => handleFullScreenPress("educator_feedback"),
+      },
+      // Gated: only visible to users granted the "discipline_management"
+      // section-access key
+      ...(hasDisciplineManagementAccess
+        ? [
+            {
+              id: "discipline_management",
+              title: "Discipline Management",
+              subtitle: "Review, approve & manage discipline records",
+              icon: "gavel" as keyof typeof MaterialIcons.glyphMap,
+              color: "#DC2626",
+              gradient: ["#DC2626", "#F87171"] as [string, string],
+              onPress: () => handleFullScreenPress("discipline_management"),
+            },
+          ]
+        : []),
+      {
+        id: "student_achievement",
+        title: "Student Achievement",
+        subtitle: "Record Student Achievements",
+        icon: "emoji-events",
+        color: "#FFD700",
+        gradient: ["#FFD700", "#FFA500"],
+        onPress: () => handleFullScreenPress("student_achievement"),
+      },
+      {
+        id: "student_attendance",
+        title: "Student Attendance",
+        subtitle: "Attendance Management",
+        icon: "how-to-reg",
+        color: "#0057FF",
+        gradient: ["#0057FF", "#3d7cff"],
+        onPress: () => handleFullScreenPress("student_attendance"),
+      },
+    ],
+    [hasDisciplineManagementAccess, handleFullScreenPress],
+  );
 
   // Other Dashboard Items - Regular cards
-  const otherItems: DashboardItem[] = [
-    {
-      id: "all_students",
-      title: "Students Overview",
-      subtitle: "View All Students",
-      icon: "school",
-      color: "#0057FF",
-      gradient: ["#0057FF", "#3d7cff"],
-      onPress: () => handleFullScreenPress("all_students"),
-    },
-    // Conditionally include Teachers section based on configuration
-    ...(SHOW_TEACHERS_FOR_EDUCATORS
-      ? [
-          // {
-          //   id: "all_teachers",
-          //   title: "All Teachers",
-          //   subtitle: "Staff Directory",
-          //   icon: "people" as keyof typeof MaterialIcons.glyphMap,
-          //   color: "#920734",
-          //   gradient: ["#920734", "#b8285a"] as [string, string],
-          //   onPress: () => handleFullScreenPress("all_teachers"),
-          // },
-        ]
-      : []),
-    // {
-    //   id: "student_attendance_stats",
-    //   title: "Attendance Analytics",
-    //   subtitle: "Student Attendance Stats",
-    //   icon: "analytics",
-    //   color: "#059669",
-    //   gradient: ["#059669", "#10B981"],
-    //   onPress: openStudentAttendanceStatsModal,
-    // },
-    {
-      id: "student_feedback_stats",
-      title: "Student Analytics",
-      subtitle: "Feedback by Students",
-      icon: "school",
-      color: "#920734",
-      gradient: ["#920734", "#b8285a"],
-      onPress: openStudentFeedbackStatsModal,
-    },
-    {
-      id: "my_feedback",
-      title: "My Feedbacks",
-      subtitle: "Feedbacks I Created",
-      icon: "person",
-      color: "#10B981",
-      gradient: ["#10B981", "#059669"],
-      onPress: openMyFeedbackModal,
-    },
-    // Gated: only visible to users granted the "canteen_management"
-    // section-access key, or to Principals outright
-    ...(hasCanteenManagementAccess
-      ? [
-          {
-            id: "canteen_management",
-            title: "Canteen Management",
-            subtitle: "Manage meal plans & view orders",
-            icon: "restaurant" as keyof typeof MaterialIcons.glyphMap,
-            color: "#F59E0B",
-            gradient: ["#F59E0B", "#FBBF24"] as [string, string],
-            onPress: openCanteenManagementModal,
-            badge: hasPendingCanteenOrders,
-          },
-        ]
-      : []),
-    // Gated: only visible to users granted the "discipline_management"
-    // section-access key
-    ...(hasDisciplineManagementAccess
-      ? [
-          {
-            id: "discipline_management",
-            title: "Discipline Management",
-            subtitle: "Review, approve & manage discipline records",
-            icon: "gavel" as keyof typeof MaterialIcons.glyphMap,
-            color: "#DC2626",
-            gradient: ["#DC2626", "#F87171"] as [string, string],
-            onPress: openDisciplineManagementModal,
-          },
-        ]
-      : []),
-  ];
+  const otherItems = useMemo<DashboardItem[]>(
+    () => [
+      {
+        id: "all_students",
+        title: "Students Overview",
+        subtitle: "View All Students",
+        icon: "groups",
+        color: "#0057FF",
+        gradient: ["#0057FF", "#3d7cff"],
+        onPress: () => handleFullScreenPress("all_students"),
+      },
+      // Conditionally include Teachers section based on configuration
+      ...(SHOW_TEACHERS_FOR_EDUCATORS
+        ? [
+            // {
+            //   id: "all_teachers",
+            //   title: "All Teachers",
+            //   subtitle: "Staff Directory",
+            //   icon: "people" as keyof typeof MaterialIcons.glyphMap,
+            //   color: "#920734",
+            //   gradient: ["#920734", "#b8285a"] as [string, string],
+            //   onPress: () => handleFullScreenPress("all_teachers"),
+            // },
+          ]
+        : []),
+      // {
+      //   id: "student_attendance_stats",
+      //   title: "Attendance Analytics",
+      //   subtitle: "Student Attendance Stats",
+      //   icon: "analytics",
+      //   color: "#059669",
+      //   gradient: ["#059669", "#10B981"],
+      //   onPress: openStudentAttendanceStatsModal,
+      // },
+      {
+        id: "student_feedback_stats",
+        title: "Student Analytics",
+        subtitle: "Feedback by Students",
+        icon: "insights",
+        color: "#920734",
+        gradient: ["#920734", "#b8285a"],
+        onPress: () => handleFullScreenPress("student_feedback_stats"),
+      },
+      {
+        id: "my_feedback",
+        title: "My Feedbacks",
+        subtitle: "Feedbacks I Created",
+        icon: "history-edu",
+        color: "#10B981",
+        gradient: ["#10B981", "#059669"],
+        onPress: () => handleFullScreenPress("my_feedback"),
+      },
+      // Gated: only visible to users granted the "canteen_management"
+      // section-access key, or to Principals outright
+      ...(hasCanteenManagementAccess
+        ? [
+            {
+              id: "canteen_management",
+              title: "Canteen Management",
+              subtitle: "Manage meal plans & view orders",
+              icon: "restaurant" as keyof typeof MaterialIcons.glyphMap,
+              color: "#F59E0B",
+              gradient: ["#F59E0B", "#FBBF24"] as [string, string],
+              onPress: () => handleFullScreenPress("canteen_management"),
+              badge: hasPendingCanteenOrders,
+            },
+          ]
+        : []),
+    ],
+    [
+      hasCanteenManagementAccess,
+      hasPendingCanteenOrders,
+      handleFullScreenPress,
+    ],
+  );
 
   return (
     <View style={styles.container}>
@@ -446,46 +360,38 @@ function EducatorDashboardMain() {
         }
       >
         {/* Section Title */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Quick Access</Text>
-          <Text style={styles.sectionSubtitle}>
-            Manage your classes and students
-          </Text>
-        </View>
+        <Animated.View
+          entering={FadeInDown.duration(400)}
+          style={styles.sectionHeader}
+        >
+          <View style={styles.sectionAccent} />
+          <View style={styles.sectionHeaderText}>
+            <Text style={styles.sectionTitle}>Quick Access</Text>
+            <Text style={styles.sectionSubtitle}>
+              Manage your classes and students
+            </Text>
+          </View>
+        </Animated.View>
 
         {/* Primary Cards */}
-        <EnhancedDashboardGrid
-          items={primaryItems}
-          onFullScreenPress={handleFullScreenPress}
-        />
+        <Animated.View entering={FadeInDown.duration(450).delay(80)}>
+          <EnhancedDashboardGrid
+            items={primaryItems}
+            onFullScreenPress={handleFullScreenPress}
+          />
+        </Animated.View>
 
         {/* Horizontal Divider */}
         <View style={styles.divider} />
 
         {/* Other Cards */}
-        <EnhancedDashboardGrid
-          items={otherItems}
-          onFullScreenPress={handleFullScreenPress}
-        />
+        <Animated.View entering={FadeInDown.duration(450).delay(160)}>
+          <EnhancedDashboardGrid
+            items={otherItems}
+            onFullScreenPress={handleFullScreenPress}
+          />
+        </Animated.View>
       </ScrollView>
-
-      {/* Floating Action Button */}
-      {/* <Animated.View style={[styles.fabContainer, fabAnimatedStyle]}>
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={handleFABPress}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={["#920734", "#b8285a"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.fabGradient}
-          >
-            <MaterialIcons name="add" size={32} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View> */}
 
       {/* Modals */}
       <EducatorFeedbackModal
@@ -520,11 +426,6 @@ function EducatorDashboardMain() {
         visible={activeModal === "student_feedback_stats"}
         onClose={handleCloseModal}
       />
-      <AcademicReportsModal ref={academicReportsModalRef} />
-      <SchoolFacilitiesModal ref={schoolFacilitiesModalRef} />
-      <FinancialOverviewModal ref={financialOverviewModalRef} />
-      <ParentCommunicationModal ref={parentCommunicationModalRef} />
-      <EmergencyManagementModal ref={emergencyManagementModalRef} />
       {showClassSelectionDrawer && (
         <GradeLevelClassSelectionDrawer
           onClose={handleCloseClassSelectionDrawer}
@@ -532,47 +433,28 @@ function EducatorDashboardMain() {
         />
       )}
 
-      {showUniversalDrawer && (
-        <UniversalDrawerMenu
-          onClose={handleCloseUniversalDrawer}
-          showStudentDetails={showStudentDetails}
-          selectedClassId={selectedClassData?.id}
-          selectedClassName={selectedClassData?.name}
-          selectedGradeLevelName={selectedClassData?.gradeLevelName}
-          onBack={handleBackFromStudentDetails}
-        />
-      )}
-
       {/* Full-Screen Modal */}
-      {activeModal &&
-        activeModal !== "educator_feedback" &&
-        activeModal !== "student_attendance" &&
-        activeModal !== "my_feedback" &&
-        activeModal !== "student_attendance_stats" &&
-        activeModal !== "student_feedback_stats" &&
-        activeModal !== "student_achievement" &&
-        activeModal !== "discipline_management" &&
-        activeModal !== "canteen_management" && (
-          <FullScreenModal
-            visible={!!activeModal}
-            onClose={handleCloseModal}
-            title={(() => {
-              const modalConfig = {
-                all_students: "Students Overview",
-                all_teachers: "Teachers Directory",
-                sport_coaches: "Sports Information",
-                announcements: "School Communications",
-              };
-              return (
-                modalConfig[activeModal as keyof typeof modalConfig] ||
-                "Dashboard"
-              );
-            })()}
-            backgroundColor="#F8F9FA"
-          >
-            {renderModalContent(activeModal)}
-          </FullScreenModal>
-        )}
+      {activeModal && !DEDICATED_MODAL_IDS.has(activeModal) && (
+        <FullScreenModal
+          visible={!!activeModal}
+          onClose={handleCloseModal}
+          title={(() => {
+            const modalConfig = {
+              all_students: "Students Overview",
+              all_teachers: "Teachers Directory",
+              sport_coaches: "Sports Information",
+              announcements: "School Communications",
+            };
+            return (
+              modalConfig[activeModal as keyof typeof modalConfig] ||
+              "Dashboard"
+            );
+          })()}
+          backgroundColor="#F8F9FA"
+        >
+          {renderModalContent(activeModal)}
+        </FullScreenModal>
+      )}
     </View>
   );
 }
@@ -595,42 +477,34 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: "#E5E7EB",
-    marginVertical: 16,
+    marginVertical: 20,
   },
   sectionHeader: {
-    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
     marginTop: 8,
+  },
+  sectionAccent: {
+    width: 4,
+    alignSelf: "stretch",
+    borderRadius: 2,
+    backgroundColor: "#920734",
+    marginRight: 12,
+  },
+  sectionHeaderText: {
+    flex: 1,
   },
   sectionTitle: {
     fontSize: 22,
-    fontWeight: "bold",
+    fontWeight: "700",
+    letterSpacing: -0.3,
     color: "#1a1a1a",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: "#666",
-  },
-  // Floating Action Button
-  fabContainer: {
-    position: "absolute",
-    bottom: 24,
-    right: 20,
-    zIndex: 1000,
-  },
-  fab: {
-    shadowColor: "#920734",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  fabGradient: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: "center",
-    alignItems: "center",
+    color: "#6B7280",
   },
   // Modal Content Styles (kept for compatibility)
   fullScreenContent: {

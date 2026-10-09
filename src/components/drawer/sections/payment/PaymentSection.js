@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,58 +7,78 @@ import {
   TouchableOpacity,
   Platform,
   ActivityIndicator,
-  Alert,
+  RefreshControl,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useSelector, useDispatch } from "react-redux";
 import { theme } from "../../../../styles/theme";
 import { useGetStudentBillsDataQuery } from "../../../../api/parent-payment-api";
 import { useGetStudentPendingInvoicesQuery } from "../../../../api/pending-invoice-api";
+import { useGetMyStudentListQuery } from "../../../../api/student-header-api";
 import {
   setStudentBillsData,
   setPendingInvoicesData,
-  selectOverallTotalSummary,
-  selectStudentBillDetailsByStudentId,
   selectPendingInvoicesData,
 } from "../../../../state-store/slices/payment/paymentSlice";
-import OverallTotalSummary from "../../../payment/OverallTotalSummary";
 import PendingInvoiceCard from "../../../payment/PendingInvoiceCard";
 import GatewayPaymentHistoryList from "../../../payment/GatewayPaymentHistoryList";
 import PayInvoicePage from "./pages/PayInvoicePage";
 
-const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
+const PaymentHeader = ({ onBack, onRefresh }) => (
+  <View style={styles.header}>
+    <TouchableOpacity style={styles.headerBtn} onPress={onBack}>
+      <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
+    </TouchableOpacity>
+    <Text style={styles.headerTitle}>Payment Center</Text>
+    {onRefresh ? (
+      <TouchableOpacity style={styles.headerBtn} onPress={onRefresh}>
+        <MaterialIcons name="refresh" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    ) : (
+      <View style={styles.headerBtn} />
+    )}
+  </View>
+);
+
+const PaymentSection = ({ onClose }) => {
   const dispatch = useDispatch();
   const [currentPage, setCurrentPage] = useState("main"); // main | pay-invoice
   const [selectedInvoice, setSelectedInvoice] = useState(null); // { invoice, student }
 
   // Redux state
   const { sessionData } = useSelector((state) => state.app);
-  const overallTotalSummary = useSelector(selectOverallTotalSummary);
   const pendingInvoicesData = useSelector(selectPendingInvoicesData);
 
-  // Students from session
-  const sessionStudentList = sessionData?.data?.student_list || [];
+  // ── API: Fresh student list (same API the Header student picker uses) ──
+  const {
+    data: studentListData,
+    isLoading: isListLoading,
+    isFetching: isListFetching,
+    isError: isListError,
+    refetch: refetchList,
+  } = useGetMyStudentListQuery(undefined, { refetchOnMountOrArgChange: true });
 
-  // Student IDs (for existing bills API)
-  const studentIds = sessionStudentList.map(
-    (student) => student.student_id || student.id,
-  );
-
-  // Admission numbers (for pending invoices API)
-  // Try both top-level and nested shapes defensively
-  const admissionNumbers = sessionStudentList
-    .map(
-      (student) =>
-        student.admission_number || student.student?.admission_number,
-    )
-    .filter(Boolean);
+  // Student IDs (bills API) and admission numbers (pending invoices API).
+  // Falls back to the login-cached list if the fresh list couldn't be loaded.
+  const { studentIds, admissionNumbers } = useMemo(() => {
+    const list =
+      studentListData?.data?.student_list ||
+      (isListError ? sessionData?.data?.student_list : null) ||
+      [];
+    return {
+      studentIds: list.map((s) => s.student_id || s.id),
+      admissionNumbers: list
+        .map((s) => s.admission_number || s.student?.admission_number)
+        .filter(Boolean),
+    };
+  }, [studentListData, isListError, sessionData]);
 
   // ── API: Existing paid bills ──────────────────────────────────────────
   const {
     data: billsData,
     isLoading: isBillsLoading,
+    isFetching: isBillsFetching,
     isError: isBillsError,
-    error: billsError,
     refetch: refetchBills,
   } = useGetStudentBillsDataQuery(
     { student_ids: studentIds },
@@ -72,8 +92,8 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   const {
     data: pendingData,
     isLoading: isPendingLoading,
+    isFetching: isPendingFetching,
     isError: isPendingError,
-    error: pendingError,
     refetch: refetchPending,
   } = useGetStudentPendingInvoicesQuery(
     { admission_number: admissionNumbers },
@@ -83,54 +103,37 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
     },
   );
 
-  // Sync bills data to Redux
+  // Sync API data to Redux
   useEffect(() => {
     if (billsData?.data?.student_bills_data) {
       dispatch(setStudentBillsData(billsData.data.student_bills_data));
     }
   }, [billsData, dispatch]);
 
-  // Sync pending invoices to Redux
   useEffect(() => {
     if (pendingData?.data?.pending_invoices) {
       dispatch(setPendingInvoicesData(pendingData.data.pending_invoices));
     }
   }, [pendingData, dispatch]);
 
-  // Error handling
-  useEffect(() => {
-    if (isBillsError) console.error("Payment API Error:", billsError);
-    if (isPendingError)
-      console.error("Pending Invoice API Error:", pendingError);
-    if (isBillsError || isPendingError) {
-      Alert.alert(
-        "Error Loading Payment Data",
-        "Unable to load payment information. Please try again.",
-        [
-          {
-            text: "Retry",
-            onPress: () => {
-              refetchBills();
-              refetchPending();
-            },
-          },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
-    }
-  }, [
-    isBillsError,
-    isPendingError,
-    billsError,
-    pendingError,
-    refetchBills,
-    refetchPending,
-  ]);
+  const hasError =
+    isBillsError || isPendingError || (isListError && studentIds.length === 0);
+  const isRefreshing = isBillsFetching || isPendingFetching || isListFetching;
 
-  const handleRefresh = () => {
-    refetchBills();
-    refetchPending();
-  };
+  const pendingCount = useMemo(
+    () =>
+      (pendingInvoicesData || []).reduce(
+        (acc, s) => acc + (s.pending_invoice_count || 0),
+        0,
+      ),
+    [pendingInvoicesData],
+  );
+
+  const handleRefresh = useCallback(() => {
+    refetchList();
+    if (studentIds.length > 0) refetchBills();
+    if (admissionNumbers.length > 0) refetchPending();
+  }, [studentIds, admissionNumbers, refetchList, refetchBills, refetchPending]);
 
   const handleBackToMain = () => {
     setCurrentPage("main");
@@ -153,26 +156,18 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
         onClose={onClose}
         onPaymentComplete={() => {
           handleBackToMain();
-          // Refresh both lists so paid invoice disappears from pending
+          // Refresh so the paid invoice disappears from pending
           handleRefresh();
         }}
       />
     );
   }
 
-  // Loading state
-  const isLoading =
-    (isBillsLoading || isPendingLoading) && studentIds.length > 0;
-  if (isLoading) {
+  // First-load state
+  if ((isListLoading || isBillsLoading || isPendingLoading) && !hasError) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
-            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment Center</Text>
-          <View style={styles.headerBtn} />
-        </View>
+        <PaymentHeader onBack={onClose} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading payment data...</Text>
@@ -186,19 +181,35 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
   // ── Main View ─────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
-          <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payment Center</Text>
-        <TouchableOpacity style={styles.headerBtn} onPress={handleRefresh}>
-          <MaterialIcons name="refresh" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      <PaymentHeader onBack={onClose} onRefresh={handleRefresh} />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[theme.colors.primary]}
+          />
+        }
+      >
         {/* ── Section 1: Pending Invoices ────────────────────────── */}
+        {hasError ? (
+          <View style={styles.errorBanner}>
+            <MaterialIcons name="error-outline" size={26} color="#C62828" />
+            <View style={styles.allClearText}>
+              <Text style={styles.errorTitle}>Unable to load payment data</Text>
+              <Text style={styles.errorSub}>
+                Please check your connection and try again.
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {hasPending ? (
           <View style={styles.section}>
             <View style={[styles.sectionHeader, styles.pendingSectionHeader]}>
@@ -215,17 +226,7 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
                     Pending Invoices
                   </Text>
                   <Text style={styles.sectionSubtitle}>
-                    {pendingInvoicesData.reduce(
-                      (acc, s) => acc + s.pending_invoice_count,
-                      0,
-                    )}{" "}
-                    invoice
-                    {pendingInvoicesData.reduce(
-                      (acc, s) => acc + s.pending_invoice_count,
-                      0,
-                    ) !== 1
-                      ? "s"
-                      : ""}{" "}
+                    {pendingCount} invoice{pendingCount !== 1 ? "s" : ""}{" "}
                     outstanding across {pendingInvoicesData.length} student
                     {pendingInvoicesData.length !== 1 ? "s" : ""}
                   </Text>
@@ -241,18 +242,30 @@ const PaymentSection = ({ onClose, onNavigateToSubSection }) => {
               />
             ))}
           </View>
-        ) : (
-          // No pending invoices — green all clear banner
-          <View style={styles.allClearBanner}>
-            <MaterialIcons name="check-circle" size={28} color="#2E7D32" />
-            <View style={styles.allClearText}>
-              <Text style={styles.allClearTitle}>All Paid Up!</Text>
-              <Text style={styles.allClearSub}>
-                No outstanding invoices at this time.
-              </Text>
+        ) : !hasError ? (
+          studentIds.length === 0 ? (
+            <View style={styles.allClearBanner}>
+              <MaterialIcons name="info-outline" size={28} color="#607D8B" />
+              <View style={styles.allClearText}>
+                <Text style={styles.noStudentTitle}>No students linked</Text>
+                <Text style={styles.noStudentSub}>
+                  No student accounts are available for payments.
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
+          ) : (
+            // No pending invoices — green all clear banner
+            <View style={styles.allClearBanner}>
+              <MaterialIcons name="check-circle" size={28} color="#2E7D32" />
+              <View style={styles.allClearText}>
+                <Text style={styles.allClearTitle}>All Paid Up!</Text>
+                <Text style={styles.allClearSub}>
+                  No outstanding invoices at this time.
+                </Text>
+              </View>
+            </View>
+          )
+        ) : null}
 
         {/* ── Divider ────────────────────────────────────────────── */}
         <View style={styles.sectionDivider}>
@@ -370,11 +383,6 @@ const styles = StyleSheet.create({
     color: "#888888",
     fontWeight: "400",
   },
-  viewGatewayHistoryLink: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#1565C0",
-  },
 
   // ── All Clear Banner ────────────────────────────────────
   allClearBanner: {
@@ -396,6 +404,40 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   allClearSub: { fontSize: 13, color: "#558B2F" },
+  noStudentTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#455A64",
+    marginBottom: 2,
+  },
+  noStudentSub: { fontSize: 13, color: "#78909C" },
+
+  // ── Error Banner ────────────────────────────────────────
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFEBEE",
+    borderWidth: 1,
+    borderColor: "#FFCDD2",
+    borderRadius: 12,
+    margin: 16,
+    padding: 16,
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#C62828",
+    marginBottom: 2,
+  },
+  errorSub: { fontSize: 13, color: "#D32F2F" },
+  retryBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#C62828",
+  },
+  retryText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
 
   // ── Divider ─────────────────────────────────────────────
   sectionDivider: {
@@ -419,22 +461,6 @@ const styles = StyleSheet.create({
     color: "#666666",
     marginTop: 14,
     fontFamily: theme.fonts.medium,
-  },
-
-  // ── Empty State ─────────────────────────────────────────
-  emptyStateContainer: {
-    alignItems: "center",
-    paddingVertical: 32,
-    marginHorizontal: 16,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    marginVertical: 6,
-  },
-  emptyStateText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#999999",
-    marginTop: 10,
   },
 });
 
